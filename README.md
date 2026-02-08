@@ -25,17 +25,6 @@ Basic:
 python mutload_summary.py example_data/maize.tsz
 ```
 
-Drop individuals by name:
-
-```bash
-python mutload_summary.py example_data/maize.tsz --out load.html
-```
-
-Drop individuals from a file (one ID per line):
-
-```bash
-python mutload_summary.py example_data/maize.tsz
-```
 
 Compute per-window load (tiled barplots across the contig):
 
@@ -43,10 +32,10 @@ Compute per-window load (tiled barplots across the contig):
 python mutload_summary.py example_data/maize.tsz --window-size 50000 --out load_windows.html
 ```
 
-Mask individuals only within specific regions (BEDs):
+Remove individuals from the treesequence only within specific regions (BEDs):
 
 ```bash
-python mutload_summary.py example_data/maize.tsz --window-size 1000000 --remove results/beds/Ki11.bed,results/beds/Ki3.bed
+python mutload_summary.py example_data/maize.tsz --window-size 1000000 --cutoff 0.5 --remove results/beds/maize_outliers.bed
 ```
 
 ## Inputs
@@ -68,8 +57,8 @@ python mutload_summary.py example_data/maize.tsz --window-size 1000000 --remove 
   (1 - `cutoff`) × the window mean. The cutoff is a fraction of the mean for each window.
   The BED includes columns: `chrom`, `start`, `end`, `outlier_ids`, `outlier_values`, `window_mean`.
   Output is written to `results/beds/` and the run log to `logs/`.
-- `--remove` accepts one or more BED files listing regions to remove individuals from.
-  If the BED has a 4th column, it is used as the individual ID; otherwise the filename stem is used.
+- `--remove` accepts one or more BED files listing regions where individuals are removed from the tree sequence.
+  If the BED has a 4th column, it is used as the individual ID (comma-separated IDs supported); otherwise the filename stem is used.
   Individuals are removed only within the listed regions.
 
 ## Options
