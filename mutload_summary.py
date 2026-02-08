@@ -48,42 +48,43 @@ def mutational_load(
     genome_windows = np.array([0, ts.sequence_length]) if windows is None else windows
     assert genome_windows[0] == 0 and genome_windows[-1] == ts.sequence_length
     load = np.zeros((genome_windows.size - 1, ts.num_samples))
-    for tree in ts.trees(sample_lists=True):
+
+    segments = [(0.0, ts.sequence_length, frozenset())]
+    if remove_intervals and name_to_nodes:
+        segments = build_removal_segments(remove_intervals, ts.sequence_length)
+
+    for left, right, drop_names in segments:
+        if right <= left:
+            continue
         drop_nodes = set()
-        if remove_intervals and name_to_nodes:
-            left, right = tree.interval
-            for nm, intervals in remove_intervals.items():
-                if _interval_overlaps(left, right, intervals):
-                    drop_nodes.update(name_to_nodes.get(nm, []))
+        for nm in drop_names:
+            drop_nodes.update(name_to_nodes.get(nm, []))
+
+        sub = ts.keep_intervals([(left, right)], simplify=False)
         if drop_nodes:
             keep = [u for u in ts.samples() if u not in drop_nodes]
-            sub = ts.keep_intervals([tree.interval], simplify=False)
             sub, node_map = sub.simplify(samples=keep, keep_unary=True, map_nodes=True)
             rev_map = np.full(sub.num_nodes, tskit.NULL, dtype=int)
             for u in keep:
                 new_id = node_map[u]
                 if new_id != tskit.NULL:
                     rev_map[new_id] = u
-            sub_tree = sub.first(sample_lists=True)
-            for s in sub.sites():
-                window = np.digitize([s.position], genome_windows) - 1
-                window = int(window[0])
-                if window < 0 or window >= genome_windows.size - 1:
-                    continue
-                for m in s.mutations:
-                    if m.edge != tskit.NULL:
-                        samples = list(sub_tree.samples(m.node))
-                        orig_samples = [rev_map[u] for u in samples if rev_map[u] != tskit.NULL]
-                        load[window, orig_samples] += 1.0
         else:
+            rev_map = None
+
+        site_windows = None
+        for tree in sub.trees(sample_lists=True):
             for s in tree.sites():
-                window = np.digitize([s.position], genome_windows) - 1
-                window = int(window[0])
+                if site_windows is None:
+                    site_windows = np.digitize(sub.sites_position, genome_windows) - 1
+                window = int(site_windows[s.id])
                 if window < 0 or window >= genome_windows.size - 1:
                     continue
                 for m in s.mutations:
                     if m.edge != tskit.NULL:
                         samples = list(tree.samples(m.node))
+                        if rev_map is not None:
+                            samples = [rev_map[u] for u in samples if rev_map[u] != tskit.NULL]
                         load[window, samples] += 1.0
     return load.squeeze(0) if windows is None else load
 
@@ -145,6 +146,27 @@ def _interval_overlaps(left, right, intervals):
     return ends[idx] > left
 
 
+def build_removal_segments(remove_intervals, sequence_length):
+    events = {}
+    for name, intervals in remove_intervals.items():
+        for start, end in zip(intervals["starts"], intervals["ends"]):
+            events.setdefault(start, []).append((name, 1))
+            events.setdefault(end, []).append((name, -1))
+
+    positions = sorted(set([0.0, float(sequence_length)] + list(events.keys())))
+    active = {}
+    segments = []
+    for i, pos in enumerate(positions[:-1]):
+        for name, delta in events.get(pos, []):
+            active[name] = active.get(name, 0) + delta
+            if active[name] <= 0:
+                active.pop(name, None)
+        next_pos = positions[i + 1]
+        if next_pos > pos:
+            segments.append((pos, next_pos, frozenset(active.keys())))
+    return segments
+
+
 def load_remove_intervals(paths):
     remove = {}
     for path in paths:
@@ -164,10 +186,12 @@ def load_remove_intervals(paths):
                 if end <= start:
                     continue
                 if len(parts) >= 4:
-                    name = parts[3]
+                    raw = parts[3]
+                    names = [n.strip() for n in raw.split(",") if n.strip()]
                 else:
-                    name = p.stem
-                remove.setdefault(name, []).append((start, end))
+                    names = [p.stem]
+                for name in names:
+                    remove.setdefault(name, []).append((start, end))
 
     intervals = {}
     for name, spans in remove.items():
@@ -222,11 +246,15 @@ def plot_windows(load, names, windows):
 
 
 def plot_outlier_hist(counts):
+    counts = [int(c) for c in counts]
+    max_count = max(counts) if counts else 0
+    bins = list(range(0, max_count + 2))
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.hist(counts, bins=20, color="#777777", edgecolor="#222222")
+    ax.hist(counts, bins=bins, color="#777777", edgecolor="#222222")
     ax.set_xlabel("Outlier windows per individual")
     ax.set_ylabel("Count of individuals")
     ax.set_title("Outlier window counts")
+    ax.set_xticks(bins)
     fig.tight_layout()
     return fig
 
@@ -331,15 +359,12 @@ def main():
             else:
                 fig = plot_windows(load, unique_names, windows)
                 window_means = load.mean(axis=1)
-                outlier_counts = []
-                for i in range(load.shape[1]):
-                    count = 0
-                    for w in range(load.shape[0]):
-                        if window_means[w] <= 0:
-                            continue
-                    if load[w, i] > (1 + args.cutoff) * window_means[w] or load[w, i] < (1 - args.cutoff) * window_means[w]:
-                        count += 1
-                    outlier_counts.append(count)
+                valid = window_means > 0
+                high = (1 + args.cutoff) * window_means
+                low = (1 - args.cutoff) * window_means
+                mask = (load > high[:, None]) | (load < low[:, None])
+                mask &= valid[:, None]
+                outlier_counts = mask.sum(axis=0).astype(int).tolist()
 
             img_url = fig_to_data_url(fig)
             hist_html = ""
@@ -374,21 +399,23 @@ img {{ max-width: 100%; height: auto; }}
             out.write_text(html)
 
             if windows is not None:
-                # Write per-individual BED files for windows outside cutoff range of window mean
-                for i, name in enumerate(unique_names):
-                    safe = "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in name)
-                    bed_path = beds_dir / f"{safe}.bed"
-                    lines = []
-                    for w in range(load.shape[0]):
-                        if window_means[w] <= 0:
-                            continue
-                        if load[w, i] > (1 + args.cutoff) * window_means[w] or load[w, i] < (1 - args.cutoff) * window_means[w]:
-                            start = int(windows[w])
-                            end = int(windows[w + 1])
-                            lines.append(
-                                f"{ts_path.stem}\t{start}\t{end}\t{name}\t{window_means[w]:.3f}\t{load[w, i]:.3f}"
-                            )
-                    bed_path.write_text("\n".join(lines) + ("\n" if lines else ""))
+                # Write one BED listing outliers per window
+                out_path = beds_dir / f"{ts_path.stem}_outliers.bed"
+                lines = []
+                for w in range(load.shape[0]):
+                    if not valid[w]:
+                        continue
+                    row_mask = mask[w]
+                    if not row_mask.any():
+                        continue
+                    outlier_names = [unique_names[i] for i in np.where(row_mask)[0]]
+                    outlier_vals = [f"{load[w, i]:.3f}" for i in np.where(row_mask)[0]]
+                    start = int(windows[w])
+                    end = int(windows[w + 1])
+                    lines.append(
+                        f"{ts_path.stem}\t{start}\t{end}\t{','.join(outlier_names)}\t{','.join(outlier_vals)}\t{window_means[w]:.3f}"
+                    )
+                out_path.write_text("\n".join(lines) + ("\n" if lines else ""))
         finally:
             sys.stdout = old_stdout
             sys.stderr = old_stderr

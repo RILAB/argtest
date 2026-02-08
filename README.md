@@ -63,10 +63,11 @@ python mutload_summary.py example_data/maize.tsz --window-size 1000000 --remove 
 
 - If `--window-size` is omitted, the report shows a single barplot of per-individual load.
 - If `--window-size` is provided, the report shows one barplot per window, tiled across the contig.
-- When `--window-size` is provided, per-individual BED files are emitted for windows
-  where the individual's load is greater than (1 + `cutoff`) × the window mean or less
-  than (1 - `cutoff`) × the window mean. The cutoff is a fraction of the mean for each window.
-  BED files are written to `results/beds/` and the run log to `logs/`.
+- When `--window-size` is provided, a single BED file is emitted listing outliers per window
+  where an individual's load is greater than (1 + `cutoff`) × the window mean or less than
+  (1 - `cutoff`) × the window mean. The cutoff is a fraction of the mean for each window.
+  The BED includes columns: `chrom`, `start`, `end`, `outlier_ids`, `outlier_values`, `window_mean`.
+  Output is written to `results/beds/` and the run log to `logs/`.
 - `--remove` accepts one or more BED files listing regions to remove individuals from.
   If the BED has a 4th column, it is used as the individual ID; otherwise the filename stem is used.
   Individuals are removed only within the listed regions.
