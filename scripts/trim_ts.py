@@ -60,7 +60,7 @@ def main():
         out_path = Path(args.out)
     else:
         # Default output to results/ with a trimmed suffix.
-        out_dir = Path(__file__).resolve().parent / "results"
+        out_dir = Path(__file__).resolve().parent.parent / "results"
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / f"{ts_path.stem}_trimmed.tsz"
     dump_ts(trimmed_ts, out_path)

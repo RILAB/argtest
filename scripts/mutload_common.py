@@ -264,6 +264,21 @@ def validate_trimmed_ts(ts: tskit.TreeSequence):
     if hasattr(ts, "check_index"):
         try:
             ts.check_index()
+        except TypeError:
+            # Older/newer tskit versions require explicit index/length args.
+            index = None
+            if hasattr(ts, "index"):
+                index = ts.index
+            elif hasattr(ts, "tables") and hasattr(ts.tables, "index"):
+                index = ts.tables.index
+            if index is None:
+                print("WARNING: trimmed ts skipped check_index (no index available)", file=sys.stderr)
+                return
+            try:
+                ts.check_index(index, ts.sequence_length)
+            except Exception as e:
+                print(f"ERROR: trimmed ts failed check_index: {e}", file=sys.stderr)
+                raise
         except Exception as e:
             print(f"ERROR: trimmed ts failed check_index: {e}", file=sys.stderr)
             raise

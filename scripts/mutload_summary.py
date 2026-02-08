@@ -113,7 +113,7 @@ class Tee:
 def main():
     args = parse_args()
     ts_path = Path(args.ts)
-    repo_root = Path(__file__).resolve().parent
+    repo_root = Path(__file__).resolve().parent.parent
     results_dir = repo_root / "results"
     logs_dir = repo_root / "logs"
     results_dir.mkdir(parents=True, exist_ok=True)
