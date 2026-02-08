@@ -1,6 +1,7 @@
 # Mutational Load Summary Script
 
-`mutload.py` generates an HTML report of derived mutational load per individual from a tree sequence.
+`scripts/mutload_summary.py` generates an HTML report of derived mutational load per individual from a tree sequence and writes a BED of outlier windows when a window size is provided.
+`scripts/trim_ts.py` removes individuals over BED intervals and writes a trimmed tree sequence.
 
 ## Requirements
 
@@ -22,20 +23,21 @@ conda activate argtest
 Basic:
 
 ```bash
-python mutload.py example_data/maize.tsz
+python scripts/mutload_summary.py example_data/maize.tsz
 ```
 
 
 Compute per-window load (tiled barplots across the contig):
 
 ```bash
-python mutload.py example_data/maize.tsz --window-size 50000 --out load_windows.html
+python scripts/mutload_summary.py example_data/maize.tsz --window-size 50000 --out load_windows.html
 ```
 
 Remove individuals from the treesequence only within specific regions (BEDs):
 
 ```bash
-python mutload.py example_data/maize.tsz --window-size 1000000 --cutoff 0.5 --remove results/maize_outliers.bed
+python scripts/mutload_summary.py example_data/maize.tsz --window-size 1000000 --cutoff 0.5
+python scripts/trim_ts.py example_data/maize.tsz --remove results/maize_outliers.bed
 ```
 
 ## Inputs
