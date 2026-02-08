@@ -242,6 +242,35 @@ def trim_ts_by_intervals(ts: tskit.TreeSequence, remove_intervals, name_to_nodes
     return tables.tree_sequence()
 
 
+def assert_sample_ids_preserved(orig_ts: tskit.TreeSequence, trimmed_ts: tskit.TreeSequence):
+    orig_samples = orig_ts.samples()
+    trimmed_samples = trimmed_ts.samples()
+    if len(orig_samples) != len(trimmed_samples):
+        msg = "Trimmed tree sequence changed the number of samples"
+        print(f"ERROR: {msg}", file=sys.stderr)
+        raise RuntimeError(msg)
+    if not np.array_equal(orig_samples, trimmed_samples):
+        msg = "Trimmed tree sequence changed sample IDs/order"
+        print(f"ERROR: {msg}", file=sys.stderr)
+        raise RuntimeError(msg)
+
+
+def validate_trimmed_ts(ts: tskit.TreeSequence):
+    # Ensure internal indexes and topology are consistent
+    if hasattr(ts, "check_index"):
+        try:
+            ts.check_index()
+        except Exception as e:
+            print(f"ERROR: trimmed ts failed check_index: {e}", file=sys.stderr)
+            raise
+    if hasattr(ts, "validate"):
+        try:
+            ts.validate()
+        except Exception as e:
+            print(f"ERROR: trimmed ts failed validate: {e}", file=sys.stderr)
+            raise
+
+
 def load_remove_intervals(paths):
     remove = {}
     for path in paths:
@@ -418,7 +447,10 @@ def main():
             remove_intervals = load_remove_intervals(remove_paths) if remove_paths else None
             name_to_nodes = name_to_nodes_map(ts, suffix_to_strip=args.suffix_to_strip)
             if remove_intervals:
+                orig_ts = ts
                 ts = trim_ts_by_intervals(ts, remove_intervals, name_to_nodes)
+                assert_sample_ids_preserved(orig_ts, ts)
+                validate_trimmed_ts(ts)
                 if tszip is None:
                     raise RuntimeError("tszip is required to write trimmed .tsz files")
                 trimmed_path = results_dir / f"{ts_path.stem}_trimmed.tsz"

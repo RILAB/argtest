@@ -29,6 +29,40 @@ def make_simple_ts():
     return tables.tree_sequence()
 
 
+def make_ts_no_mutations(n_samples=2, length=10):
+    tables = tskit.TableCollection(sequence_length=length)
+    tables.individuals.metadata_schema = tskit.MetadataSchema.permissive_json()
+    pop = tables.populations.add_row()
+    inds = [tables.individuals.add_row(metadata={"id": f"I{i}"}) for i in range(n_samples)]
+    samples = [
+        tables.nodes.add_row(flags=tskit.NODE_IS_SAMPLE, time=0, individual=inds[i], population=pop)
+        for i in range(n_samples)
+    ]
+    anc = tables.nodes.add_row(time=1, population=pop)
+    for s in samples:
+        tables.edges.add_row(left=0, right=length, parent=anc, child=s)
+    tables.sort()
+    return tables.tree_sequence()
+
+
+def make_ts_many_individuals(n=100, length=10):
+    tables = tskit.TableCollection(sequence_length=length)
+    tables.individuals.metadata_schema = tskit.MetadataSchema.permissive_json()
+    pop = tables.populations.add_row()
+    inds = [tables.individuals.add_row(metadata={"id": f"I{i}"}) for i in range(n)]
+    samples = [
+        tables.nodes.add_row(flags=tskit.NODE_IS_SAMPLE, time=0, individual=inds[i], population=pop)
+        for i in range(n)
+    ]
+    anc = tables.nodes.add_row(time=1, population=pop)
+    for s in samples:
+        tables.edges.add_row(left=0, right=length, parent=anc, child=s)
+    s1 = tables.sites.add_row(position=1, ancestral_state="0")
+    tables.mutations.add_row(site=s1, node=samples[0], derived_state="1")
+    tables.sort()
+    return tables.tree_sequence()
+
+
 def test_windowing_sanity():
     ts = make_simple_ts()
     windows = np.array([0, 5, 10], dtype=float)
@@ -152,3 +186,138 @@ def test_no_remove_no_trimmed(tmp_path, monkeypatch):
     })())
     ml.main()
     assert not (cwd / "results" / "test_trimmed.tsz").exists()
+
+
+def test_no_mutations_outliers_empty(tmp_path, monkeypatch):
+    ts = make_ts_no_mutations()
+    ts_path = tmp_path / "nomut.trees"
+    ts.dump(ts_path)
+    cwd = Path(__file__).resolve().parents[1]
+    os.chdir(cwd)
+    monkeypatch.setattr(ml, "load_ts", lambda _: ts)
+    monkeypatch.setattr(ml, "parse_args", lambda: type("A", (), {
+        "ts": str(ts_path),
+        "window_size": 5.0,
+        "remove": None,
+        "cutoff": 0.5,
+        "out": "nomut.html",
+        "suffix_to_strip": "_anchorwave",
+    })())
+    ml.main()
+    bed = cwd / "results" / "nomut_outliers.bed"
+    assert bed.exists()
+    assert bed.read_text().strip() == ""
+
+
+def test_single_sample_ts():
+    ts = make_ts_no_mutations(n_samples=1, length=10)
+    windows = np.array([0, 10], dtype=float)
+    load = ml.mutational_load(ts, windows=windows)
+    names = ml.sample_names(ts)
+    load, _ = ml.aggregate_by_individual(load, names)
+    assert load.shape == (1, 1)
+
+
+def test_intervals_outside_sequence_length():
+    ts = make_simple_ts()
+    intervals = {"A": {"starts": [100.0], "ends": [200.0]}}
+    name_to_nodes = ml.name_to_nodes_map(ts)
+    trimmed = ml.trim_ts_by_intervals(ts, intervals, name_to_nodes)
+    assert trimmed.num_sites == ts.num_sites
+
+
+def test_overlapping_bed_with_commas(tmp_path):
+    bed = tmp_path / "x.bed"
+    bed.write_text("chr1\t1\t4\tA,B\nchr1\t3\t5\tB,C\n")
+    remove = ml.load_remove_intervals([bed])
+    assert set(remove.keys()) == {"A", "B", "C"}
+
+
+def test_all_samples_removed_in_segment():
+    ts = make_simple_ts()
+    intervals = {"A": {"starts": [0.0], "ends": [10.0]}, "B": {"starts": [0.0], "ends": [10.0]}}
+    name_to_nodes = ml.name_to_nodes_map(ts)
+    trimmed = ml.trim_ts_by_intervals(ts, intervals, name_to_nodes)
+    assert trimmed.sequence_length == ts.sequence_length
+
+
+def test_idempotent_no_effect_remove():
+    ts = make_simple_ts()
+    intervals = {"C": {"starts": [0.0], "ends": [5.0]}}  # C not in TS
+    name_to_nodes = ml.name_to_nodes_map(ts)
+    trimmed = ml.trim_ts_by_intervals(ts, intervals, name_to_nodes)
+    assert trimmed.num_sites == ts.num_sites
+    assert trimmed.num_edges >= ts.num_edges
+
+
+def test_sample_order_preserved():
+    ts = make_simple_ts()
+    intervals = {"A": {"starts": [0.0], "ends": [5.0]}}
+    name_to_nodes = ml.name_to_nodes_map(ts)
+    trimmed = ml.trim_ts_by_intervals(ts, intervals, name_to_nodes)
+    assert trimmed.samples().tolist() == ts.samples().tolist()
+
+
+def test_trim_validate():
+    ts = make_simple_ts()
+    intervals = {"A": {"starts": [0.0], "ends": [5.0]}}
+    name_to_nodes = ml.name_to_nodes_map(ts)
+    trimmed = ml.trim_ts_by_intervals(ts, intervals, name_to_nodes)
+    if hasattr(trimmed, "validate"):
+        trimmed.validate()
+
+
+def test_large_interval_counts():
+    intervals = {"A": {"starts": [], "ends": []}}
+    for i in range(1000):
+        intervals["A"]["starts"].append(float(i))
+        intervals["A"]["ends"].append(float(i + 0.5))
+    segs = ml.build_removal_segments(intervals, 2000.0)
+    assert segs[0][0] == 0.0
+    assert segs[-1][1] == 2000.0
+
+
+def test_many_individuals_shapes():
+    ts = make_ts_many_individuals(n=100, length=10)
+    windows = np.array([0, 10], dtype=float)
+    load = ml.mutational_load(ts, windows=windows)
+    names = ml.sample_names(ts)
+    load, unique = ml.aggregate_by_individual(load, names)
+    assert load.shape == (1, 100)
+    assert len(unique) == 100
+
+
+def test_relative_bed_paths(tmp_path, monkeypatch):
+    bed = tmp_path / "rel.bed"
+    bed.write_text("chr1\t1\t3\tA\n")
+    cwd = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        remove = ml.load_remove_intervals([Path("rel.bed")])
+        assert "A" in remove
+    finally:
+        os.chdir(cwd)
+
+
+def test_output_overwrite(tmp_path, monkeypatch):
+    ts = make_simple_ts()
+    ts_path = tmp_path / "test.trees"
+    ts.dump(ts_path)
+    cwd = Path(__file__).resolve().parents[1]
+    os.chdir(cwd)
+    monkeypatch.setattr(ml, "load_ts", lambda _: ts)
+    monkeypatch.setattr(ml, "parse_args", lambda: type("A", (), {
+        "ts": str(ts_path),
+        "window_size": 5.0,
+        "remove": None,
+        "cutoff": 0.5,
+        "out": "overwrite.html",
+        "suffix_to_strip": "_anchorwave",
+    })())
+    ml.main()
+    out = cwd / "results" / "overwrite.html"
+    assert out.exists()
+    first = out.read_text()
+    ml.main()
+    second = out.read_text()
+    assert first == second
