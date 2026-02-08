@@ -59,12 +59,13 @@ python scripts/trim_ts.py example_data/maize.tsz --remove results/maize_outliers
   (1 - `cutoff`) × the window mean. The cutoff is a fraction of the mean for each window.
   The BED includes columns: `chrom`, `start`, `end`, `outlier_ids`, `outlier_values`, `window_mean`.
   Output is written to `results/` and the run log to `logs/`.
-- `--remove` accepts one or more BED files listing regions where individuals are removed from the tree sequence.
+- `trim_ts.py` accepts one or more BED files listing regions where individuals are removed from the tree sequence.
   If the BED has a 4th column, it is used as the individual ID (comma-separated IDs supported); otherwise the filename stem is used.
   Individuals are removed only within the listed regions.
-  When `--remove` is used, a trimmed tree sequence is written to `results/<input>_trimmed.tsz`.
 
 ## Options
+
+`mutload_summary.py`:
 
 ```text
 positional arguments:
@@ -72,8 +73,19 @@ positional arguments:
 
 options:
   --window-size         Window size in bp
-  --remove              BED file(s) of regions to remove per individual (comma-separated or repeated)
   --cutoff              Outlier cutoff as a fraction of the window mean (default: 0.25)
   --out                 Output HTML file (default: mutational_load_summary.html; written to results/)
+  --suffix-to-strip     Suffix removed from individual IDs (default: _anchorwave)
+```
+
+`trim_ts.py`:
+
+```text
+positional arguments:
+  ts                    Tree sequence file (.ts, .trees, or .tsz)
+
+options:
+  --remove              BED file(s) of regions to remove per individual (comma-separated or repeated)
+  --out                 Output tree sequence path (.ts, .trees, or .tsz)
   --suffix-to-strip     Suffix removed from individual IDs (default: _anchorwave)
 ```
