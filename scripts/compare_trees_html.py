@@ -13,6 +13,7 @@ except Exception:  # pragma: no cover - optional dependency
 
 
 def load_ts(path: Path) -> tskit.TreeSequence:
+    # Load compressed or plain tree sequences.
     if path.suffix == ".tsz":
         if tszip is None:
             raise RuntimeError("tszip is required to load .tsz files")
@@ -40,6 +41,7 @@ def main():
     ts_a = load_ts(path_a)
     ts_b = load_ts(path_b)
 
+    # Grab the requested trees by index and render as ASCII.
     tree_a = ts_a.at_index(args.index_a)
     tree_b = ts_b.at_index(args.index_b)
 

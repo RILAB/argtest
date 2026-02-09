@@ -30,6 +30,7 @@ def dump_ts(ts: tskit.TreeSequence, out_path: Path) -> None:
 
 
 def parse_regions_bed(paths):
+    # Parse BED intervals (chrom column is ignored).
     intervals = []
     for path in paths:
         p = Path(path)
@@ -53,6 +54,7 @@ def parse_regions_bed(paths):
 
 
 def merge_intervals(intervals):
+    # Merge overlapping or touching intervals.
     if not intervals:
         return []
     merged = [list(intervals[0])]
@@ -66,6 +68,7 @@ def merge_intervals(intervals):
 
 
 def clamp_intervals(intervals, sequence_length):
+    # Clip intervals to the sequence bounds.
     clamped = []
     for start, end in intervals:
         s = max(0.0, float(start))
@@ -76,6 +79,7 @@ def clamp_intervals(intervals, sequence_length):
 
 
 def complement_intervals(remove, sequence_length):
+    # Convert remove-intervals into keep-intervals.
     keep = []
     cursor = 0.0
     for start, end in remove:
@@ -127,6 +131,7 @@ def main():
     remove_intervals = clamp_intervals(remove_intervals, ts.sequence_length)
     keep = complement_intervals(remove_intervals, ts.sequence_length)
     if not keep:
+        # Removing everything: return an empty TS with original length.
         tables = ts.dump_tables()
         tables.edges.clear()
         tables.sites.clear()
@@ -134,9 +139,11 @@ def main():
         tables.sequence_length = ts.sequence_length
         trimmed = tables.tree_sequence()
     else:
+        # Keep only the complement intervals without renumbering nodes.
         trimmed = ts.keep_intervals(keep, simplify=False)
 
     if args.simplify:
+        # Simplify structure, then restore original coordinate system.
         trimmed = trimmed.simplify(keep_unary=True)
         tables = trimmed.dump_tables()
         # Preserve original coordinate system after simplify.

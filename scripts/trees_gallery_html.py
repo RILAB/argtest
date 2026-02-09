@@ -13,6 +13,7 @@ except Exception:  # pragma: no cover - optional dependency
 
 
 def load_ts(path: Path) -> tskit.TreeSequence:
+    # Load compressed or plain tree sequences.
     if path.suffix == ".tsz":
         if tszip is None:
             raise RuntimeError("tszip is required to load .tsz files")
@@ -31,6 +32,7 @@ def parse_args():
 
 
 def tree_card(tree, index: int, label: str) -> str:
+    # Build a labeled ASCII tree panel.
     interval = tree.interval
     ascii_tree = tree.draw_text()
     return f"""<div class="tree-card">
@@ -47,6 +49,7 @@ def main():
     ts_top = load_ts(path_top)
     ts_bottom = load_ts(path_bottom)
 
+    # Build horizontally scrollable rows for matching tree indices.
     n = min(ts_top.num_trees, ts_bottom.num_trees)
     top_cards = []
     bottom_cards = []

@@ -3,6 +3,8 @@
 `scripts/mutload_summary.py` generates an HTML report of derived mutational load per individual from a tree sequence and writes a BED of outlier windows when a window size is provided.
 `scripts/trim_samples.py` removes individuals over BED intervals or by name and writes a trimmed tree sequence.
 `scripts/trim_regions.py` removes genome intervals (all samples) from a tree sequence based on a BED file.
+`scripts/compare_trees_html.py` renders two specific trees from two tree sequences into a single HTML report.
+`scripts/trees_gallery_html.py` renders all trees from two tree sequences into a horizontally scrollable HTML gallery.
 
 ## Requirements
 
@@ -51,6 +53,18 @@ Remove regions for all samples:
 
 ```bash
 python scripts/trim_regions.py example_data/maize.tsz --remove example_data/bad_regions.bed --simplify
+```
+
+Compare two trees by index:
+
+```bash
+python scripts/compare_trees_html.py natefun.tsz 9 vanilla.tsz 9 --out tree_compare.html
+```
+
+Render full galleries (top and bottom rows):
+
+```bash
+python scripts/trees_gallery_html.py natefun.tsz vanilla.tsz --out trees_gallery.html
 ```
 
 ## Inputs
@@ -114,4 +128,28 @@ options:
   --remove              BED file(s) of regions to remove (comma-separated or repeated)
   --simplify            Simplify output while preserving original coordinates
   --out                 Output tree sequence path (.ts, .trees, or .tsz)
+```
+
+`compare_trees_html.py`:
+
+```text
+positional arguments:
+  ts_a                  First tree sequence file (.ts, .trees, or .tsz)
+  index_a               Tree index for the first file (0-based)
+  ts_b                  Second tree sequence file (.ts, .trees, or .tsz)
+  index_b               Tree index for the second file (0-based)
+
+options:
+  --out                 Output HTML file (default: tree_compare.html)
+```
+
+`trees_gallery_html.py`:
+
+```text
+positional arguments:
+  ts_top                Top tree sequence file (.ts, .trees, or .tsz)
+  ts_bottom             Bottom tree sequence file (.ts, .trees, or .tsz)
+
+options:
+  --out                 Output HTML file (default: trees_gallery.html)
 ```

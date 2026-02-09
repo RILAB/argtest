@@ -27,12 +27,14 @@ def parse_remove_list(values):
 
 
 def parse_individuals(values):
+    # Parse comma-separated IDs into a list.
     if not values:
         return []
     return [v.strip() for v in values.split(",") if v.strip()]
 
 
 def merge_intervals(base, extra):
+    # Merge per-individual intervals, keeping them sorted.
     merged = {k: {"starts": list(v["starts"]), "ends": list(v["ends"])} for k, v in base.items()}
     for name, spans in extra.items():
         entry = merged.setdefault(name, {"starts": [], "ends": []})
@@ -80,6 +82,7 @@ def remove_ancestry(ts, samples, left, right):
                 tables.edges.append(edge.replace(left=position))
 
     tables = ts.dump_tables()
+    # Split edges so we can drop the target interval exactly.
     split_edges_at(tables, left)
     split_edges_at(tables, right)
     drop_edges = np.logical_and.reduce(
@@ -91,6 +94,7 @@ def remove_ancestry(ts, samples, left, right):
     )
     tables.edges.keep_rows(~drop_edges)
     tables.sort()
+    # Simplify drops the removed ancestry and may renumber nodes.
     tables.simplify()
     tables.edges.squash()
     return tables.tree_sequence()
@@ -108,6 +112,7 @@ def main():
 
     individuals = parse_individuals(args.individuals)
     if individuals:
+        # Expand full-length removals to [0, sequence_length).
         full = {
             name: {"starts": [0.0], "ends": [float(ts.sequence_length)]}
             for name in individuals
@@ -120,6 +125,7 @@ def main():
     # Natefun-style removal can change sample identities/order via simplify.
     trimmed_ts = ts
     for name, intervals in remove_intervals.items():
+        # Rebuild the name->nodes map after each simplify.
         name_to_nodes = name_to_nodes_map(trimmed_ts, suffix_to_strip=args.suffix_to_strip)
         samples = name_to_nodes.get(name, [])
         if not samples:
