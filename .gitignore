@@ -1,2 +1,5 @@
 argcheck.ipynb
 __pycache__/
+.DS_Store
+logs/
+results/
