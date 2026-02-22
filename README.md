@@ -88,12 +88,9 @@ Main options:
 - `--log`
 
 ### `scripts/validation_plots_from_ts.py`
-Generates SINGER-style validation/diagnostic plots directly from a set of TS replicates.
+Generates SINGER-style validation/diagnostic plots (excluding coalescence/Ne curves) directly from a set of TS replicates.
 
 Plots produced:
-- `pair-coalescence-pdf.png`
-- `pair-coalescence-rates.png`
-- `effective-pop-size.png` (`Ne = 1 / (2 * coal_rate)`)
 - `mutational-load.png`
 - `mutational-load-trace.png`
 - `diversity-scatter.png`
@@ -108,21 +105,72 @@ Plots produced:
 Notes:
 - branch diversity is scaled by `--mutation-rate` for site-vs-branch comparison
 - trace plots are branch-only MCMC outcomes
-- time-axis bins are read from `--time-bins-file`
-- `--time-adjust` divides plotted time-axis values by a factor
 
 Example:
 ```bash
 python scripts/validation_plots_from_ts.py \
   --ts-dir ~/crud/collapsed \
   --pattern "*.tsz" \
-  --time-bins-file /path/to/time_bins.txt \
   --window-size 100000 \
   --mutation-rate 3.3e-8 \
   --burnin-frac 0.5 \
+  --out-dir results/validation_plots
+```
+
+Main options:
+- `--ts-dir`
+- `--pattern`
+- `--mutation-rate`
+- `--burnin-frac`
+- `--window-size`
+- `--folded`
+- `--out-dir`
+- `--prefix`
+
+### `scripts/coalescence_ne_plots_from_ts.py`
+Generates pair coalescence and effective population size plots from a set of TS replicates using explicit time bins.
+
+Plots produced:
+- `pair-coalescence-pdf.png`
+- `pair-coalescence-rates.png`
+- `effective-pop-size.png` (`Ne = 1 / (2 * coal_rate)`)
+- optional simulation summary table: `sim-window-stats.tsv` (when `--sim > 0`)
+- `summary.txt`
+
+Notes:
+- time bins come from `--time-bins-file` (explicit bin edges)
+- `--time-adjust` rescales plotted x-axis values by dividing time by a factor
+- `--year` adds a red dashed vertical marker to the Ne plot
+- optional `--sim X` mode converts the inferred piecewise-constant Ne trajectory into a one-deme Demes model and runs `X` coalescent simulations
+- simulations are `1 Mb`, use the same sample size as the observed TS, and use `--mu` for both mutation and recombination rates
+- simulated nucleotide diversity and Tajima's D are computed in `50 Kb` windows and written as a TSV
+
+Example:
+```bash
+python scripts/coalescence_ne_plots_from_ts.py \
+  --ts-dir ~/crud/collapsed \
+  --pattern "*.tsz" \
+  --time-bins-file /path/to/time_bins.txt \
+  --burnin-frac 0.5 \
   --time-adjust 6.19476 \
   --year 534 \
-  --out-dir results/validation_plots \
+  --log-rates \
+  --out-dir results/coalescence_ne_plots
+```
+
+Example with simulations:
+```bash
+python scripts/coalescence_ne_plots_from_ts.py \
+  --ts-dir ~/crud/collapsed \
+  --pattern "*.tsz" \
+  --time-bins-file /path/to/time_bins.txt \
+  --burnin-frac 0.5 \
+  --time-adjust 6.19476 \
+  --year 534 \
+  --sim 100 \
+  --mu 3.3e-8 \
+  --sim-outfile results/coalescence_ne_plots/sim-window-stats.tsv \
+  --out-dir results/coalescence_ne_plots \
   --log-rates
 ```
 
@@ -130,13 +178,13 @@ Main options:
 - `--ts-dir`
 - `--pattern`
 - `--time-bins-file`
-- `--mutation-rate`
 - `--burnin-frac`
 - `--tail-cutoff`
 - `--time-adjust`
 - `--year`
-- `--window-size`
-- `--folded`
+- `--sim`
+- `--mu`
+- `--sim-outfile`
 - `--log-rates`
 - `--out-dir`
 - `--prefix`
