@@ -100,11 +100,15 @@ Plots produced:
 - `tajima-d-skyline.png`
 - `tajima-d-trace.png`
 - `frequency-spectrum.png`
+- optional observed-vs-sim density plots (when `--sim` TSV is provided):
+  - `diversity-density-vs-sim.png`
+  - `tajima-d-density-vs-sim.png`
 - `summary.txt`
 
 Notes:
 - branch diversity is scaled by `--mutation-rate` for site-vs-branch comparison
 - trace plots are branch-only MCMC outcomes
+- `--sim` can read the simulation TSV from `scripts/coalescence_ne_plots_from_ts.py --sim` and compare observed vs simulated windowed `pi` and Tajima's D using overlapping semi-transparent density plots
 
 Example:
 ```bash
@@ -117,6 +121,18 @@ python scripts/validation_plots_from_ts.py \
   --out-dir results/validation_plots
 ```
 
+Example with simulation comparison:
+```bash
+python scripts/validation_plots_from_ts.py \
+  --ts-dir ~/crud/collapsed \
+  --pattern "*.tsz" \
+  --window-size 100000 \
+  --mutation-rate 3.3e-8 \
+  --burnin-frac 0.5 \
+  --sim results/coalescence_ne_plots/sim-window-stats.tsv \
+  --out-dir results/validation_plots
+```
+
 Main options:
 - `--ts-dir`
 - `--pattern`
@@ -124,6 +140,7 @@ Main options:
 - `--burnin-frac`
 - `--window-size`
 - `--folded`
+- `--sim`
 - `--out-dir`
 - `--prefix`
 

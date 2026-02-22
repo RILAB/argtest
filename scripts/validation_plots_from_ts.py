@@ -5,6 +5,7 @@ import argparse
 import os
 from pathlib import Path
 import warnings
+import csv
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 os.environ.setdefault("XDG_CACHE_HOME", "/tmp")
@@ -58,6 +59,15 @@ def parse_args():
         help="Plot folded SFS (minor-allele frequency) instead of polarised derived-frequency SFS.",
     )
     p.add_argument(
+        "--sim",
+        type=Path,
+        default=None,
+        help=(
+            "Optional TSV from scripts/coalescence_ne_plots_from_ts.py --sim output "
+            "(sim-window-stats.tsv) for observed-vs-simulated pi/Tajima's D density plots."
+        ),
+    )
+    p.add_argument(
         "--window-size",
         type=float,
         default=5.0e4,
@@ -99,6 +109,30 @@ def safe_nanquantile(a: np.ndarray, q, axis=None):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
         return np.nanquantile(a, q, axis=axis)
+
+
+def load_sim_window_stats(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    if not path.exists():
+        raise FileNotFoundError(f"Simulation TSV not found: {path}")
+    sim_pi = []
+    sim_td = []
+    with open(path, "r", newline="") as fh:
+        reader = csv.DictReader(fh, delimiter="\t")
+        required = {"diversity", "tajima_d"}
+        if reader.fieldnames is None or not required.issubset(set(reader.fieldnames)):
+            raise ValueError(
+                f"Simulation TSV {path} must contain columns: {sorted(required)}"
+            )
+        for row in reader:
+            try:
+                sim_pi.append(float(row["diversity"]))
+            except Exception:
+                sim_pi.append(np.nan)
+            try:
+                sim_td.append(float(row["tajima_d"]))
+            except Exception:
+                sim_td.append(np.nan)
+    return np.array(sim_pi, dtype=float), np.array(sim_td, dtype=float)
 
 
 def main():
@@ -275,6 +309,41 @@ def main():
     plt.savefig(sfs_path)
     plt.clf()
 
+    sim_pi_density_path = None
+    sim_td_density_path = None
+    if args.sim is not None:
+        sim_pi, sim_td = load_sim_window_stats(args.sim)
+        obs_pi = site_div_vals[:, keep_post].reshape(-1)
+        obs_td = site_td_vals[:, keep_post].reshape(-1)
+        obs_pi = obs_pi[np.isfinite(obs_pi)]
+        obs_td = obs_td[np.isfinite(obs_td)]
+        sim_pi = sim_pi[np.isfinite(sim_pi)]
+        sim_td = sim_td[np.isfinite(sim_td)]
+
+        if obs_pi.size and sim_pi.size:
+            fig, ax = plt.subplots(1, 1, figsize=(6, 4), constrained_layout=True)
+            bins = 50
+            ax.hist(obs_pi, bins=bins, density=True, alpha=0.4, color="black", label="observed (site)")
+            ax.hist(sim_pi, bins=bins, density=True, alpha=0.4, color="firebrick", label="simulated")
+            ax.set_xlabel("Nucleotide diversity (pi) per window")
+            ax.set_ylabel("Density")
+            ax.legend()
+            sim_pi_density_path = args.out_dir / f"{args.prefix}diversity-density-vs-sim.png"
+            plt.savefig(sim_pi_density_path)
+            plt.clf()
+
+        if obs_td.size and sim_td.size:
+            fig, ax = plt.subplots(1, 1, figsize=(6, 4), constrained_layout=True)
+            bins = 50
+            ax.hist(obs_td, bins=bins, density=True, alpha=0.4, color="black", label="observed (site)")
+            ax.hist(sim_td, bins=bins, density=True, alpha=0.4, color="firebrick", label="simulated")
+            ax.set_xlabel("Tajima's D per window")
+            ax.set_ylabel("Density")
+            ax.legend()
+            sim_td_density_path = args.out_dir / f"{args.prefix}tajima-d-density-vs-sim.png"
+            plt.savefig(sim_td_density_path)
+            plt.clf()
+
     summary_path = args.out_dir / f"{args.prefix}summary.txt"
     summary_path.write_text(
         "\n".join(
@@ -287,6 +356,7 @@ def main():
                 f"window_size={args.window_size}",
                 f"mutation_rate={args.mutation_rate}",
                 f"folded_sfs={args.folded}",
+                f"sim_tsv={args.sim}",
                 f"n_samples={n_samples}",
                 f"sequence_length_min={float(np.min(seq_lengths))}",
                 f"sequence_length_max={float(np.max(seq_lengths))}",
@@ -299,6 +369,8 @@ def main():
                 f"tajima_d_skyline_plot={td_skyline_path}",
                 f"tajima_d_trace_plot={td_trace_path}",
                 f"frequency_spectrum_plot={sfs_path}",
+                f"diversity_density_vs_sim_plot={sim_pi_density_path}",
+                f"tajima_d_density_vs_sim_plot={sim_td_density_path}",
             ]
         )
         + "\n"
@@ -313,6 +385,10 @@ def main():
     print(f"Wrote: {td_skyline_path}")
     print(f"Wrote: {td_trace_path}")
     print(f"Wrote: {sfs_path}")
+    if sim_pi_density_path is not None:
+        print(f"Wrote: {sim_pi_density_path}")
+    if sim_td_density_path is not None:
+        print(f"Wrote: {sim_td_density_path}")
     print(f"Wrote: {summary_path}")
 
 
