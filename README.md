@@ -1,155 +1,237 @@
-# Mutational Load Summary Script
+# ARG Tree Sequence Utilities and Validation Plotting
 
-`scripts/mutload_summary.py` generates an HTML report of derived mutational load per individual from a tree sequence and writes a BED of outlier windows when a window size is provided.
-`scripts/trim_samples.py` removes individuals over BED intervals or by name and writes a trimmed tree sequence.
-`scripts/trim_regions.py` removes genome intervals (all samples) from a tree sequence based on a BED file.
-`scripts/compare_trees_html.py` renders two specific trees from two tree sequences into a single HTML report.
-`scripts/trees_gallery_html.py` renders all trees from two tree sequences into a horizontally scrollable HTML gallery.
+Standalone scripts for post-processing, QC, and visualization of ARG tree sequences (`.ts`, `.trees`, `.tsz`).
 
-## Requirements
-
-- Python 3.8+
-- `tskit`
-- `numpy`
-- `matplotlib`
-- `tszip` (only required for `.tsz` inputs)
-
-Install via conda:
+## Install
 
 ```bash
 conda env create -f environment.yml
 conda activate argtest
 ```
 
-## Usage
+Core dependencies are in `environment.yml` (`numpy`, `matplotlib`, `tskit`, `tszip`, `msprime`).
 
-Basic:
+## Scripts
 
+### `scripts/mutload_summary.py`
+Builds an HTML summary of per-individual mutational load and writes outlier windows as BED when windowing is enabled.
+
+Inputs:
+- one tree sequence file
+
+Key outputs:
+- `results/<name>.html`
+- `results/<ts_stem>_outliers.bed` (if `--window-size` is used)
+- `logs/<name>.log`
+
+Example:
 ```bash
-python scripts/mutload_summary.py example_data/maize.tsz
+python scripts/mutload_summary.py example_data/maize.tsz --window-size 50000 --cutoff 0.25 --out mutload.html
 ```
 
+Main options:
+- `--window-size`
+- `--cutoff`
+- `--out`
+- `--suffix-to-strip`
 
-Compute per-window load (tiled barplots across the contig):
+### `scripts/trim_samples.py`
+Removes selected individuals either genome-wide (`--individuals`) or over BED intervals (`--remove`).
 
+Inputs:
+- one tree sequence file
+- optional BED(s) with per-individual intervals
+
+Key output:
+- trimmed tree sequence (`--out`, or `results/<ts_stem>_trimmed.tsz`)
+
+Example:
 ```bash
-python scripts/mutload_summary.py example_data/maize.tsz --window-size 50000 --out load_windows.html
+python scripts/trim_samples.py example_data/maize.tsz --individuals B73,Mo17 --out results/maize_trimmed.tsz
 ```
 
-Remove individuals from the treesequence only within specific regions (BEDs):
+Main options:
+- `--individuals`
+- `--remove`
+- `--out`
+- `--suffix-to-strip`
 
+### `scripts/trim_regions.py`
+Applies a shared accessibility-based mask across a directory of tree sequences by:
+1. inferring mutation map (`*.mut_rate.p`) from TS names,
+2. keeping windows with accessible bp >= `--cutoff-bp`,
+3. collapsing masked intervals and writing renamed output TS files.
+
+Inputs:
+- directory of tree sequences
+- inferred mutation-rate map file(s)
+
+Key outputs:
+- collapsed tree sequences in output directory
+- one summary log (`collapse_log.txt` by default)
+
+Example:
 ```bash
-python scripts/mutload_summary.py example_data/maize.tsz --window-size 1000000 --cutoff 0.5
-python scripts/trim_samples.py example_data/maize.tsz --remove results/maize_outliers.bed
+python scripts/trim_regions.py \
+  --ts-dir /path/to/trees \
+  --window-size 50000 \
+  --cutoff-bp 2500 \
+  --pattern "*.tsz"
 ```
 
-Remove specific individuals everywhere:
+Main options:
+- `--ts-dir`
+- `--window-size`
+- `--cutoff-bp`
+- `--out-dir`
+- `--pattern`
+- `--log`
 
+### `scripts/validation_plots_from_ts.py`
+Generates SINGER-style validation/diagnostic plots (excluding coalescence/Ne curves) directly from a set of TS replicates.
+
+Plots produced:
+- `mutational-load.png`
+- `mutational-load-trace.png`
+- `diversity-scatter.png`
+- `diversity-skyline.png`
+- `diversity-trace.png`
+- `tajima-d-scatter.png`
+- `tajima-d-skyline.png`
+- `tajima-d-trace.png`
+- `frequency-spectrum.png`
+- optional observed-vs-sim density plots (when `--sim` TSV is provided):
+  - `diversity-density-vs-sim.png`
+  - `tajima-d-density-vs-sim.png`
+- `summary.txt`
+
+Notes:
+- branch diversity is scaled by `--mutation-rate` for site-vs-branch comparison
+- trace plots are branch-only MCMC outcomes
+- `--sim` can read the simulation TSV from `scripts/coalescence_ne_plots_from_ts.py --sim` and compare observed vs simulated windowed `pi` and Tajima's D using overlapping semi-transparent density plots
+
+Example:
 ```bash
-python scripts/trim_samples.py example_data/maize.tsz --individuals B73,Mo17
+python scripts/validation_plots_from_ts.py \
+  --ts-dir ~/crud/collapsed \
+  --pattern "*.tsz" \
+  --window-size 100000 \
+  --mutation-rate 3.3e-8 \
+  --burnin-frac 0.5 \
+  --out-dir results/validation_plots
 ```
 
-Remove regions for all samples:
-
+Example with simulation comparison:
 ```bash
-python scripts/trim_regions.py example_data/maize.tsz --remove example_data/bad_regions.bed --simplify
+python scripts/validation_plots_from_ts.py \
+  --ts-dir ~/crud/collapsed \
+  --pattern "*.tsz" \
+  --window-size 100000 \
+  --mutation-rate 3.3e-8 \
+  --burnin-frac 0.5 \
+  --sim results/coalescence_ne_plots/sim-window-stats.tsv \
+  --out-dir results/validation_plots
 ```
 
-Compare two trees by index:
+Main options:
+- `--ts-dir`
+- `--pattern`
+- `--mutation-rate`
+- `--burnin-frac`
+- `--window-size`
+- `--folded`
+- `--sim`
+- `--out-dir`
+- `--prefix`
 
+### `scripts/coalescence_ne_plots_from_ts.py`
+Generates pair coalescence and effective population size plots from a set of TS replicates using explicit time bins.
+
+Plots produced:
+- `pair-coalescence-pdf.png`
+- `pair-coalescence-rates.png`
+- `effective-pop-size.png` (`Ne = 1 / (2 * coal_rate)`)
+- optional simulation summary table: `sim-window-stats.tsv` (when `--sim > 0`)
+- `summary.txt`
+
+Notes:
+- time bins come from `--time-bins-file` (explicit bin edges)
+- `--time-adjust` rescales plotted x-axis values by dividing time by a factor
+- `--year` adds a red dashed vertical marker to the Ne plot
+- optional `--sim X` mode converts the inferred piecewise-constant Ne trajectory into a one-deme Demes model and runs `X` coalescent simulations
+- simulations are `1 Mb`, use the same sample size as the observed TS, and use `--mu` for both mutation and recombination rates
+- simulated nucleotide diversity and Tajima's D are computed in `50 Kb` windows and written as a TSV
+
+Example:
 ```bash
-python scripts/compare_trees_html.py natefun.tsz 9 vanilla.tsz 9 --out tree_compare.html
+python scripts/coalescence_ne_plots_from_ts.py \
+  --ts-dir ~/crud/collapsed \
+  --pattern "*.tsz" \
+  --time-bins-file /path/to/time_bins.txt \
+  --burnin-frac 0.5 \
+  --time-adjust 6.19476 \
+  --year 534 \
+  --log-rates \
+  --out-dir results/coalescence_ne_plots
 ```
 
-Render full galleries (top and bottom rows):
-
+Example with simulations:
 ```bash
-python scripts/trees_gallery_html.py natefun.tsz vanilla.tsz --out trees_gallery.html
+python scripts/coalescence_ne_plots_from_ts.py \
+  --ts-dir ~/crud/collapsed \
+  --pattern "*.tsz" \
+  --time-bins-file /path/to/time_bins.txt \
+  --burnin-frac 0.5 \
+  --time-adjust 6.19476 \
+  --year 534 \
+  --sim 100 \
+  --mu 3.3e-8 \
+  --sim-outfile results/coalescence_ne_plots/sim-window-stats.tsv \
+  --out-dir results/coalescence_ne_plots \
+  --log-rates
 ```
 
-## Inputs
+Main options:
+- `--ts-dir`
+- `--pattern`
+- `--time-bins-file`
+- `--burnin-frac`
+- `--tail-cutoff`
+- `--time-adjust`
+- `--year`
+- `--sim`
+- `--mu`
+- `--sim-outfile`
+- `--log-rates`
+- `--out-dir`
+- `--prefix`
 
-- Tree sequence file: `.ts`, `.trees`, or `.tsz`.
-- Individual IDs are matched against `individual.metadata["id"]` with the suffix `_anchorwave` stripped by default.
+### `scripts/compare_trees_html.py`
+Renders one tree index from each of two tree sequences into a single HTML comparison.
 
-## Outputs
-
-- An HTML file with an embedded PNG plot.
-- Default output file is `results/mutational_load_summary.html`.
-
-## Notes
-
-- If `--window-size` is omitted, the report shows a single barplot of per-individual load.
-- If `--window-size` is provided, the report shows one barplot per window, tiled across the contig.
-- When `--window-size` is provided, a single BED file is emitted listing outliers per window
-  where an individual's load is greater than (1 + `cutoff`) × the window mean or less than
-  (1 - `cutoff`) × the window mean. The cutoff is a fraction of the mean for each window.
-  The BED includes columns: `chrom`, `start`, `end`, `outlier_ids`, `outlier_values`, `window_mean`.
-  Output is written to `results/` and the run log to `logs/`.
-- `trim_samples.py` accepts one or more BED files listing regions where individuals are removed from the tree sequence.
-  If the BED has a 4th column, it is used as the individual ID (comma-separated IDs supported); otherwise the filename stem is used.
-  Individuals are removed only within the listed regions.
-
-## Options
-
-`mutload_summary.py`:
-
-```text
-positional arguments:
-  ts                    Tree sequence file (.ts, .trees, or .tsz)
-
-options:
-  --window-size         Window size in bp
-  --cutoff              Outlier cutoff as a fraction of the window mean (default: 0.25)
-  --out                 Output HTML file (default: mutational_load_summary.html; written to results/)
-  --suffix-to-strip     Suffix removed from individual IDs (default: _anchorwave)
+Example:
+```bash
+python scripts/compare_trees_html.py a.tsz 9 b.tsz 9 --out tree_compare.html
 ```
 
-`trim_samples.py`:
+### `scripts/trees_gallery_html.py`
+Renders all trees from two tree sequences as a top/bottom-row scrollable HTML gallery.
 
-```text
-positional arguments:
-  ts                    Tree sequence file (.ts, .trees, or .tsz)
-
-options:
-  --individuals         Comma-separated individual IDs to remove across the entire sequence
-  --remove              BED file(s) of regions to remove per individual (comma-separated or repeated)
-  --out                 Output tree sequence path (.ts, .trees, or .tsz)
-  --suffix-to-strip     Suffix removed from individual IDs (default: _anchorwave)
+Example:
+```bash
+python scripts/trees_gallery_html.py a.tsz b.tsz --out trees_gallery.html
 ```
 
-`trim_regions.py`:
+## Shared module
 
-```text
-positional arguments:
-  ts                    Tree sequence file (.ts, .trees, or .tsz)
+`scripts/argtest_common.py` contains shared tree-sequence helpers used by multiple scripts:
+- TS I/O (`load_ts`, `dump_ts`)
+- mutational load/stat helpers
+- trimming and masking helpers
 
-options:
-  --remove              BED file(s) of regions to remove (comma-separated or repeated)
-  --simplify            Simplify output while preserving original coordinates
-  --out                 Output tree sequence path (.ts, .trees, or .tsz)
-```
+Use this module for internal script imports.
 
-`compare_trees_html.py`:
+## Repository notes
 
-```text
-positional arguments:
-  ts_a                  First tree sequence file (.ts, .trees, or .tsz)
-  index_a               Tree index for the first file (0-based)
-  ts_b                  Second tree sequence file (.ts, .trees, or .tsz)
-  index_b               Tree index for the second file (0-based)
-
-options:
-  --out                 Output HTML file (default: tree_compare.html)
-```
-
-`trees_gallery_html.py`:
-
-```text
-positional arguments:
-  ts_top                Top tree sequence file (.ts, .trees, or .tsz)
-  ts_bottom             Bottom tree sequence file (.ts, .trees, or .tsz)
-
-options:
-  --out                 Output HTML file (default: trees_gallery.html)
-```
+- Generated `logs/` and `results/` are git-ignored.
+- `.DS_Store` is git-ignored.
