@@ -72,6 +72,27 @@ def parse_args():
             "Default: <out-dir>/<prefix>sim-window-stats.tsv"
         ),
     )
+    p.add_argument(
+        "--sim-sfs-outfile",
+        type=Path,
+        default=None,
+        help=(
+            "Output TSV path for simulated site frequency spectra across simulations. "
+            "Default: <out-dir>/<prefix>sim-sfs.tsv"
+        ),
+    )
+    p.add_argument(
+        "--sim-length",
+        type=float,
+        default=1_000_000.0,
+        help="Sequence length (bp) for each optional simulation (default: 1000000).",
+    )
+    p.add_argument(
+        "--sim-window-size",
+        type=float,
+        default=50_000.0,
+        help="Window size (bp) for simulated diversity/Tajima's D TSV (default: 50000).",
+    )
     p.add_argument("--prefix", default="")
     return p.parse_args()
 
@@ -169,6 +190,7 @@ def simulate_window_stats_from_ne(
     n_sims: int,
     mu: float,
     out_path: Path,
+    sfs_out_path: Path,
     sequence_length: float = 1_000_000.0,
     window_size: float = 50_000.0,
 ):
@@ -180,6 +202,7 @@ def simulate_window_stats_from_ne(
         windows[-1] = sequence_length
 
     lines = ["sim\twindow_index\tstart\tend\tdiversity\ttajima_d"]
+    sfs_lines = ["sim\tmode\tbin\tvalue"]
     for sim_idx in range(n_sims):
         seed_base = 10_000 + sim_idx * 2
         ts = msprime.sim_ancestry(
@@ -192,6 +215,8 @@ def simulate_window_stats_from_ne(
         mts = msprime.sim_mutations(ts, rate=mu, random_seed=seed_base + 1, keep=False)
         pi = mts.diversity(mode="site", windows=windows)
         td = mts.Tajimas_D(mode="site", windows=windows)
+        afs_pol = mts.allele_frequency_spectrum(mode="site", polarised=True)
+        afs_fold = mts.allele_frequency_spectrum(mode="site", polarised=False)
         for w in range(len(windows) - 1):
             lines.append(
                 "\t".join(
@@ -205,8 +230,13 @@ def simulate_window_stats_from_ne(
                     ]
                 )
             )
+        for i, val in enumerate(afs_pol):
+            sfs_lines.append(f"{sim_idx}\tpolarised\t{i}\t{float(val):.10g}")
+        for i, val in enumerate(afs_fold):
+            sfs_lines.append(f"{sim_idx}\tfolded\t{i}\t{float(val):.10g}")
     out_path.write_text("\n".join(lines) + "\n")
-    return out_path
+    sfs_out_path.write_text("\n".join(sfs_lines) + "\n")
+    return out_path, sfs_out_path
 
 
 def main():
@@ -217,6 +247,10 @@ def main():
         raise ValueError("--sim must be >= 0")
     if args.sim > 0 and (args.mu is None or args.mu <= 0):
         raise ValueError("--mu must be > 0 when --sim > 0")
+    if args.sim_length <= 0:
+        raise ValueError("--sim-length must be > 0")
+    if args.sim_window_size <= 0:
+        raise ValueError("--sim-window-size must be > 0")
     ts_files = find_tree_files(args.ts_dir, args.pattern)
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -301,6 +335,7 @@ def main():
     plt.clf()
 
     sim_out_path = None
+    sim_sfs_out_path = None
     sim_graph = None
     if args.sim > 0:
         mean_rates_finite = safe_nanmean(rate_vals_full[keep_post][:, finite_mask], axis=0)
@@ -310,12 +345,16 @@ def main():
         ne_finite = fill_ne_trajectory(ne_finite)
         sim_graph = build_demes_graph_from_ne(time_windows, ne_finite)
         sim_out_path = args.sim_outfile or (args.out_dir / f"{args.prefix}sim-window-stats.tsv")
+        sim_sfs_out_path = args.sim_sfs_outfile or (args.out_dir / f"{args.prefix}sim-sfs.tsv")
         simulate_window_stats_from_ne(
             sim_graph,
             n_samples=n_samples,
             n_sims=args.sim,
             mu=float(args.mu),
             out_path=sim_out_path,
+            sfs_out_path=sim_sfs_out_path,
+            sequence_length=float(args.sim_length),
+            window_size=float(args.sim_window_size),
         )
 
     summary_path = args.out_dir / f"{args.prefix}summary.txt"
@@ -334,6 +373,8 @@ def main():
                 f"tail_cutoff={args.tail_cutoff}",
                 f"simulations={args.sim}",
                 f"simulation_mu={args.mu}",
+                f"simulation_length_bp={args.sim_length}",
+                f"simulation_window_size_bp={args.sim_window_size}",
                 f"n_samples={n_samples}",
                 f"sequence_length_min={float(np.min(seq_lengths))}",
                 f"sequence_length_max={float(np.max(seq_lengths))}",
@@ -341,6 +382,7 @@ def main():
                 f"pair_coalescence_rates_plot={rate_path}",
                 f"effective_pop_size_plot={ne_path}",
                 f"simulation_window_stats_tsv={sim_out_path}",
+                f"simulation_sfs_tsv={sim_sfs_out_path}",
             ]
         )
         + "\n"
@@ -351,6 +393,8 @@ def main():
     print(f"Wrote: {ne_path}")
     if sim_out_path is not None:
         print(f"Wrote: {sim_out_path}")
+    if sim_sfs_out_path is not None:
+        print(f"Wrote: {sim_sfs_out_path}")
     print(f"Wrote: {summary_path}")
 
 

@@ -68,6 +68,15 @@ def parse_args():
         ),
     )
     p.add_argument(
+        "--sim-sfs",
+        type=Path,
+        default=None,
+        help=(
+            "Optional TSV from scripts/coalescence_ne_plots_from_ts.py simulated SFS output "
+            "(sim-sfs.tsv) for observed-vs-simulated SFS plot."
+        ),
+    )
+    p.add_argument(
         "--window-size",
         type=float,
         default=5.0e4,
@@ -133,6 +142,30 @@ def load_sim_window_stats(path: Path) -> tuple[np.ndarray, np.ndarray]:
             except Exception:
                 sim_td.append(np.nan)
     return np.array(sim_pi, dtype=float), np.array(sim_td, dtype=float)
+
+
+def load_sim_sfs(path: Path, *, folded: bool) -> np.ndarray:
+    if not path.exists():
+        raise FileNotFoundError(f"Simulation SFS TSV not found: {path}")
+    mode_keep = "folded" if folded else "polarised"
+    rows = []
+    with open(path, "r", newline="") as fh:
+        reader = csv.DictReader(fh, delimiter="\t")
+        required = {"sim", "mode", "bin", "value"}
+        if reader.fieldnames is None or not required.issubset(set(reader.fieldnames)):
+            raise ValueError(f"Simulation SFS TSV {path} missing required columns {sorted(required)}")
+        for row in reader:
+            if row["mode"] != mode_keep:
+                continue
+            rows.append((int(row["sim"]), int(row["bin"]), float(row["value"])))
+    if not rows:
+        raise ValueError(f"No rows for mode='{mode_keep}' found in {path}")
+    n_sim = max(r[0] for r in rows) + 1
+    n_bin = max(r[1] for r in rows) + 1
+    out = np.full((n_bin, n_sim), np.nan, dtype=float)
+    for sim_idx, bin_idx, val in rows:
+        out[bin_idx, sim_idx] = val
+    return out
 
 
 def main():
@@ -238,8 +271,8 @@ def main():
     ax.scatter(mean_site_div, mean_branch_div, c="firebrick", s=8)
     x = float(np.nanmean(mean_site_div))
     ax.axline((x, x), slope=1.0, color="black", linestyle="dashed")
-    ax.set_xlabel("Site diversity per window")
-    ax.set_ylabel("Expected site diversity per window")
+    ax.set_xlabel("Observed diversity per window")
+    ax.set_ylabel("Expected diversity per window (simulated from ARG)")
     div_scatter_path = args.out_dir / f"{args.prefix}diversity-scatter.png"
     plt.savefig(div_scatter_path)
     plt.clf()
@@ -269,8 +302,8 @@ def main():
     ax.scatter(mean_site_td, mean_branch_td, c="firebrick", s=8)
     x = float(np.nanmean(mean_site_td))
     ax.axline((x, x), slope=1.0, color="black", linestyle="dashed")
-    ax.set_xlabel("Site Tajima's D per window")
-    ax.set_ylabel("Branch Tajima's D per window")
+    ax.set_xlabel("Observed Tajima's D per window")
+    ax.set_ylabel("Expected Tajima's D per window (simulated from ARG)")
     td_scatter_path = args.out_dir / f"{args.prefix}tajima-d-scatter.png"
     plt.savefig(td_scatter_path)
     plt.clf()
@@ -344,6 +377,25 @@ def main():
             plt.savefig(sim_td_density_path)
             plt.clf()
 
+    sim_sfs_plot_path = None
+    if args.sim_sfs is not None:
+        sim_sfs_vals = load_sim_sfs(args.sim_sfs, folded=args.folded)  # [bin, sim]
+        sim_mean_sfs = safe_nanmean(sim_sfs_vals, axis=-1)
+        sim_q_sfs = safe_nanquantile(sim_sfs_vals, [0.025, 0.975], axis=-1)
+        n = min(mean_site_afs.size, sim_mean_sfs.size)
+        freq = np.arange(1, n)
+        fig, ax = plt.subplots(1, 1, figsize=(8, 4), constrained_layout=True)
+        ax.fill_between(freq, sim_q_sfs[0, 1:n], sim_q_sfs[1, 1:n], color="steelblue", alpha=0.15)
+        ax.scatter(freq, sim_mean_sfs[1:n], c="steelblue", label="simulated", s=8)
+        ax.scatter(freq, mean_site_afs[1:n], c="black", label="observed (site)", s=8)
+        ax.set_xlabel("Minor allele frequency" if args.folded else "Derived allele frequency")
+        ax.set_ylabel("# of variants / base")
+        ax.set_yscale("log")
+        ax.legend()
+        sim_sfs_plot_path = args.out_dir / f"{args.prefix}frequency-spectrum-vs-sim.png"
+        plt.savefig(sim_sfs_plot_path)
+        plt.clf()
+
     summary_path = args.out_dir / f"{args.prefix}summary.txt"
     summary_path.write_text(
         "\n".join(
@@ -357,6 +409,7 @@ def main():
                 f"mutation_rate={args.mutation_rate}",
                 f"folded_sfs={args.folded}",
                 f"sim_tsv={args.sim}",
+                f"sim_sfs_tsv={args.sim_sfs}",
                 f"n_samples={n_samples}",
                 f"sequence_length_min={float(np.min(seq_lengths))}",
                 f"sequence_length_max={float(np.max(seq_lengths))}",
@@ -369,6 +422,7 @@ def main():
                 f"tajima_d_skyline_plot={td_skyline_path}",
                 f"tajima_d_trace_plot={td_trace_path}",
                 f"frequency_spectrum_plot={sfs_path}",
+                f"frequency_spectrum_vs_sim_plot={sim_sfs_plot_path}",
                 f"diversity_density_vs_sim_plot={sim_pi_density_path}",
                 f"tajima_d_density_vs_sim_plot={sim_td_density_path}",
             ]
@@ -385,6 +439,8 @@ def main():
     print(f"Wrote: {td_skyline_path}")
     print(f"Wrote: {td_trace_path}")
     print(f"Wrote: {sfs_path}")
+    if sim_sfs_plot_path is not None:
+        print(f"Wrote: {sim_sfs_plot_path}")
     if sim_pi_density_path is not None:
         print(f"Wrote: {sim_pi_density_path}")
     if sim_td_density_path is not None:
