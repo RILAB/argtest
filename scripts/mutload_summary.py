@@ -84,7 +84,13 @@ def parse_args():
         description="Summarize mutational load per individual from a tree sequence",
     )
     p.add_argument("ts", help="Tree sequence file (.ts, .trees, or .tsz)")
-    p.add_argument("--window-size", type=float, help="Window size in bp")
+    group = p.add_mutually_exclusive_group()
+    group.add_argument("--window-size", type=float, help="Window size in bp")
+    group.add_argument(
+        "--snp-window",
+        type=int,
+        help="Window size as a fixed number of variants",
+    )
     p.add_argument(
         "--cutoff",
         type=float,
@@ -94,6 +100,29 @@ def parse_args():
     p.add_argument("--out", default="mutational_load_summary.html")
     p.add_argument("--suffix-to-strip", default="_anchorwave")
     return p.parse_args()
+
+
+def build_bp_windows(ts, window_size: float) -> np.ndarray:
+    if window_size <= 0:
+        raise ValueError("--window-size must be > 0")
+    L = float(ts.sequence_length)
+    windows = np.arange(0, L + window_size, window_size, dtype=float)
+    if windows[-1] > L:
+        windows[-1] = L
+    return windows
+
+
+def build_snp_windows(ts, snp_window: int) -> np.ndarray:
+    if snp_window <= 0:
+        raise ValueError("--snp-window must be > 0")
+    positions = np.asarray(ts.sites_position, dtype=float)
+    L = float(ts.sequence_length)
+    if positions.size == 0:
+        return np.array([0.0, L], dtype=float)
+    # Use the position of each (N+1)th variant as the next window edge so each
+    # preceding window contains exactly N variants when site positions are unique.
+    edges = positions[snp_window::snp_window]
+    return np.concatenate((np.array([0.0]), edges, np.array([L])))
 
 
 class Tee:
@@ -138,12 +167,10 @@ def main():
             ts = load_ts(ts_path)
 
             windows = None
-            if args.window_size:
-                # Build explicit window edges covering the full sequence.
-                L = float(ts.sequence_length)
-                windows = np.arange(0, L + args.window_size, args.window_size, dtype=float)
-                if windows[-1] > L:
-                    windows[-1] = L
+            if args.window_size is not None:
+                windows = build_bp_windows(ts, args.window_size)
+            elif args.snp_window is not None:
+                windows = build_snp_windows(ts, args.snp_window)
 
             load = mutational_load(ts, windows=windows)
             names = sample_names(ts, suffix_to_strip=args.suffix_to_strip)
@@ -188,8 +215,11 @@ img {{ max-width: 100%; height: auto; }}
 <img src="{img_url}" alt="Mutational load plot">
 """
 
-            if windows is not None:
+            if windows is not None and args.window_size is not None:
                 html += f"<div class=\"meta\">Window size: {int(args.window_size)} bp</div>"
+                html += f"<div class=\"meta\">Outlier cutoff: {args.cutoff:.3f} of window mean</div>"
+            elif windows is not None and args.snp_window is not None:
+                html += f"<div class=\"meta\">Window size: {int(args.snp_window)} variants</div>"
                 html += f"<div class=\"meta\">Outlier cutoff: {args.cutoff:.3f} of window mean</div>"
 
             html += "</html>\n"

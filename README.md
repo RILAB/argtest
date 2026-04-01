@@ -21,7 +21,7 @@ Inputs:
 
 Key outputs:
 - `results/<name>.html`
-- `results/<ts_stem>_outliers.bed` (if `--window-size` is used)
+- `results/<ts_stem>_outliers.bed` (if `--window-size` or `--snp-window` is used)
 - `logs/<name>.log`
 
 Example:
@@ -29,8 +29,14 @@ Example:
 python scripts/mutload_summary.py example_data/maize.tsz --window-size 50000 --cutoff 0.25 --out mutload.html
 ```
 
+Example with fixed-variant windows:
+```bash
+python scripts/mutload_summary.py example_data/maize.tsz --snp-window 500 --cutoff 0.25 --out mutload_snp.html
+```
+
 Main options:
 - `--window-size`
+- `--snp-window`
 - `--cutoff`
 - `--out`
 - `--suffix-to-strip`

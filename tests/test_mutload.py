@@ -79,6 +79,24 @@ def test_windowing_sanity():
     assert load[1, 1] == 1
 
 
+def test_build_snp_windows_single_variant_per_window():
+    ts = make_simple_ts()
+    windows = ms.build_snp_windows(ts, 1)
+    assert windows.tolist() == [0.0, 7.0, 10.0]
+
+
+def test_build_snp_windows_groups_variants():
+    ts = make_simple_ts()
+    windows = ms.build_snp_windows(ts, 2)
+    assert windows.tolist() == [0.0, 10.0]
+
+
+def test_build_snp_windows_no_mutations():
+    ts = make_ts_no_mutations()
+    windows = ms.build_snp_windows(ts, 5)
+    assert windows.tolist() == [0.0, 10.0]
+
+
 def test_outlier_mask_logic():
     load = np.array([[12, 5, 5], [2, 2, 2]], dtype=float)
     means = load.mean(axis=1)
@@ -159,6 +177,7 @@ def test_outputs_written(tmp_path, monkeypatch):
     monkeypatch.setattr(ms, "parse_args", lambda: type("A", (), {
         "ts": str(ts_path),
         "window_size": 5.0,
+        "snp_window": None,
         "cutoff": 0.5,
         "out": "out.html",
         "suffix_to_strip": "_anchorwave",
@@ -180,6 +199,7 @@ def test_no_remove_no_trimmed(tmp_path, monkeypatch):
     monkeypatch.setattr(ms, "parse_args", lambda: type("A", (), {
         "ts": str(ts_path),
         "window_size": 5.0,
+        "snp_window": None,
         "cutoff": 0.5,
         "out": "out.html",
         "suffix_to_strip": "_anchorwave",
@@ -198,6 +218,7 @@ def test_no_mutations_outliers_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(ms, "parse_args", lambda: type("A", (), {
         "ts": str(ts_path),
         "window_size": 5.0,
+        "snp_window": None,
         "cutoff": 0.5,
         "out": "nomut.html",
         "suffix_to_strip": "_anchorwave",
@@ -308,6 +329,7 @@ def test_output_overwrite(tmp_path, monkeypatch):
     monkeypatch.setattr(ms, "parse_args", lambda: type("A", (), {
         "ts": str(ts_path),
         "window_size": 5.0,
+        "snp_window": None,
         "cutoff": 0.5,
         "out": "overwrite.html",
         "suffix_to_strip": "_anchorwave",
@@ -319,3 +341,25 @@ def test_output_overwrite(tmp_path, monkeypatch):
     ms.main()
     second = out.read_text()
     assert first == second
+
+
+def test_outputs_written_with_snp_windows(tmp_path, monkeypatch):
+    ts = make_simple_ts()
+    ts_path = tmp_path / "test.trees"
+    ts.dump(ts_path)
+    cwd = Path(__file__).resolve().parents[1]
+    os.chdir(cwd)
+    monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
+    monkeypatch.setattr(ms, "load_ts", lambda _: ts)
+    monkeypatch.setattr(ms, "parse_args", lambda: type("A", (), {
+        "ts": str(ts_path),
+        "window_size": None,
+        "snp_window": 1,
+        "cutoff": 0.5,
+        "out": "snp_out.html",
+        "suffix_to_strip": "_anchorwave",
+    })())
+    ms.main()
+
+    assert (cwd / "results" / "snp_out.html").exists()
+    assert (cwd / "results" / "test_outliers.bed").exists()
