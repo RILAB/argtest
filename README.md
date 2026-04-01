@@ -14,7 +14,7 @@ Core dependencies are in `environment.yml` (`numpy`, `matplotlib`, `tskit`, `tsz
 ## Scripts
 
 ### `scripts/mutload_summary.py`
-Builds an HTML summary of per-individual mutational load and writes outlier windows as BED when windowing is enabled.
+Builds an HTML summary of per-individual mutational load and writes outlier windows as BED when windowing is enabled. In windowed plots, individuals flagged as outliers in a given window are shown with red bars.
 
 Inputs:
 - one tree sequence file
