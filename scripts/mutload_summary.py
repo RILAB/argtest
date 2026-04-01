@@ -137,7 +137,7 @@ def parse_args():
         "--cutoff",
         type=float,
         default=0.25,
-        help="Outlier cutoff as a fraction of the window mean (default: 0.25)",
+        help="Outlier cutoff as a fraction of the window median (default: 0.25)",
     )
     p.add_argument("--out", default="mutational_load_summary.html")
     p.add_argument("--suffix-to-strip", default="_anchorwave")
@@ -223,10 +223,10 @@ def main():
             if windows is None:
                 fig = plot_single(load, unique_names, "Mutational load")
             else:
-                window_means = load.mean(axis=1)
-                valid = window_means > 0
-                high = (1 + args.cutoff) * window_means
-                low = (1 - args.cutoff) * window_means
+                window_medians = np.median(load, axis=1)
+                valid = window_medians > 0
+                high = (1 + args.cutoff) * window_medians
+                low = (1 - args.cutoff) * window_medians
                 # Identify per-individual outliers in each window.
                 mask = (load > high[:, None]) | (load < low[:, None])
                 mask &= valid[:, None]
@@ -268,10 +268,10 @@ th, td {{ border: 1px solid #cccccc; padding: 6px 10px; text-align: left; }}
 
             if windows is not None and args.window_size is not None:
                 html += f"<div class=\"meta\">Window size: {int(args.window_size)} bp</div>"
-                html += f"<div class=\"meta\">Outlier cutoff: {args.cutoff:.3f} of window mean</div>"
+                html += f"<div class=\"meta\">Outlier cutoff: {args.cutoff:.3f} of window median</div>"
             elif windows is not None and args.snp_window is not None:
                 html += f"<div class=\"meta\">Window size: {int(args.snp_window)} variants</div>"
-                html += f"<div class=\"meta\">Outlier cutoff: {args.cutoff:.3f} of window mean</div>"
+                html += f"<div class=\"meta\">Outlier cutoff: {args.cutoff:.3f} of window median</div>"
 
             html += "</html>\n"
             out.write_text(html)
@@ -291,7 +291,7 @@ th, td {{ border: 1px solid #cccccc; padding: 6px 10px; text-align: left; }}
                     start = int(windows[w])
                     end = int(windows[w + 1])
                     lines.append(
-                        f"{ts_path.stem}\t{start}\t{end}\t{','.join(outlier_names)}\t{','.join(outlier_vals)}\t{window_means[w]:.3f}"
+                        f"{ts_path.stem}\t{start}\t{end}\t{','.join(outlier_names)}\t{','.join(outlier_vals)}\t{window_medians[w]:.3f}"
                     )
                 out_path.write_text("\n".join(lines) + ("\n" if lines else ""))
         finally:

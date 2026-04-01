@@ -120,13 +120,24 @@ def test_build_snp_windows_no_mutations():
 
 def test_outlier_mask_logic():
     load = np.array([[12, 5, 5], [2, 2, 2]], dtype=float)
-    means = load.mean(axis=1)
+    medians = np.median(load, axis=1)
     cutoff = 0.5
-    high = (1 + cutoff) * means
-    low = (1 - cutoff) * means
+    high = (1 + cutoff) * medians
+    low = (1 - cutoff) * medians
     mask = (load > high[:, None]) | (load < low[:, None])
     assert mask[0].tolist() == [True, False, False]
     assert mask[1].tolist() == [False, False, False]
+
+
+def test_outlier_uses_window_median_not_mean():
+    load = np.array([[8, 10, 100]], dtype=float)
+    cutoff = 0.25
+    medians = np.median(load, axis=1)
+    median_mask = ((load > (1 + cutoff) * medians[:, None]) | (load < (1 - cutoff) * medians[:, None]))
+    means = load.mean(axis=1)
+    mean_mask = ((load > (1 + cutoff) * means[:, None]) | (load < (1 - cutoff) * means[:, None]))
+    assert median_mask[0].tolist() == [True, False, True]
+    assert mean_mask[0].tolist() == [False, False, True]
 
 
 def test_outlier_hist_limits_tick_labels(monkeypatch):
@@ -235,6 +246,7 @@ def test_outputs_written(tmp_path, monkeypatch):
     assert (cwd / "logs" / "out.log").exists()
     html = (cwd / "results" / "out.html").read_text()
     assert "2 total windows with at least one outlier out of 2 total windows" in html
+    assert "Outlier cutoff: 0.500 of window median" in html
     assert "<td>A</td><td>2</td>" in html
     assert "<td>B</td><td>2</td>" in html
 
