@@ -39,7 +39,41 @@ def plot_single(load, names, title):
     return fig
 
 
-def plot_windows(load, names, windows):
+def lineage_label(name: str) -> str:
+    # Use the leading token as the lineage label when names encode subgroups.
+    for sep in ("_", "-", "."):
+        if sep in name:
+            head = name.split(sep, 1)[0].strip()
+            if head:
+                return head
+    return name
+
+
+def summarize_lineage_outliers(names, outlier_counts):
+    # Sum outlier windows across individuals sharing the same lineage token.
+    summary = {}
+    for name, count in zip(names, outlier_counts):
+        lineage = lineage_label(name)
+        summary[lineage] = summary.get(lineage, 0) + int(count)
+    return sorted(summary.items(), key=lambda item: (-item[1], item[0]))
+
+
+def lineage_outlier_table_html(names, outlier_counts):
+    rows = summarize_lineage_outliers(names, outlier_counts)
+    body = "\n".join(
+        f"<tr><td>{lineage}</td><td>{count}</td></tr>"
+        for lineage, count in rows
+    )
+    return (
+        "<h2>Outlier windows by lineage</h2>\n"
+        "<table>\n"
+        "<thead><tr><th>Lineage</th><th>Outlier windows</th></tr></thead>\n"
+        f"<tbody>\n{body}\n</tbody>\n"
+        "</table>\n"
+    )
+
+
+def plot_windows(load, names, windows, outlier_mask=None):
     # Grid of per-window bar charts with shared y-scale.
     nwin = load.shape[0]
     ncols = 4
@@ -51,7 +85,10 @@ def plot_windows(load, names, windows):
     for i in range(nwin):
         r, c = divmod(i, ncols)
         ax = axes[r][c]
-        ax.bar(names, load[i], color="#777777")
+        colors = ["#777777"] * len(names)
+        if outlier_mask is not None:
+            colors = ["#d62728" if is_outlier else "#777777" for is_outlier in outlier_mask[i]]
+        ax.bar(names, load[i], color=colors)
         ax.set_ylim(0, ytop)
         left = int(windows[i])
         right = int(windows[i + 1])
@@ -182,10 +219,10 @@ def main():
             load, unique_names = aggregate_by_individual(load, names)
 
             outlier_counts = None
+            mask = None
             if windows is None:
                 fig = plot_single(load, unique_names, "Mutational load")
             else:
-                fig = plot_windows(load, unique_names, windows)
                 window_means = load.mean(axis=1)
                 valid = window_means > 0
                 high = (1 + args.cutoff) * window_means
@@ -194,9 +231,11 @@ def main():
                 mask = (load > high[:, None]) | (load < low[:, None])
                 mask &= valid[:, None]
                 outlier_counts = mask.sum(axis=0).astype(int).tolist()
+                fig = plot_windows(load, unique_names, windows, outlier_mask=mask)
 
             img_url = fig_to_data_url(fig)
             hist_html = ""
+            lineage_html = ""
             if outlier_counts is not None:
                 outlier_window_count = int(mask.any(axis=1).sum())
                 total_window_count = int(load.shape[0])
@@ -207,6 +246,7 @@ def main():
                     f"<div class=\"meta\">{outlier_window_count} total windows with at least one outlier out of {total_window_count} total windows</div>\n"
                     f"<img src=\"{hist_url}\" alt=\"Outlier window counts histogram\">\n"
                 )
+                lineage_html = lineage_outlier_table_html(unique_names, outlier_counts)
             html = f"""<!doctype html>
 <html lang="en">
 <meta charset="utf-8">
@@ -216,9 +256,12 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
 h1 {{ font-size: 20px; }}
 .meta {{ color: #444; font-size: 13px; margin-bottom: 16px; }}
 img {{ max-width: 100%; height: auto; }}
+table {{ border-collapse: collapse; margin-bottom: 20px; }}
+th, td {{ border: 1px solid #cccccc; padding: 6px 10px; text-align: left; }}
 </style>
 <h1>Mutational load summary</h1>
 {hist_html}
+{lineage_html}
 <div class="meta">Input: {ts_path.name} | Samples: {ts.num_samples} | Individuals: {len(unique_names)}</div>
 <img src="{img_url}" alt="Mutational load plot">
 """

@@ -65,6 +65,27 @@ def make_ts_many_individuals(n=100, length=10):
     return tables.tree_sequence()
 
 
+def make_lineage_ts():
+    tables = tskit.TableCollection(sequence_length=10)
+    tables.individuals.metadata_schema = tskit.MetadataSchema.permissive_json()
+    pop = tables.populations.add_row()
+    names = ["L1_A", "L1_B", "L2_A"]
+    inds = [tables.individuals.add_row(metadata={"id": name}) for name in names]
+    samples = [
+        tables.nodes.add_row(flags=tskit.NODE_IS_SAMPLE, time=0, individual=inds[i], population=pop)
+        for i in range(len(inds))
+    ]
+    anc = tables.nodes.add_row(time=1, population=pop)
+    for s in samples:
+        tables.edges.add_row(left=0, right=10, parent=anc, child=s)
+    s1 = tables.sites.add_row(position=1, ancestral_state="0")
+    s7 = tables.sites.add_row(position=7, ancestral_state="0")
+    tables.mutations.add_row(site=s1, node=samples[0], derived_state="1")
+    tables.mutations.add_row(site=s7, node=samples[1], derived_state="1")
+    tables.sort()
+    return tables.tree_sequence()
+
+
 def test_windowing_sanity():
     ts = make_simple_ts()
     windows = np.array([0, 5, 10], dtype=float)
@@ -115,6 +136,22 @@ def test_outlier_hist_limits_tick_labels(monkeypatch):
     assert len(ticks) <= 5
     assert ticks[0] == 0
     assert ticks[-1] == 12
+
+
+def test_summarize_lineage_outliers_groups_prefixes():
+    rows = ms.summarize_lineage_outliers(["L1_A", "L1_B", "L2_A"], [2, 1, 4])
+    assert rows == [("L2", 4), ("L1", 3)]
+
+
+def test_plot_windows_marks_outliers_red(monkeypatch):
+    monkeypatch.setattr(ms, "plt", __import__("matplotlib.pyplot", fromlist=["pyplot"]))
+    load = np.array([[3.0, 1.0], [1.0, 2.0]])
+    mask = np.array([[True, False], [False, True]])
+    fig = ms.plot_windows(load, ["A", "B"], np.array([0.0, 5.0, 10.0]), outlier_mask=mask)
+    facecolors = fig.axes[0].patches[0].get_facecolor(), fig.axes[0].patches[1].get_facecolor()
+    red = (0.8392156862745098, 0.15294117647058825, 0.1568627450980392, 1.0)
+    gray = (0.4666666666666667, 0.4666666666666667, 0.4666666666666667, 1.0)
+    assert facecolors == (red, gray)
 
 
 def test_remove_bed_parsing(tmp_path):
@@ -198,6 +235,31 @@ def test_outputs_written(tmp_path, monkeypatch):
     assert (cwd / "logs" / "out.log").exists()
     html = (cwd / "results" / "out.html").read_text()
     assert "2 total windows with at least one outlier out of 2 total windows" in html
+    assert "<td>A</td><td>2</td>" in html
+    assert "<td>B</td><td>2</td>" in html
+
+
+def test_outputs_written_with_lineage_table(tmp_path, monkeypatch):
+    ts = make_lineage_ts()
+    ts_path = tmp_path / "lineage.trees"
+    ts.dump(ts_path)
+    cwd = Path(__file__).resolve().parents[1]
+    os.chdir(cwd)
+    monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
+    monkeypatch.setattr(ms, "load_ts", lambda _: ts)
+    monkeypatch.setattr(ms, "parse_args", lambda: type("A", (), {
+        "ts": str(ts_path),
+        "window_size": 5.0,
+        "snp_window": None,
+        "cutoff": 1.5,
+        "out": "lineage.html",
+        "suffix_to_strip": "_anchorwave",
+    })())
+    ms.main()
+    html = (cwd / "results" / "lineage.html").read_text()
+    assert "Outlier windows by lineage" in html
+    assert "<td>L1</td><td>2</td>" in html
+    assert "<td>L2</td><td>0</td>" in html
 
 
 def test_no_remove_no_trimmed(tmp_path, monkeypatch):
