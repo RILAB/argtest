@@ -108,6 +108,15 @@ def test_outlier_mask_logic():
     assert mask[1].tolist() == [False, False, False]
 
 
+def test_outlier_hist_limits_tick_labels(monkeypatch):
+    monkeypatch.setattr(ms, "plt", __import__("matplotlib.pyplot", fromlist=["pyplot"]))
+    fig = ms.plot_outlier_hist(list(range(12)))
+    ticks = fig.axes[0].get_xticks().tolist()
+    assert len(ticks) <= 5
+    assert ticks[0] == 0
+    assert ticks[-1] == 12
+
+
 def test_remove_bed_parsing(tmp_path):
     bed = tmp_path / "x.bed"
     bed.write_text("chr1\t1\t3\tA,B\nchr1\t5\t6\tC\n")
@@ -187,6 +196,8 @@ def test_outputs_written(tmp_path, monkeypatch):
     assert (cwd / "results" / "out.html").exists()
     assert (cwd / "results" / "test_outliers.bed").exists()
     assert (cwd / "logs" / "out.log").exists()
+    html = (cwd / "results" / "out.html").read_text()
+    assert "2 total windows with at least one outlier out of 2 total windows" in html
 
 
 def test_no_remove_no_trimmed(tmp_path, monkeypatch):
@@ -341,6 +352,13 @@ def test_output_overwrite(tmp_path, monkeypatch):
     ms.main()
     second = out.read_text()
     assert first == second
+
+
+def test_fig_to_data_url_uses_svg(monkeypatch):
+    monkeypatch.setattr(ms, "plt", __import__("matplotlib.pyplot", fromlist=["pyplot"]))
+    fig = ms.plot_outlier_hist([0, 1, 2])
+    url = ms.fig_to_data_url(fig)
+    assert url.startswith("data:image/svg+xml;base64,")
 
 
 def test_outputs_written_with_snp_windows(tmp_path, monkeypatch):

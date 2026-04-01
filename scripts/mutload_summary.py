@@ -19,13 +19,13 @@ from argtest_common import (
 
 
 def fig_to_data_url(fig) -> str:
-    # Encode a matplotlib figure as an inline PNG data URL.
+    # Encode a matplotlib figure as an inline SVG data URL so plots stay sharp.
     buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=160, bbox_inches="tight")
+    fig.savefig(buf, format="svg", bbox_inches="tight")
     plt.close(fig)
     buf.seek(0)
-    b64 = base64.b64encode(buf.read()).decode("ascii")
-    return f"data:image/png;base64,{b64}"
+    svg_b64 = base64.b64encode(buf.read()).decode("ascii")
+    return f"data:image/svg+xml;base64,{svg_b64}"
 
 
 def plot_single(load, names, title):
@@ -74,7 +74,12 @@ def plot_outlier_hist(counts):
     ax.set_xlabel("Outlier windows per individual")
     ax.set_ylabel("Count of individuals")
     ax.set_title("Outlier window counts")
-    ax.set_xticks(bins)
+    if max_count <= 4:
+        ticks = bins
+    else:
+        # Keep the histogram readable for large window counts.
+        ticks = np.unique(np.rint(np.linspace(0, max_count + 1, 5)).astype(int)).tolist()
+    ax.set_xticks(ticks)
     fig.tight_layout()
     return fig
 
@@ -193,10 +198,13 @@ def main():
             img_url = fig_to_data_url(fig)
             hist_html = ""
             if outlier_counts is not None:
+                outlier_window_count = int(mask.any(axis=1).sum())
+                total_window_count = int(load.shape[0])
                 hist_fig = plot_outlier_hist(outlier_counts)
                 hist_url = fig_to_data_url(hist_fig)
                 hist_html = (
                     "<h2>Outlier window counts</h2>\n"
+                    f"<div class=\"meta\">{outlier_window_count} total windows with at least one outlier out of {total_window_count} total windows</div>\n"
                     f"<img src=\"{hist_url}\" alt=\"Outlier window counts histogram\">\n"
                 )
             html = f"""<!doctype html>
