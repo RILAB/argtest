@@ -14,14 +14,15 @@ Core dependencies are in `environment.yml` (`numpy`, `matplotlib`, `tskit`, `tsz
 ## Scripts
 
 ### `scripts/mutload_summary.py`
-Builds an HTML summary of per-individual mutational load and writes outlier windows as BED when windowing is enabled. Windowed outliers are defined relative to the window median, and individuals flagged as outliers in a given window are shown with red bars.
+Builds an HTML summary of per-individual mutational load and writes outlier windows as BED when windowing is enabled. When `--window-size` or `--snp-window` is used, each individual is compared to that window's median mutational load and is marked as an outlier if its load is greater than `(1 + cutoff) * median` or less than `(1 - cutoff) * median`; windows with median zero are skipped. In the per-window plots, outlier individuals are shown with red bars. If `--fraction` is provided, windows with an outlier fraction greater than that threshold are written to `results/<ts_stem>_mutation_masked.bed` and are excluded from `results/<ts_stem>_outliers.bed`.
 
 Inputs:
 - one tree sequence file
 
 Key outputs:
 - `results/<name>.html`
-- `results/<ts_stem>_outliers.bed` (if `--window-size` or `--snp-window` is used)
+- `results/<ts_stem>_outliers.bed` (if `--window-size` or `--snp-window` is used; excludes windows written to the mutation-masked BED when `--fraction` is set)
+- `results/<ts_stem>_mutation_masked.bed` (if `--fraction` is used)
 - `logs/<name>.log`
 
 Example:
@@ -38,6 +39,7 @@ Main options:
 - `--window-size`
 - `--snp-window`
 - `--cutoff`
+- `--fraction`
 - `--out`
 - `--suffix-to-strip`
 

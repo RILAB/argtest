@@ -294,11 +294,27 @@ th, td {{ border: 1px solid #cccccc; padding: 6px 10px; text-align: left; }}
             out.write_text(html)
 
             if windows is not None:
-                # Write one BED listing outliers per window.
+                masked_window_mask = np.zeros(load.shape[0], dtype=bool)
+                if args.fraction is not None:
+                    outlier_fractions = mask.sum(axis=1) / load.shape[1]
+                    masked_window_mask = valid & (outlier_fractions > args.fraction)
+                    masked_path = results_dir / f"{ts_path.stem}_mutation_masked.bed"
+                    masked_lines = []
+                    for w in range(load.shape[0]):
+                        if not masked_window_mask[w]:
+                            continue
+                        start = int(windows[w])
+                        end = int(windows[w + 1])
+                        masked_lines.append(
+                            f"{ts_path.stem}\t{start}\t{end}\t{outlier_fractions[w]:.3f}\t{int(mask[w].sum())}\t{load.shape[1]}"
+                        )
+                    masked_path.write_text("\n".join(masked_lines) + ("\n" if masked_lines else ""))
+
+                # Write one BED listing non-masked windows that still have outliers.
                 out_path = results_dir / f"{ts_path.stem}_outliers.bed"
                 lines = []
                 for w in range(load.shape[0]):
-                    if not valid[w]:
+                    if not valid[w] or masked_window_mask[w]:
                         continue
                     row_mask = mask[w]
                     if not row_mask.any():
@@ -311,20 +327,6 @@ th, td {{ border: 1px solid #cccccc; padding: 6px 10px; text-align: left; }}
                         f"{ts_path.stem}\t{start}\t{end}\t{','.join(outlier_names)}\t{','.join(outlier_vals)}\t{window_medians[w]:.3f}"
                     )
                 out_path.write_text("\n".join(lines) + ("\n" if lines else ""))
-
-                if args.fraction is not None:
-                    masked_path = results_dir / f"{ts_path.stem}_mutation_masked.bed"
-                    masked_lines = []
-                    outlier_fractions = mask.sum(axis=1) / load.shape[1]
-                    for w in range(load.shape[0]):
-                        if not valid[w] or outlier_fractions[w] <= args.fraction:
-                            continue
-                        start = int(windows[w])
-                        end = int(windows[w + 1])
-                        masked_lines.append(
-                            f"{ts_path.stem}\t{start}\t{end}\t{outlier_fractions[w]:.3f}\t{int(mask[w].sum())}\t{load.shape[1]}"
-                        )
-                    masked_path.write_text("\n".join(masked_lines) + ("\n" if masked_lines else ""))
         finally:
             sys.stdout = old_stdout
             sys.stderr = old_stderr

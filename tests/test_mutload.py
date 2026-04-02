@@ -481,12 +481,15 @@ def test_fraction_writes_mutation_masked_bed(tmp_path, monkeypatch):
     })())
     ms.main()
     bed = cwd / "results" / "test_mutation_masked.bed"
+    outliers_bed = cwd / "results" / "test_outliers.bed"
     assert bed.exists()
     lines = bed.read_text().strip().splitlines()
     assert lines == [
         "test\t0\t5\t1.000\t2\t2",
         "test\t5\t10\t1.000\t2\t2",
     ]
+    assert outliers_bed.exists()
+    assert outliers_bed.read_text() == ""
 
 
 def test_fraction_strictly_greater_than_threshold(tmp_path, monkeypatch):
@@ -508,5 +511,11 @@ def test_fraction_strictly_greater_than_threshold(tmp_path, monkeypatch):
     })())
     ms.main()
     bed = cwd / "results" / "test_mutation_masked.bed"
+    outliers_bed = cwd / "results" / "test_outliers.bed"
     assert bed.exists()
     assert bed.read_text() == ""
+    assert outliers_bed.exists()
+    assert outliers_bed.read_text().strip().splitlines() == [
+        "test\t0\t5\tA,B\t1.000,0.000\t0.500",
+        "test\t5\t10\tA,B\t0.000,1.000\t0.500",
+    ]
