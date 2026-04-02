@@ -25,65 +25,6 @@ One reasonable post-processing workflow for ARG tree sequences in this repo is:
 
 ## Scripts
 
-### `scripts/mutload_summary.py`
-Builds an HTML summary of per-individual mutational load and writes outlier windows as BED when windowing is enabled. When `--window-size` or `--snp-window` is used, each individual is compared to that window's median mutational load and is marked as an outlier if its load is greater than `(1 + cutoff) * median` or less than `(1 - cutoff) * median`; windows with median zero are skipped. In the per-window plots, outlier individuals are shown with red bars. If `--fraction` is provided, windows with an outlier fraction greater than that threshold are written to `results/<ts_stem>_mutation_masked.bed` and are excluded from `results/<ts_stem>_outliers.bed`.
-
-Inputs:
-- one tree sequence file
-
-Key outputs:
-- `results/<name>.html`
-- `results/<ts_stem>_outliers.bed` (if `--window-size` or `--snp-window` is used; excludes windows written to the mutation-masked BED when `--fraction` is set)
-- `results/<ts_stem>_mutation_masked.bed` (if `--fraction` is used)
-- `logs/<name>.log`
-
-Example:
-```bash
-python scripts/mutload_summary.py example_data/maize.tsz --window-size 50000 --cutoff 0.25 --out mutload.html
-```
-
-Example with fixed-variant windows:
-```bash
-python scripts/mutload_summary.py example_data/maize.tsz --snp-window 500 --cutoff 0.25 --out mutload_snp.html
-```
-
-Main options:
-- `--window-size`
-- `--snp-window`
-- `--cutoff`
-- `--fraction`
-- `--out`
-- `--suffix-to-strip`
-
-### `scripts/trim_samples.py`
-Removes selected individuals either genome-wide (`--individuals`) or over BED intervals (`--remove`).
-
-For `--remove`, you can use one BED for all samples or multiple BED files. Each BED line should contain `chrom  start  end  sample_id` in column 4, and column 4 may also list multiple comma-separated sample IDs to apply the same interval to several individuals. If column 4 is omitted, the BED filename stem is used as the sample name.
-
-Inputs:
-- one tree sequence file
-- optional BED(s) with per-individual intervals
-
-Key output:
-- trimmed tree sequence (`--out`, or `results/<ts_stem>_trimmed.tsz`)
-
-Example:
-```bash
-python scripts/trim_samples.py example_data/maize.tsz --individuals B73,Mo17 --out results/maize_trimmed.tsz
-```
-
-Example BED lines:
-```text
-chr1    1000    5000    A
-chr1    8000    9000    B,C
-```
-
-Main options:
-- `--individuals`
-- `--remove`
-- `--out`
-- `--suffix-to-strip`
-
 ### `scripts/hapmap_low_rec_mask.py`
 Builds one BED per chromosome marking the bottom `--rec-fraction` of HapMap recombination-rate intervals, ranked by `Rate(cM/Mb)` separately within each chromosome.
 
@@ -142,34 +83,35 @@ Main options:
 - `--pattern`
 - `--out`
 
-### `scripts/merge_treefiles_by_replicate.py`
-Merges chromosome-specific tree sequence files by replicate. Input files must be named like `<base>.<chromosome>.<replicate>` with suffix `.tree`, `.trees`, or `.tsz`.
-
-Behavior:
-- groups files by `<base>` and `<replicate>`
-- sorts chromosomes in natural order within each replicate group
-- concatenates all chromosomes for a replicate into one combined tree sequence
-- writes outputs named `<base>.combined.<replicate><suffix>`
-- writes to `--out-dir` or to `<ts-dir>/combined` by default
-- preserves the suffix of the first file in each group unless `--out-suffix` is provided
+### `scripts/mutload_summary.py`
+Builds an HTML summary of per-individual mutational load and writes outlier windows as BED when windowing is enabled. When `--window-size` or `--snp-window` is used, each individual is compared to that window's median mutational load and is marked as an outlier if its load is greater than `(1 + cutoff) * median` or less than `(1 - cutoff) * median`; windows with median zero are skipped. In the per-window plots, outlier individuals are shown with red bars. If `--fraction` is provided, windows with an outlier fraction greater than that threshold are written to `results/<ts_stem>_mutation_masked.bed` and are excluded from `results/<ts_stem>_outliers.bed`.
 
 Inputs:
-- directory of chromosome-specific tree sequence files
+- one tree sequence file
 
 Key outputs:
-- one combined tree sequence per replicate
+- `results/<name>.html`
+- `results/<ts_stem>_outliers.bed` (if `--window-size` or `--snp-window` is used; excludes windows written to the mutation-masked BED when `--fraction` is set)
+- `results/<ts_stem>_mutation_masked.bed` (if `--fraction` is used)
+- `logs/<name>.log`
 
 Example:
 ```bash
-python scripts/merge_treefiles_by_replicate.py \
-  --ts-dir /path/to/treefiles
+python scripts/mutload_summary.py example_data/maize.tsz --window-size 50000 --cutoff 0.25 --out mutload.html
+```
+
+Example with fixed-variant windows:
+```bash
+python scripts/mutload_summary.py example_data/maize.tsz --snp-window 500 --cutoff 0.25 --out mutload_snp.html
 ```
 
 Main options:
-- `--ts-dir`
-- `--out-dir`
-- `--pattern`
-- `--out-suffix`
+- `--window-size`
+- `--snp-window`
+- `--cutoff`
+- `--fraction`
+- `--out`
+- `--suffix-to-strip`
 
 ### `scripts/trim_regions.py`
 Applies a BED mask to a directory of tree sequences and writes trimmed tree files with compacted coordinates.
@@ -197,6 +139,35 @@ Main options:
 - `--out-dir`
 - `--pattern`
 - `--log`
+
+### `scripts/trim_samples.py`
+Removes selected individuals either genome-wide (`--individuals`) or over BED intervals (`--remove`).
+
+For `--remove`, you can use one BED for all samples or multiple BED files. Each BED line should contain `chrom  start  end  sample_id` in column 4, and column 4 may also list multiple comma-separated sample IDs to apply the same interval to several individuals. If column 4 is omitted, the BED filename stem is used as the sample name.
+
+Inputs:
+- one tree sequence file
+- optional BED(s) with per-individual intervals
+
+Key output:
+- trimmed tree sequence (`--out`, or `results/<ts_stem>_trimmed.tsz`)
+
+Example:
+```bash
+python scripts/trim_samples.py example_data/maize.tsz --individuals B73,Mo17 --out results/maize_trimmed.tsz
+```
+
+Example BED lines:
+```text
+chr1    1000    5000    A
+chr1    8000    9000    B,C
+```
+
+Main options:
+- `--individuals`
+- `--remove`
+- `--out`
+- `--suffix-to-strip`
 
 ### `scripts/validation_plots_from_ts.py`
 Generates SINGER-style validation/diagnostic plots (excluding coalescence/Ne curves) directly from a set of TS replicates.
@@ -254,6 +225,35 @@ Main options:
 - `--sim`
 - `--out-dir`
 - `--prefix`
+
+### `scripts/merge_treefiles_by_replicate.py`
+Merges chromosome-specific tree sequence files by replicate. Input files must be named like `<base>.<chromosome>.<replicate>` with suffix `.tree`, `.trees`, or `.tsz`.
+
+Behavior:
+- groups files by `<base>` and `<replicate>`
+- sorts chromosomes in natural order within each replicate group
+- concatenates all chromosomes for a replicate into one combined tree sequence
+- writes outputs named `<base>.combined.<replicate><suffix>`
+- writes to `--out-dir` or to `<ts-dir>/combined` by default
+- preserves the suffix of the first file in each group unless `--out-suffix` is provided
+
+Inputs:
+- directory of chromosome-specific tree sequence files
+
+Key outputs:
+- one combined tree sequence per replicate
+
+Example:
+```bash
+python scripts/merge_treefiles_by_replicate.py \
+  --ts-dir /path/to/treefiles
+```
+
+Main options:
+- `--ts-dir`
+- `--out-dir`
+- `--pattern`
+- `--out-suffix`
 
 ### `scripts/coalescence_ne_plots_from_ts.py`
 Generates pair coalescence and effective population size plots from a set of TS replicates using explicit time bins.
