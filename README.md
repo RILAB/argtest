@@ -72,6 +72,33 @@ Main options:
 - `--out`
 - `--suffix-to-strip`
 
+### `scripts/hapmap_low_rec_mask.py`
+Builds one BED per chromosome marking the bottom `--rec-fraction` of HapMap recombination-rate intervals, ranked by `Rate(cM/Mb)` separately within each chromosome.
+
+The HapMap input should follow the format described in the msprime docs: <https://tskit.dev/msprime/docs/stable/api.html#msprime.RateMap.read_hapmap>.
+
+Behavior:
+- requires `--hapmap` and `--fai`
+- uses the first row's `Rate(cM/Mb)` from position `0` up to that row's `Position(bp)`
+- uses each row's `Rate(cM/Mb)` from its position up to the next position on the same chromosome
+- uses the last row's `Rate(cM/Mb)` from its position to the chromosome end from the `.fai`
+- writes `results` as one BED per chromosome named `<chr>.low_rec.mask.bed` in `--out-dir` (or the current directory by default)
+
+Example:
+```bash
+python scripts/hapmap_low_rec_mask.py \
+  --hapmap maize.hapmap.tsv \
+  --fai maize.fa.fai \
+  --rec-fraction 0.1 \
+  --out-dir low_rec_masks
+```
+
+Main options:
+- `--hapmap`
+- `--fai`
+- `--rec-fraction`
+- `--out-dir`
+
 ### `scripts/trim_regions.py`
 Applies a shared accessibility-based mask across a directory of tree sequences by:
 1. inferring mutation map (`*.mut_rate.p`) from TS names,
