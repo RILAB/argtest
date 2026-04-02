@@ -69,7 +69,7 @@ def make_lineage_ts():
     tables = tskit.TableCollection(sequence_length=10)
     tables.individuals.metadata_schema = tskit.MetadataSchema.permissive_json()
     pop = tables.populations.add_row()
-    names = ["L1_A", "L1_B", "L2_A"]
+    names = ["L1_A", "L1_B", "L2_A", "L2_B"]
     inds = [tables.individuals.add_row(metadata={"id": name}) for name in names]
     samples = [
         tables.nodes.add_row(flags=tskit.NODE_IS_SAMPLE, time=0, individual=inds[i], population=pop)
@@ -78,10 +78,9 @@ def make_lineage_ts():
     anc = tables.nodes.add_row(time=1, population=pop)
     for s in samples:
         tables.edges.add_row(left=0, right=10, parent=anc, child=s)
-    s1 = tables.sites.add_row(position=1, ancestral_state="0")
-    s7 = tables.sites.add_row(position=7, ancestral_state="0")
-    tables.mutations.add_row(site=s1, node=samples[0], derived_state="1")
-    tables.mutations.add_row(site=s7, node=samples[1], derived_state="1")
+    for pos, sample_idx in [(1, 0), (2, 0), (3, 1), (4, 2), (4.5, 3), (6, 1), (7, 1), (8, 0), (8.5, 2), (9, 3)]:
+        site = tables.sites.add_row(position=pos, ancestral_state="0")
+        tables.mutations.add_row(site=site, node=samples[sample_idx], derived_state="1")
     tables.sort()
     return tables.tree_sequence()
 
@@ -130,14 +129,14 @@ def test_outlier_mask_logic():
 
 
 def test_outlier_uses_window_median_not_mean():
-    load = np.array([[8, 10, 100]], dtype=float)
+    load = np.array([[8, 10, 12.8]], dtype=float)
     cutoff = 0.25
     medians = np.median(load, axis=1)
     median_mask = ((load > (1 + cutoff) * medians[:, None]) | (load < (1 - cutoff) * medians[:, None]))
     means = load.mean(axis=1)
     mean_mask = ((load > (1 + cutoff) * means[:, None]) | (load < (1 - cutoff) * means[:, None]))
-    assert median_mask[0].tolist() == [True, False, True]
-    assert mean_mask[0].tolist() == [False, False, True]
+    assert median_mask[0].tolist() == [False, False, True]
+    assert mean_mask[0].tolist() == [False, False, False]
 
 
 def test_outlier_hist_limits_tick_labels(monkeypatch):
@@ -236,6 +235,7 @@ def test_outputs_written(tmp_path, monkeypatch):
         "window_size": 5.0,
         "snp_window": None,
         "cutoff": 0.5,
+        "fraction": None,
         "out": "out.html",
         "suffix_to_strip": "_anchorwave",
     })())
@@ -263,7 +263,8 @@ def test_outputs_written_with_lineage_table(tmp_path, monkeypatch):
         "ts": str(ts_path),
         "window_size": 5.0,
         "snp_window": None,
-        "cutoff": 1.5,
+        "cutoff": 0.5,
+        "fraction": None,
         "out": "lineage.html",
         "suffix_to_strip": "_anchorwave",
     })())
@@ -286,6 +287,7 @@ def test_no_remove_no_trimmed(tmp_path, monkeypatch):
         "window_size": 5.0,
         "snp_window": None,
         "cutoff": 0.5,
+        "fraction": None,
         "out": "out.html",
         "suffix_to_strip": "_anchorwave",
     })())
@@ -305,6 +307,7 @@ def test_no_mutations_outliers_empty(tmp_path, monkeypatch):
         "window_size": 5.0,
         "snp_window": None,
         "cutoff": 0.5,
+        "fraction": None,
         "out": "nomut.html",
         "suffix_to_strip": "_anchorwave",
     })())
@@ -416,6 +419,7 @@ def test_output_overwrite(tmp_path, monkeypatch):
         "window_size": 5.0,
         "snp_window": None,
         "cutoff": 0.5,
+        "fraction": None,
         "out": "overwrite.html",
         "suffix_to_strip": "_anchorwave",
     })())
@@ -448,6 +452,7 @@ def test_outputs_written_with_snp_windows(tmp_path, monkeypatch):
         "window_size": None,
         "snp_window": 1,
         "cutoff": 0.5,
+        "fraction": None,
         "out": "snp_out.html",
         "suffix_to_strip": "_anchorwave",
     })())
@@ -455,3 +460,53 @@ def test_outputs_written_with_snp_windows(tmp_path, monkeypatch):
 
     assert (cwd / "results" / "snp_out.html").exists()
     assert (cwd / "results" / "test_outliers.bed").exists()
+
+
+def test_fraction_writes_mutation_masked_bed(tmp_path, monkeypatch):
+    ts = make_simple_ts()
+    ts_path = tmp_path / "test.trees"
+    ts.dump(ts_path)
+    cwd = Path(__file__).resolve().parents[1]
+    os.chdir(cwd)
+    monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
+    monkeypatch.setattr(ms, "load_ts", lambda _: ts)
+    monkeypatch.setattr(ms, "parse_args", lambda: type("A", (), {
+        "ts": str(ts_path),
+        "window_size": 5.0,
+        "snp_window": None,
+        "cutoff": 0.5,
+        "fraction": 0.9,
+        "out": "masked.html",
+        "suffix_to_strip": "_anchorwave",
+    })())
+    ms.main()
+    bed = cwd / "results" / "test_mutation_masked.bed"
+    assert bed.exists()
+    lines = bed.read_text().strip().splitlines()
+    assert lines == [
+        "test\t0\t5\t1.000\t2\t2",
+        "test\t5\t10\t1.000\t2\t2",
+    ]
+
+
+def test_fraction_strictly_greater_than_threshold(tmp_path, monkeypatch):
+    ts = make_simple_ts()
+    ts_path = tmp_path / "test.trees"
+    ts.dump(ts_path)
+    cwd = Path(__file__).resolve().parents[1]
+    os.chdir(cwd)
+    monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
+    monkeypatch.setattr(ms, "load_ts", lambda _: ts)
+    monkeypatch.setattr(ms, "parse_args", lambda: type("A", (), {
+        "ts": str(ts_path),
+        "window_size": 5.0,
+        "snp_window": None,
+        "cutoff": 0.5,
+        "fraction": 1.0,
+        "out": "masked_strict.html",
+        "suffix_to_strip": "_anchorwave",
+    })())
+    ms.main()
+    bed = cwd / "results" / "test_mutation_masked.bed"
+    assert bed.exists()
+    assert bed.read_text() == ""

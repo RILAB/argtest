@@ -10,6 +10,8 @@ from pathlib import Path
 
 import numpy as np
 
+plt = None
+
 from argtest_common import (
     aggregate_by_individual,
     load_ts,
@@ -21,7 +23,13 @@ from argtest_common import (
 def fig_to_data_url(fig) -> str:
     # Encode a matplotlib figure as an inline SVG data URL so plots stay sharp.
     buf = BytesIO()
-    fig.savefig(buf, format="svg", bbox_inches="tight")
+    with plt.rc_context({"svg.hashsalt": "argtest"}):
+        fig.savefig(
+            buf,
+            format="svg",
+            bbox_inches="tight",
+            metadata={"Date": "1970-01-01T00:00:00"},
+        )
     plt.close(fig)
     buf.seek(0)
     svg_b64 = base64.b64encode(buf.read()).decode("ascii")
@@ -139,9 +147,18 @@ def parse_args():
         default=0.25,
         help="Outlier cutoff as a fraction of the window median (default: 0.25)",
     )
+    p.add_argument(
+        "--fraction",
+        type=float,
+        default=None,
+        help="Write windows where the fraction of outlier individuals is greater than this value",
+    )
     p.add_argument("--out", default="mutational_load_summary.html")
     p.add_argument("--suffix-to-strip", default="_anchorwave")
-    return p.parse_args()
+    args = p.parse_args()
+    if args.fraction is not None and not 0 <= args.fraction <= 1:
+        raise ValueError("--fraction must be between 0 and 1")
+    return args
 
 
 def build_bp_windows(ts, window_size: float) -> np.ndarray:
@@ -294,6 +311,20 @@ th, td {{ border: 1px solid #cccccc; padding: 6px 10px; text-align: left; }}
                         f"{ts_path.stem}\t{start}\t{end}\t{','.join(outlier_names)}\t{','.join(outlier_vals)}\t{window_medians[w]:.3f}"
                     )
                 out_path.write_text("\n".join(lines) + ("\n" if lines else ""))
+
+                if args.fraction is not None:
+                    masked_path = results_dir / f"{ts_path.stem}_mutation_masked.bed"
+                    masked_lines = []
+                    outlier_fractions = mask.sum(axis=1) / load.shape[1]
+                    for w in range(load.shape[0]):
+                        if not valid[w] or outlier_fractions[w] <= args.fraction:
+                            continue
+                        start = int(windows[w])
+                        end = int(windows[w + 1])
+                        masked_lines.append(
+                            f"{ts_path.stem}\t{start}\t{end}\t{outlier_fractions[w]:.3f}\t{int(mask[w].sum())}\t{load.shape[1]}"
+                        )
+                    masked_path.write_text("\n".join(masked_lines) + ("\n" if masked_lines else ""))
         finally:
             sys.stdout = old_stdout
             sys.stderr = old_stderr
