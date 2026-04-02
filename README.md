@@ -46,6 +46,8 @@ Main options:
 ### `scripts/trim_samples.py`
 Removes selected individuals either genome-wide (`--individuals`) or over BED intervals (`--remove`).
 
+For `--remove`, you can use one BED for all samples or multiple BED files. Each BED line should contain `chrom  start  end  sample_id` in column 4, and column 4 may also list multiple comma-separated sample IDs to apply the same interval to several individuals. If column 4 is omitted, the BED filename stem is used as the sample name.
+
 Inputs:
 - one tree sequence file
 - optional BED(s) with per-individual intervals
@@ -56,6 +58,12 @@ Key output:
 Example:
 ```bash
 python scripts/trim_samples.py example_data/maize.tsz --individuals B73,Mo17 --out results/maize_trimmed.tsz
+```
+
+Example BED lines:
+```text
+chr1    1000    5000    A
+chr1    8000    9000    B,C
 ```
 
 Main options:
