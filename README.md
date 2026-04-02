@@ -15,12 +15,13 @@ Core dependencies are in `environment.yml` (`numpy`, `matplotlib`, `tskit`, `tsz
 
 One reasonable post-processing workflow for ARG tree sequences in this repo is:
 
-1. Remove windows in the genetic map in the bottom `X` percentile of `cM/Mb` using [scripts/hapmap_low_rec_mask.py](/home/jri/src/argtest/scripts/hapmap_low_rec_mask.py). This turns a HapMap-style recombination map plus a `.fai` into per-chromosome BED masks for very low-recombination regions.
-2. Remove windows of `size` kb where more than `X`% of bp are masked using [scripts/trim_regions.py](/home/jri/src/argtest/scripts/trim_regions.py). This collapses low-accessibility regions across a directory of tree sequences and writes cleaned tree files.
-3. Prune introgressed individuals from trees in the regions where they are introgressed using [scripts/trim_samples.py](/home/jri/src/argtest/scripts/trim_samples.py). This uses BED intervals that specify both the genomic region and the affected individual or individuals.
-4. In windows of `number` SNPs, prune individuals with `X`% more or fewer derived mutations than the window median using [scripts/mutload_summary.py](/home/jri/src/argtest/scripts/mutload_summary.py). This reports per-window outliers, can write mutation-masked BED intervals when too many individuals are outliers, and highlights outlier individuals in red in the HTML summary.
-5. Run the validation plots with [scripts/validation_plots_from_ts.py](/home/jri/src/argtest/scripts/validation_plots_from_ts.py) to get a sense of the new ARG. This gives a compact set of QC plots for mutational load, diversity, Tajima's D, and related summaries.
-6. If satisfied, merge chromosomes for each replicate for downstream Ne estimation using [scripts/merge_treefiles_by_replicate.py](/home/jri/src/argtest/scripts/merge_treefiles_by_replicate.py). This concatenates chromosome-specific tree files into one combined tree sequence per replicate.
+1. Find windows in the genetic map in the bottom `X` percentile of `cM/Mb` using [scripts/hapmap_low_rec_mask.py](/home/jri/src/argtest/scripts/hapmap_low_rec_mask.py). This turns a HapMap-style recombination map plus a `.fai` into per-chromosome BED masks for very low-recombination regions.
+2. Find windows of `size` kb where more than `X`% of bp are masked using [scripts/find_low_access_regions.py](/home/jri/src/argtest/scripts/find_low_access_regions.py). This inspects the inferred mutation map for one representative tree sequence and writes low-accessibility windows to a BED file.
+3. In windows of `number` SNPs, identify individuals with `X`% more or fewer derived mutations than the window median using [scripts/mutload_summary.py](/home/jri/src/argtest/scripts/mutload_summary.py). This reports per-window outliers, can write mutation-masked BED intervals when too many individuals are outliers, and highlights outlier individuals in red in the HTML summary.
+4. Combine the BED files from steps 1-3 however you prefer, then remove those genomic regions from a directory of tree sequences with [scripts/trim_regions.py](/home/jri/src/argtest/scripts/trim_regions.py). This script now just applies a supplied BED mask and writes trimmed tree sequences.
+5. Take a BED file of introgressed regions (using e.g. [TRACE](https://github.com/YulinZhang9806/trace)) and the affected samples, and prune those individuals from the trees with [scripts/trim_samples.py](/home/jri/src/argtest/scripts/trim_samples.py). This is the step for sample-specific trimming, where different individuals can be removed over different intervals.
+6. Run the validation plots with [scripts/validation_plots_from_ts.py](/home/jri/src/argtest/scripts/validation_plots_from_ts.py) to get a sense of the cleaned ARG. This gives a compact set of QC plots for mutational load, diversity, Tajima's D, and related summaries.
+7. If satisfied, merge chromosomes for each replicate for downstream Ne estimation using [scripts/merge_treefiles_by_replicate.py](/home/jri/src/argtest/scripts/merge_treefiles_by_replicate.py). This concatenates chromosome-specific tree files into one combined tree sequence per replicate.
 
 ## Scripts
 
@@ -110,6 +111,37 @@ Main options:
 - `--rec-fraction`
 - `--out-dir`
 
+### `scripts/find_low_access_regions.py`
+Finds low-accessibility windows from the inferred mutation map for a representative tree sequence and writes those windows as a BED file.
+
+Behavior:
+- infers the mutation map (`*.mut_rate.p`) from the first tree sequence in `--ts-dir`
+- computes accessible bp in windows of `--window-size`
+- writes windows with accessible bp below `--cutoff-bp` to a BED file
+- writes to `--out` or to `<ts-dir>/low_access.ws<window>.accbp<cutoff>.bed` by default
+
+Inputs:
+- directory of tree sequence files
+- inferred mutation-rate map file(s)
+
+Key outputs:
+- one BED file of low-accessibility windows
+
+Example:
+```bash
+python scripts/find_low_access_regions.py \
+  --ts-dir /path/to/trees \
+  --window-size 50000 \
+  --cutoff-bp 2500
+```
+
+Main options:
+- `--ts-dir`
+- `--window-size`
+- `--cutoff-bp`
+- `--pattern`
+- `--out`
+
 ### `scripts/merge_treefiles_by_replicate.py`
 Merges chromosome-specific tree sequence files by replicate. Input files must be named like `<base>.<chromosome>.<replicate>` with suffix `.tree`, `.trees`, or `.tsz`.
 
@@ -140,32 +172,28 @@ Main options:
 - `--out-suffix`
 
 ### `scripts/trim_regions.py`
-Applies a shared accessibility-based mask across a directory of tree sequences by:
-1. inferring mutation map (`*.mut_rate.p`) from TS names,
-2. keeping windows with accessible bp >= `--cutoff-bp`,
-3. collapsing masked intervals and writing renamed output TS files.
+Applies a BED mask to a directory of tree sequences and writes trimmed tree files with compacted coordinates.
 
 Inputs:
 - directory of tree sequences
-- inferred mutation-rate map file(s)
+- one BED file of regions to remove
 
 Key outputs:
-- collapsed tree sequences in output directory
-- one summary log (`collapse_log.txt` by default)
+- trimmed tree sequences in output directory
+- one summary log (`trim_regions_log.txt` by default)
 
 Example:
 ```bash
 python scripts/trim_regions.py \
   --ts-dir /path/to/trees \
-  --window-size 50000 \
-  --cutoff-bp 2500 \
-  --pattern "*.tsz"
+  --remove low_access.bed \
+  --pattern "*.tsz" \
+  --out-dir /path/to/trimmed
 ```
 
 Main options:
 - `--ts-dir`
-- `--window-size`
-- `--cutoff-bp`
+- `--remove`
 - `--out-dir`
 - `--pattern`
 - `--log`
