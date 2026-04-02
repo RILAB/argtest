@@ -11,6 +11,17 @@ conda activate argtest
 
 Core dependencies are in `environment.yml` (`numpy`, `matplotlib`, `tskit`, `tszip`, `msprime`).
 
+## Suggested Workflow
+
+One reasonable post-processing workflow for ARG tree sequences in this repo is:
+
+1. Remove windows in the genetic map in the bottom `X` percentile of `cM/Mb` using [scripts/hapmap_low_rec_mask.py](/home/jri/src/argtest/scripts/hapmap_low_rec_mask.py). This turns a HapMap-style recombination map plus a `.fai` into per-chromosome BED masks for very low-recombination regions.
+2. Remove windows of `size` kb where more than `X`% of bp are masked using [scripts/trim_regions.py](/home/jri/src/argtest/scripts/trim_regions.py). This collapses low-accessibility regions across a directory of tree sequences and writes cleaned tree files.
+3. Prune introgressed individuals from trees in the regions where they are introgressed using [scripts/trim_samples.py](/home/jri/src/argtest/scripts/trim_samples.py). This uses BED intervals that specify both the genomic region and the affected individual or individuals.
+4. In windows of `number` SNPs, prune individuals with `X`% more or fewer derived mutations than the window median using [scripts/mutload_summary.py](/home/jri/src/argtest/scripts/mutload_summary.py). This reports per-window outliers, can write mutation-masked BED intervals when too many individuals are outliers, and highlights outlier individuals in red in the HTML summary.
+5. Run the validation plots with [scripts/validation_plots_from_ts.py](/home/jri/src/argtest/scripts/validation_plots_from_ts.py) to get a sense of the new ARG. This gives a compact set of QC plots for mutational load, diversity, Tajima's D, and related summaries.
+6. If satisfied, merge chromosomes for each replicate for downstream Ne estimation using [scripts/merge_treefiles_by_replicate.py](/home/jri/src/argtest/scripts/merge_treefiles_by_replicate.py). This concatenates chromosome-specific tree files into one combined tree sequence per replicate.
+
 ## Scripts
 
 ### `scripts/mutload_summary.py`
