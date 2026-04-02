@@ -99,6 +99,35 @@ Main options:
 - `--rec-fraction`
 - `--out-dir`
 
+### `scripts/merge_treefiles_by_replicate.py`
+Merges chromosome-specific tree sequence files by replicate. Input files must be named like `<base>.<chromosome>.<replicate>` with suffix `.tree`, `.trees`, or `.tsz`.
+
+Behavior:
+- groups files by `<base>` and `<replicate>`
+- sorts chromosomes in natural order within each replicate group
+- concatenates all chromosomes for a replicate into one combined tree sequence
+- writes outputs named `<base>.combined.<replicate><suffix>`
+- writes to `--out-dir` or to `<ts-dir>/combined` by default
+- preserves the suffix of the first file in each group unless `--out-suffix` is provided
+
+Inputs:
+- directory of chromosome-specific tree sequence files
+
+Key outputs:
+- one combined tree sequence per replicate
+
+Example:
+```bash
+python scripts/merge_treefiles_by_replicate.py \
+  --ts-dir /path/to/treefiles
+```
+
+Main options:
+- `--ts-dir`
+- `--out-dir`
+- `--pattern`
+- `--out-suffix`
+
 ### `scripts/trim_regions.py`
 Applies a shared accessibility-based mask across a directory of tree sequences by:
 1. inferring mutation map (`*.mut_rate.p`) from TS names,
