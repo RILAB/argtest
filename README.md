@@ -342,6 +342,22 @@ python scripts/trees_gallery_html.py a.tsz b.tsz --out trees_gallery.html
 
 Use this module for internal script imports.
 
+## Inputs, formats, defaults & logs
+
+- **Tree-sequence files:** scripts accept `.ts`, `.trees`, and `.tsz` files. Loading/writing `.tsz` requires `tszip` to be installed; scripts will raise a clear error if `tszip` is missing when a `.tsz` is used.
+- **BED files:** expected as whitespace-separated lines `chrom  start  end  [name]`. `start` and `end` are numeric (half-open intervals `[start, end)`). If a fourth column `name` is present it may list one or more comma-separated sample IDs; if omitted the BED filename stem is used as the sample name. Lines starting with `#` and blank lines are ignored.
+- **HapMap recombination maps:** when required (e.g. `hapmap_low_rec_mask.py`), the script expects the HapMap format used by `msprime.RateMap.read_hapmap`.
+- **Glob `--pattern`:** arguments named `--pattern` accept shell-style glob patterns (for example "*.tsz") and are matched against filenames in the supplied directory.
+- **Defaults & output locations:** many scripts write to a `results/` directory or to an output directory under the input tree-directory when `--out`/`--out-dir` are not provided. Examples:
+  - `trim_samples.py`: default output is `results/<ts_stem>_trimmed.tsz` when `--out` is not given.
+  - `trim_regions.py`: default `--out-dir` is `<ts-dir>/trimmed` and default log is `<out-dir>/trim_regions_log.txt`.
+  - `mutload_summary.py` and several plotting scripts write HTML/PNG files into `results/` by default; many have `--out` or `--out-dir` flags to override this.
+- **Logging & errors:** scripts write summary logs into `logs/` or into the chosen `--out-dir` (see each script's `--log`/`--out-dir` options). Common failure modes include missing `tszip` for `.tsz` I/O, mismatched sequence lengths across chromosome files (checked by `trim_regions.py`), and invalid BED line formats (the loader will raise `ValueError` when a BED line has fewer than 3 columns). When a script prints an `ERROR:` or raises an exception, check the corresponding `logs/` or `<out-dir>/` log file for the detailed run record.
+
+## Sample ID matching (trim_samples.py)
+
+- `trim_samples.py` matches sample/individual IDs exactly against the tree sequence internal individual names as produced by `scripts/argtest_common.py`: `get_individual_name()` (this prefers `individual.metadata['id']` when present, otherwise a synthetic `ind<id>` name is used). Matching is exact and case-sensitive. The `--suffix-to-strip` option (default `_anchorwave`) is applied by name lookup and is removed via simple string replacement before matching; provide names that match the post-stripping individual names.
+
 ## Repository notes
 
 - Generated `logs/` and `results/` are git-ignored.

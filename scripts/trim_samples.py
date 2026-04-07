@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -63,6 +64,12 @@ def parse_args():
     )
     p.add_argument("--out", help="Output tree sequence path (.ts, .trees, or .tsz)")
     p.add_argument("--suffix-to-strip", default="_anchorwave")
+    p.add_argument(
+        "--log",
+        type=Path,
+        default=None,
+        help="Optional log file path (default: results/<ts_stem>_trim_samples.log).",
+    )
     return p.parse_args()
 
 
@@ -122,14 +129,21 @@ def main():
     if not remove_intervals:
         raise SystemExit("ERROR: provide --individuals and/or --remove")
 
-    # Natefun-style removal can change sample identities/order via simplify.
+
+    # Track what we removed for a brief summary.
     trimmed_ts = ts
+    names_removed = set()
+    intervals_applied = 0
+    sample_nodes_removed = 0
     for name, intervals in remove_intervals.items():
         # Rebuild the name->nodes map after each simplify.
         name_to_nodes = name_to_nodes_map(trimmed_ts, suffix_to_strip=args.suffix_to_strip)
         samples = name_to_nodes.get(name, [])
         if not samples:
             continue
+        names_removed.add(name)
+        sample_nodes_removed += len(samples)
+        intervals_applied += len(intervals["starts"])
         for left, right in zip(intervals["starts"], intervals["ends"]):
             trimmed_ts = remove_ancestry(trimmed_ts, samples, left, right)
     validate_trimmed_ts(trimmed_ts)
@@ -142,6 +156,22 @@ def main():
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / f"{ts_path.stem}_trimmed.tsz"
     dump_ts(trimmed_ts, out_path)
+
+    # Summary to stdout/stderr and optional log
+    summary = (
+        f"Trimmed: individuals_specified={len(parse_individuals(args.individuals) if args.individuals else [])} "
+        f"names_removed={len(names_removed)} intervals_applied={intervals_applied} sample_nodes_removed={sample_nodes_removed} -> out={out_path}"
+    )
+    print(summary)
+    print(summary, file=sys.stderr)
+    log_path = args.log or (Path(__file__).resolve().parent.parent / "results" / f"{ts_path.stem}_trim_samples.log")
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "w") as fh:
+            fh.write("# trim_samples summary\n")
+            fh.write(summary + "\n")
+    except Exception:
+        print(f"WARNING: failed to write log to {log_path}", file=sys.stderr)
 
 
 if __name__ == "__main__":

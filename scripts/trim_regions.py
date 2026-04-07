@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from argtest_common import collapse_masked_intervals, dump_ts, load_ts, merge_intervals, ratemap_from_keep_intervals
@@ -131,7 +132,17 @@ def main():
             log.write(f"new_L={ts2.sequence_length}\n\n")
             print(f"Wrote: {out_path.name}")
 
+    # Summary printed to stdout and stderr and appended to log
+    summary = f"Processed {len(ts_files)} tree files; masked_intervals={len(masked)}; masked_bp={sum(right - left for left, right in masked)}"
+    print(summary)
+    print(summary, file=sys.stderr)
     print(f"Done. Log: {log_path}")
+    try:
+        with open(log_path, "a") as log:
+            log.write("# Summary\n")
+            log.write(summary + "\n")
+    except Exception:
+        print(f"WARNING: failed to append summary to log {log_path}", file=sys.stderr)
 
 
 if __name__ == "__main__":
