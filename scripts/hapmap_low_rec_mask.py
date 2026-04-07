@@ -34,7 +34,7 @@ def parse_args():
         "--log",
         type=Path,
         default=None,
-        help="Optional log file path (default: <out-dir>/hapmap_low_rec_mask.log).",
+        help="Optional log file path (default: <out-dir>/logs/hapmap_low_rec_mask.log).",
     )
     args = p.parse_args()
     if not 0 < args.rec_fraction <= 1:
@@ -130,8 +130,9 @@ def main():
         print(ln)
         print(ln, file=sys.stderr)
 
-    log_path = args.log or (args.out_dir / "hapmap_low_rec_mask.log")
+    log_path = args.log or (args.out_dir / "logs" / "hapmap_low_rec_mask.log")
     try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, "w") as fh:
             fh.write("# hapmap_low_rec_mask summary\n")
             for ln in summary_lines:

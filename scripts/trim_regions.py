@@ -39,7 +39,7 @@ def parse_args():
         "--log",
         type=Path,
         default=None,
-        help="Optional log file path (default: <out-dir>/trim_regions_log.txt).",
+        help="Optional log file path (default: <out-dir>/logs/trim_regions.log).",
     )
     return p.parse_args()
 
@@ -97,7 +97,8 @@ def main():
     ts_files = find_tree_files(args.ts_dir, args.pattern)
     out_dir = args.out_dir or (args.ts_dir / "trimmed")
     out_dir.mkdir(parents=True, exist_ok=True)
-    log_path = args.log or (out_dir / "trim_regions_log.txt")
+    log_path = args.log or (out_dir / "logs" / "trim_regions.log")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
 
     first_ts = load_ts(ts_files[0])
     masked = load_mask_intervals(args.remove, first_ts.sequence_length)

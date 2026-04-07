@@ -37,6 +37,24 @@ def parse_args():
         help="Optional glob pattern to filter input filenames (default: '*').",
     )
     p.add_argument(
+        "--layout",
+        choices=["auto", "flat", "nested"],
+        default="auto",
+        help=(
+            "Input layout: 'flat' expects <base>.<chromosome>.<replicate><suffix> files in --ts-dir; "
+            "'nested' expects --ts-dir/<chromosome>/<replicate><suffix>; "
+            "'auto' detects either layout (default)."
+        ),
+    )
+    p.add_argument(
+        "--base-name",
+        default=None,
+        help=(
+            "Base name for nested layout outputs (default: --ts-dir directory name). "
+            "Ignored for flat layout."
+        ),
+    )
+    p.add_argument(
         "--out-suffix",
         choices=[".tree", ".trees", ".tsz"],
         default=None,
@@ -67,23 +85,65 @@ def find_tree_files(ts_dir: Path, pattern: str):
     if not ts_dir.is_dir():
         raise NotADirectoryError(f"Expected a directory for --ts-dir: {ts_dir}")
     files = []
-    for path in sorted(ts_dir.glob(pattern)):
+    for path in sorted(ts_dir.rglob(pattern)):
         if path.is_file() and path.suffix in VALID_SUFFIXES:
             files.append(path)
     return files
 
 
-def group_tree_files(paths):
+def parse_nested_input_name(path: Path, ts_dir: Path, base_name: str | None):
+    rel = path.relative_to(ts_dir)
+    if len(rel.parts) != 2:
+        return None
+    chrom, filename = rel.parts
+    replicate = Path(filename).stem
+    if not chrom or not replicate:
+        return None
+    base = base_name or ts_dir.name
+    return base, chrom, replicate
+
+
+def group_tree_files(paths, ts_dir: Path | None = None, layout: str = "flat", base_name: str | None = None):
     grouped = defaultdict(list)
     skipped = []
+    mode_seen = set()
     for path in paths:
-        parsed = parse_input_name(path)
+        parsed = None
+        mode = None
+        if ts_dir is None:
+            parsed = parse_input_name(path)
+            mode = "flat" if parsed is not None else None
+        elif layout == "flat":
+            rel = path.relative_to(ts_dir)
+            if len(rel.parts) == 1:
+                parsed = parse_input_name(path)
+            mode = "flat" if parsed is not None else None
+        elif layout == "nested":
+            parsed = parse_nested_input_name(path, ts_dir=ts_dir, base_name=base_name)
+            mode = "nested" if parsed is not None else None
+        else:
+            rel = path.relative_to(ts_dir)
+            if len(rel.parts) == 1:
+                parsed = parse_input_name(path)
+                mode = "flat" if parsed is not None else None
+            if parsed is None:
+                parsed = parse_nested_input_name(path, ts_dir=ts_dir, base_name=base_name)
+                mode = "nested" if parsed is not None else None
         if parsed is None:
             skipped.append(path)
             continue
+        mode_seen.add(mode)
         base, chrom, replicate = parsed
         grouped[(base, replicate)].append((chrom, path))
-    return grouped, skipped
+    if layout == "auto" and len(mode_seen) > 1:
+        raise ValueError(
+            "Detected mixed input layouts (both flat and nested). "
+            "Please use a single layout or set --layout explicitly."
+        )
+    detected = next(iter(mode_seen)) if mode_seen else None
+    if ts_dir is None:
+        return grouped, skipped
+    return grouped, skipped, detected
 
 
 def merge_group(paths):
@@ -100,15 +160,34 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     files = find_tree_files(args.ts_dir, args.pattern)
-    grouped, skipped = group_tree_files(files)
+    grouped, skipped, detected_layout = group_tree_files(
+        files,
+        ts_dir=args.ts_dir,
+        layout=args.layout,
+        base_name=args.base_name,
+    )
     if skipped:
-        skipped_str = ", ".join(path.name for path in skipped)
+        skipped_str = ", ".join(str(path.relative_to(args.ts_dir)) for path in skipped)
+        if args.layout == "flat":
+            raise ValueError(
+                "All input tree files must be named <base>.<chromosome>.<replicate>"
+                f"<suffix> directly inside --ts-dir. Skipped: {skipped_str}"
+            )
+        if args.layout == "nested":
+            raise ValueError(
+                "All input tree files must be in --ts-dir/<chromosome>/<replicate><suffix>. "
+                f"Skipped: {skipped_str}"
+            )
         raise ValueError(
-            "All input tree files must be named <base>.<chromosome>.<replicate>"
-            f"<suffix>. Skipped: {skipped_str}"
+            "Could not parse all input files as either flat "
+            "(<base>.<chromosome>.<replicate><suffix>) or nested "
+            "(<chromosome>/<replicate><suffix>) layout. "
+            f"Skipped: {skipped_str}"
         )
     if not grouped:
         raise ValueError(f"No matching tree files found in {args.ts_dir}")
+    if args.layout == "auto" and detected_layout is None:
+        raise ValueError(f"No parseable tree files found in {args.ts_dir}")
 
     for (base, replicate), chrom_paths in sorted(grouped.items()):
         merged, ordered = merge_group(chrom_paths)

@@ -23,6 +23,108 @@ One reasonable post-processing workflow for ARG tree sequences in this repo is:
 6. **Validate** Run the validation plots with [scripts/validation_plots_from_ts.py](/home/jri/src/argtest/scripts/validation_plots_from_ts.py) to get a sense of the cleaned ARG. This gives a compact set of QC plots for mutational load, diversity, Tajima's D, and related summaries. Compare these to the same plots run on the original treesequences.
 7. If satisfied, merge chromosomes for each replicate for downstream analysis using [scripts/merge_treefiles_by_replicate.py](/home/jri/src/argtest/scripts/merge_treefiles_by_replicate.py). This concatenates chromosome-specific tree files into one combined tree sequence per replicate.
 
+## Snakemake Pipeline
+
+For a rule-based version of the workflow above, this repository now includes a Snakemake pipeline in [Snakefile](/home/jri/src/argtest/Snakefile).
+
+The Snakemake workflow is designed for a directory layout with one subdirectory per chromosome and one treefile per replicate inside each chromosome directory:
+
+```text
+<root>/
+  chr1/
+    1.tsz
+    2.tsz
+    ...
+  chr2/
+    1.tsz
+    2.tsz
+    ...
+```
+
+Supported treefile suffixes are `.ts`, `.trees`, and `.tsz`. Replicate IDs are taken from the filename stem, so `chr1/1.tsz` is replicate `1` for chromosome `chr1`.
+
+### Required Inputs
+
+The Snakemake config expects these keys in a YAML file such as [config/snakemake.example.yaml](/home/jri/src/argtest/config/snakemake.example.yaml):
+
+- `root_dir`: path to the chromosome-subdirectory root
+- `hapmap`: HapMap recombination map used for step 1
+- `fai`: FASTA index used for chromosome lengths
+- `tree_pattern`: glob for treefiles within each chromosome directory, for example `"*.tsz"`
+- `rec_fraction`: fraction of low-recombination intervals to keep in step 1
+- `low_access_window_size`: window size in bp for step 2
+- `low_access_cutoff_bp`: minimum accessible bp per window for step 2
+- exactly one of `mutload_window_size` or `mutload_snp_window` for step 3
+- `mutload_cutoff`: outlier cutoff fraction for step 3
+- `mutload_fraction`: optional fraction threshold for writing mutation-masked BED rows in step 3
+- `suffix_to_strip`: suffix removed from sample IDs before matching in step 3 and step 5
+- `allow_missing_replicates`: set to `true` if you want to concatenate partial replicate sets
+- `base_name`: prefix used for merged outputs
+- `out_dir`: output root for Snakemake products
+
+Mutation-rate maps are inferred from the treefile location using the same logic as the scripts, so the usual `*.mut_rate.p` files should be available near each chromosome directory.
+
+### Workflow Steps
+
+The Snakemake workflow runs the same logical steps as the manual workflow:
+
+1. Build per-chromosome low-recombination BED masks
+2. Build per-chromosome low-accessibility BED masks
+3. Build per-chromosome, per-replicate mutational-load outlier BEDs and optional mutation-masked BEDs
+4. Combine the BED masks and trim affected regions from each treefile
+5. Trim the affected samples from each trimmed treefile
+6. Concatenate chromosomes for each replicate into one combined tree sequence
+
+The final merged outputs are named:
+
+```text
+<base_name>.combined.<replicate>.<suffix>
+```
+
+and are written under the configured `out_dir` in a `combined/` directory.
+
+### How To Run
+
+From the repo root:
+
+```bash
+module load conda
+conda activate argtest
+cp config/snakemake.example.yaml config/snakemake.yaml
+```
+
+Edit `config/snakemake.yaml`, then run a dry-run:
+
+```bash
+snakemake -n -p --configfile config/snakemake.yaml
+```
+
+Run the workflow for real:
+
+```bash
+snakemake --cores 16 --rerun-incomplete --keep-going --configfile config/snakemake.yaml
+```
+
+### Output Layout
+
+By default, Snakemake writes outputs beneath `out_dir` with subdirectories for each stage:
+
+```text
+<out_dir>/
+  step1_low_rec/
+  step2_low_access/
+  step3_mutload/
+  step4_masks/
+  step4_trimmed_regions/
+  step5_trimmed_samples/
+  combined/
+  logs/
+```
+
+Intermediate filenames include both chromosome and replicate information so they stay unique across the full workflow.
+
+For a more detailed walkthrough of the Snakemake inputs and outputs, see [snakemake.md](/home/jri/src/argtest/snakemake.md).
+
 ## Scripts
 
 ### `scripts/hapmap_low_rec_mask.py`

@@ -1,0 +1,29 @@
+# Required
+root_dir: /path/to/root_with_chr_dirs
+hapmap: /path/to/map.hapmap.tsv
+fai: /path/to/genome.fai
+
+# Tree discovery
+tree_pattern: "*.tsz"
+
+# Step 1
+rec_fraction: 0.1
+
+# Step 2
+low_access_window_size: 50000
+low_access_cutoff_bp: 2500
+
+# Step 3 (set exactly one of mutload_window_size or mutload_snp_window)
+mutload_window_size: 50000
+# mutload_snp_window: 500
+mutload_cutoff: 0.25
+mutload_fraction: 0.2
+suffix_to_strip: "_anchorwave"
+
+# Concatenation behavior
+allow_missing_replicates: false
+base_name: "run"
+# merged_out_suffix: ".tsz"
+
+# Workflow outputs
+out_dir: "snakemake_out"

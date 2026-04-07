@@ -12,14 +12,23 @@ import numpy as np
 from argtest_common import accessible_intervals_from_mu, load_ts, overlap_lengths
 
 
-def infer_mu_base(ts_stem: str) -> list[str]:
+def infer_mu_base(ts_stem: str, parent_stem: str | None = None) -> list[str]:
     bases = [ts_stem]
+    if parent_stem:
+        bases.append(parent_stem)
     m = re.match(r"^(.+)\.(\d+)$", ts_stem)
     if m:
         bases.append(m.group(1))
     m = re.match(r"^(.+)[_-](\d+)$", ts_stem)
     if m:
         bases.append(m.group(1))
+    if parent_stem:
+        m = re.match(r"^(.+)\.(\d+)$", parent_stem)
+        if m:
+            bases.append(m.group(1))
+        m = re.match(r"^(.+)[_-](\d+)$", parent_stem)
+        if m:
+            bases.append(m.group(1))
     dedup = []
     seen = set()
     for b in bases:
@@ -30,7 +39,7 @@ def infer_mu_base(ts_stem: str) -> list[str]:
 
 
 def infer_mu_path(ts_path: Path) -> Path:
-    bases = infer_mu_base(ts_path.stem)
+    bases = infer_mu_base(ts_path.stem, parent_stem=ts_path.parent.name)
     search_dirs = [ts_path.parent, ts_path.parent.parent]
     for d in search_dirs:
         for b in bases:
@@ -125,6 +134,10 @@ def default_out_path(ts_dir: Path, window_size: float, cutoff_bp: float) -> Path
     return ts_dir / f"low_access.ws{format_num(window_size)}.accbp{format_num(cutoff_bp)}.bed"
 
 
+def default_log_path(out_path: Path) -> Path:
+    return out_path.parent / "logs" / f"{out_path.stem}.log"
+
+
 def main():
     args = parse_args()
     ts_files = find_tree_files(args.ts_dir, args.pattern)
@@ -155,8 +168,9 @@ def main():
     print(summary, file=sys.stderr)
 
     # Write a simple log
-    log_path = args.log or out_path.with_suffix(".log")
+    log_path = getattr(args, "log", None) or default_log_path(out_path)
     try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, "w") as fh:
             fh.write("# find_low_access_regions summary\n")
             fh.write(f"out_path={out_path}\n")

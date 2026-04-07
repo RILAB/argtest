@@ -73,6 +73,64 @@ def test_main_writes_combined_file(tmp_path, monkeypatch):
                 "ts_dir": in_dir,
                 "out_dir": tmp_path / "combined",
                 "pattern": "*",
+                "layout": "flat",
+                "base_name": None,
+                "out_suffix": None,
+            },
+        )(),
+    )
+    merger.main()
+
+    out = tmp_path / "combined" / "base.combined.1.trees"
+    assert out.exists()
+    merged = tskit.load(out)
+    assert merged.sequence_length == 12
+
+
+def test_group_tree_files_nested_layout(tmp_path):
+    p1 = tmp_path / "chr1" / "1.trees"
+    p2 = tmp_path / "chr2" / "1.trees"
+    p3 = tmp_path / "chr1" / "2.trees"
+    p1.parent.mkdir()
+    p2.parent.mkdir()
+    p1.touch()
+    p2.touch()
+    p3.touch()
+
+    grouped, skipped, detected = merger.group_tree_files(
+        [p1, p2, p3],
+        ts_dir=tmp_path,
+        layout="nested",
+        base_name="base",
+    )
+
+    assert skipped == []
+    assert detected == "nested"
+    assert sorted(grouped.keys()) == [("base", "1"), ("base", "2")]
+    assert sorted(chrom for chrom, _ in grouped[("base", "1")]) == ["chr1", "chr2"]
+
+
+def test_main_writes_combined_file_nested_layout(tmp_path, monkeypatch):
+    ts1 = make_simple_ts(length=5, site_pos=1)
+    ts2 = make_simple_ts(length=7, site_pos=2)
+    in_dir = tmp_path / "trees"
+    (in_dir / "chr1").mkdir(parents=True)
+    (in_dir / "chr2").mkdir(parents=True)
+    ts1.dump(in_dir / "chr1" / "1.trees")
+    ts2.dump(in_dir / "chr2" / "1.trees")
+
+    monkeypatch.setattr(
+        merger,
+        "parse_args",
+        lambda: type(
+            "A",
+            (),
+            {
+                "ts_dir": in_dir,
+                "out_dir": tmp_path / "combined",
+                "pattern": "*",
+                "layout": "nested",
+                "base_name": "base",
                 "out_suffix": None,
             },
         )(),
