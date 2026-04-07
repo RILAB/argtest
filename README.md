@@ -93,16 +93,39 @@ conda activate argtest
 cp config/snakemake.example.yaml config/snakemake.yaml
 ```
 
-Edit `config/snakemake.yaml`, then run a dry-run:
+#### Walk-through using bundled example data
+
+Use the committed example dataset at [example_data/sim_2chr_5rep_clean](/home/jri/src/argtest/example_data/sim_2chr_5rep_clean):
+
+```yaml
+root_dir: /home/jri/src/argtest/example_data/sim_2chr_5rep_clean/trees
+hapmap: /home/jri/src/argtest/example_data/sim_2chr_5rep_clean/hapmap/all.hapmap.tsv
+fai: /home/jri/src/argtest/example_data/sim_2chr_5rep_clean/sim.fai
+tree_pattern: "*.trees"
+rec_fraction: 0.1
+low_access_window_size: 10000
+low_access_cutoff_bp: 9000
+mutload_window_size: 10000
+mutload_cutoff: 0.25
+mutload_fraction: 0.8
+suffix_to_strip: "_anchorwave"
+allow_missing_replicates: false
+base_name: "sim2chr"
+out_dir: "/tmp/argtest-snakemake-example-out"
+```
+
+In sandboxed environments where `~/.cache` is read-only, set cache/temp dirs to `/tmp` when running Snakemake:
 
 ```bash
-snakemake -n -p --configfile config/snakemake.yaml
+XDG_CACHE_HOME=/tmp/argtest-xdg-cache TMPDIR=/tmp/argtest-tmp \
+python -m snakemake -n -p --configfile config/snakemake.yaml
 ```
 
 Run the workflow for real:
 
 ```bash
-snakemake --cores 16 --rerun-incomplete --keep-going --configfile config/snakemake.yaml
+XDG_CACHE_HOME=/tmp/argtest-xdg-cache TMPDIR=/tmp/argtest-tmp \
+python -m snakemake --cores 16 --rerun-incomplete --keep-going --configfile config/snakemake.yaml
 ```
 
 ### Output Layout

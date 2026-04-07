@@ -274,14 +274,14 @@ rule step4_combine_remove_masks:
 rule step4_trim_regions_single:
     input:
         ts=ts_input_for_pair_ext,
-        remove=str(STEP4_MASK_DIR / "{chrom}" / "{rep}.remove_regions.bed"),
+        mask_bed=str(STEP4_MASK_DIR / "{chrom}" / "{rep}.remove_regions.bed"),
     output:
         str(STEP4_TRIM_DIR / "{chrom}" / "{rep}.{ext}")
     shell:
         """
         python scripts/trim_regions_single.py \
           --ts {input.ts} \
-          --remove {input.remove} \
+          --remove {input.mask_bed} \
           --out {output}
         """
 
