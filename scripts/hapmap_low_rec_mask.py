@@ -31,6 +31,11 @@ def parse_args():
         help="Directory for <chr>.low_rec.mask.bed outputs (default: current directory).",
     )
     p.add_argument(
+        "--chrom",
+        default=None,
+        help="If provided, process only this chromosome.",
+    )
+    p.add_argument(
         "--log",
         type=Path,
         default=None,
@@ -45,15 +50,13 @@ def parse_args():
 def load_hapmap(path: Path):
     by_chr = defaultdict(list)
     with open(path, "r", newline="") as fh:
-        reader = csv.DictReader(fh, delimiter="\t")
-        required = {"Chromosome", "Position(bp)", "Rate(cM/Mb)"}
-        missing = required - set(reader.fieldnames or [])
-        if missing:
-            raise ValueError(f"Missing required HapMap columns: {sorted(missing)}")
+        reader = csv.reader(fh, delimiter="\t")
         for row in reader:
-            chrom = row["Chromosome"].strip()
-            pos = int(float(row["Position(bp)"]))
-            rate = float(row["Rate(cM/Mb)"])
+            if not row or row[0].strip() == "Chromosome":
+                continue
+            chrom = row[0].strip()
+            pos = int(float(row[1]))
+            rate = float(row[2])
             by_chr[chrom].append((pos, rate))
     return by_chr
 
@@ -93,18 +96,42 @@ def build_intervals(rows, chrom_length):
     return intervals
 
 
+def _strip_prefix(chrom):
+    """Strip base-name prefix from pipeline chrom names (e.g. 'amaranth.1' -> '1')."""
+    return chrom.split(".", 1)[1] if "." in chrom else chrom
+
+
+def _resolve_fai_chrom(chrom, fai):
+    """Try the chrom name, then common FAI naming variants."""
+    if chrom in fai:
+        return chrom
+    bare = _strip_prefix(chrom)
+    for candidate in (bare, f"chr_{bare}", f"chr{bare}"):
+        if candidate in fai:
+            return candidate
+    return None
+
+
 def main():
     args = parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     hapmap = load_hapmap(args.hapmap)
     fai = load_fai(args.fai)
+
+    if args.chrom is not None:
+        hapmap_key = args.chrom if args.chrom in hapmap else _strip_prefix(args.chrom)
+        if hapmap_key not in hapmap:
+            raise KeyError(f"Chromosome {args.chrom!r} not found in {args.hapmap}")
+        hapmap = {args.chrom: hapmap[hapmap_key]}
+
     total_written = 0
     per_chrom = {}
     for chrom, rows in sorted(hapmap.items()):
-        if chrom not in fai:
-            raise KeyError(f"Chromosome {chrom} not found in {args.fai}")
-        intervals = build_intervals(rows, fai[chrom])
+        fai_chrom = _resolve_fai_chrom(chrom, fai)
+        if fai_chrom is None:
+            raise KeyError(f"Chromosome {chrom!r} not found in {args.fai}")
+        intervals = build_intervals(rows, fai[fai_chrom])
         out_path = args.out_dir / f"{chrom}.low_rec.mask.bed"
         if not intervals:
             out_path.write_text("")
