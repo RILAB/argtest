@@ -433,7 +433,7 @@ Notes:
 Example:
 ```bash
 python scripts/validation_plots_from_ts.py \
-  --ts-dir ~/crud/collapsed \
+  --ts-dir /path/to/treefiles \
   --pattern "*.tsz" \
   --window-size 100000 \
   --mutation-rate 3.3e-8 \
@@ -444,7 +444,7 @@ python scripts/validation_plots_from_ts.py \
 Example with simulation comparison:
 ```bash
 python scripts/validation_plots_from_ts.py \
-  --ts-dir ~/crud/collapsed \
+  --ts-dir /path/to/treefiles \
   --pattern "*.tsz" \
   --window-size 100000 \
   --mutation-rate 3.3e-8 \
@@ -568,7 +568,7 @@ Notes:
 Example:
 ```bash
 python scripts/coalescence_ne_plots_from_ts.py \
-  --ts-dir ~/crud/collapsed \
+  --ts-dir /path/to/treefiles \
   --pattern "*.tsz" \
   --time-bins-file /path/to/time_bins.txt \
   --burnin-frac 0.5 \
@@ -581,7 +581,7 @@ python scripts/coalescence_ne_plots_from_ts.py \
 Example with simulations:
 ```bash
 python scripts/coalescence_ne_plots_from_ts.py \
-  --ts-dir ~/crud/collapsed \
+  --ts-dir /path/to/treefiles \
   --pattern "*.tsz" \
   --time-bins-file /path/to/time_bins.txt \
   --burnin-frac 0.5 \
