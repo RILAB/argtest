@@ -465,6 +465,7 @@ Options:
 | `--folded` | Plot folded SFS (minor-allele frequency) instead of polarised derived-frequency SFS. |
 | `--sim PATH` | Optional TSV of simulated window statistics (from `coalescence_ne_plots_from_ts.py --sim`) for observed-vs-simulated density plots. |
 | `--sim-sfs PATH` | Optional TSV of simulated site frequency spectra (from `coalescence_ne_plots_from_ts.py`) for an observed-vs-simulated SFS plot. |
+| `--compare PATH` | Optional second tree-sequence directory to overlay on all plots for comparison (e.g. pre- vs post-pipeline). Uses the same `--pattern`, `--window-size`, `--burnin-frac`, and `--mutation-rate` as the primary directory. Each dataset is labelled by its directory name. |
 | `--out-dir PATH` | Output directory for plots (default: `results/validation_plots`). |
 | `--prefix STR` | Optional prefix prepended to output plot filenames. |
 
