@@ -428,7 +428,7 @@ Plots produced:
 Notes:
 - branch diversity is scaled by `--mutation-rate` for site-vs-branch comparison
 - trace plots are branch-only MCMC outcomes
-- `--sim` can read the simulation TSV from `scripts/coalescence_ne_plots_from_ts.py --sim` and compare observed vs simulated windowed `pi` and Tajima's D using overlapping semi-transparent density plots
+- for observed-vs-simulated plots, first run `coalescence_ne_plots_from_ts.py --sim N ...` to generate the simulation TSVs, then pass them via `--sim` (window stats) and `--sim-sfs` (SFS); the simulations can be reused across multiple validation runs without re-computing them
 
 Example:
 ```bash
