@@ -17,7 +17,7 @@ One reasonable post-processing workflow for ARG tree sequences in this repo is:
 
 1. **Find low rec regions** Because regions of low recombination are more affected by linked selection, for analyses assuming the neutrality of the ARG it may be a good idea to remove low recombination regions ahead of time. Find windows in the genetic map in the bottom `X` percentile of `cM/Mb` using [scripts/hapmap_low_rec_mask.py](/home/jri/src/argtest/scripts/hapmap_low_rec_mask.py). This turns a HapMap-style recombination map plus a `.fai` into per-chromosome BED masks for very low-recombination regions.
 2. **Find regions of poor alignment** Find windows of `size` kb where more than `X`% of bp are masked using [scripts/find_low_access_regions.py](/home/jri/src/argtest/scripts/find_low_access_regions.py). This inspects the inferred mutation map for a tree sequence and writes low-accessibility windows to a BED file.
-3. **Find windows with aberrant mutational load** All samples in a tree should have the same number of derived mutations, since all have the same distance from root. In windows of `number` SNPs, identify individuals with `X`% more or fewer derived mutations than the window median using [scripts/mutload_summary.py](/home/jri/src/argtest/scripts/mutload_summary.py). This reports per-window outliers, can write mutation-masked BED intervals when too many individuals are outliers, and highlights outlier individuals in red in the HTML summary.
+3. **Find windows with aberrant mutational load** All samples in a tree should have the same number of derived mutations, since all have the same distance from root. In windows of `number` SNPs, identify individuals with `X`% more or fewer derived mutations than the window median. Use [scripts/mutload_summary.py](/home/jri/src/argtest/scripts/mutload_summary.py) for an interactive HTML summary (ASCII bar charts with outlier individuals highlighted in red, plus a lineage table). Use [scripts/mutload_masks.py](/home/jri/src/argtest/scripts/mutload_masks.py) to write the outlier and mutation-masked BED files needed for the pipeline; this is what the Snakemake workflow calls.
 4. **Remove affected regions** For each chromosome, combine the BED files from steps 1-3 (<chr>.low_rec.mask.bed, low_access.ws<window>.accbp<cutoff>.bed, and <ts_stem>_mutation_masked.bed), then remove those genomic regions from a directory of tree sequences with [scripts/trim_regions.py](/home/jri/src/argtest/scripts/trim_regions.py). This script applies a supplied BED mask and writes trimmed tree sequences.
 5. **Remove affected samples** In many cases, only a few samples within a window will be problematic. They could have evidence of introgression (identified using e.g. [TRACE](https://github.com/YulinZhang9806/trace)) or odd patterns of derived mutations (see step 3). Using a bedfile specifying regions and individuals, prune those individuals from the trees with [scripts/trim_samples.py](/home/jri/src/argtest/scripts/trim_samples.py). 
 6. **Validate** Run the validation plots with [scripts/validation_plots_from_ts.py](/home/jri/src/argtest/scripts/validation_plots_from_ts.py) to get a sense of the cleaned ARG. This gives a compact set of QC plots for mutational load, diversity, Tajima's D, and related summaries. Compare these to the same plots run on the original treesequences.
@@ -175,20 +175,21 @@ Main options:
 - `--hapmap`
 - `--fai`
 - `--rec-fraction`
+- `--chrom`
 - `--out-dir`
 
 ### `scripts/find_low_access_regions.py`
-Finds low-accessibility windows from the inferred mutation map for a representative tree sequence and writes those windows as a BED file.
+Finds low-accessibility windows from the inferred mutation map for a single tree sequence file and writes those windows as a BED file.
 
 Behavior:
-- infers the mutation map (`*.mut_rate.p`) from the first tree sequence in `--ts-dir`
+- infers the mutation map (`*.mut_rate.p`) from the path of the `--ts` file
 - computes accessible bp in windows of `--window-size`
 - writes windows with accessible bp below `--cutoff-bp` to a BED file
-- writes to `--out` or to `<ts-dir>/low_access.ws<window>.accbp<cutoff>.bed` by default
+- writes to `--out` or to `<ts-parent>/low_access.ws<window>.accbp<cutoff>.bed` by default
 
 Inputs:
-- directory of tree sequence files
-- inferred mutation-rate map file(s)
+- one tree sequence file
+- inferred mutation-rate map file (must be co-located with the tree sequence)
 
 Key outputs:
 - one BED file of low-accessibility windows
@@ -196,28 +197,25 @@ Key outputs:
 Example:
 ```bash
 python scripts/find_low_access_regions.py \
-  --ts-dir /path/to/trees \
+  --ts /path/to/trees/chr1/1.tsz \
   --window-size 50000 \
   --cutoff-bp 2500
 ```
 
 Main options:
-- `--ts-dir`
+- `--ts`
 - `--window-size`
 - `--cutoff-bp`
-- `--pattern`
 - `--out`
 
 ### `scripts/mutload_summary.py`
-Builds an HTML summary of per-individual mutational load and writes outlier windows as BED when windowing is enabled. When `--window-size` or `--snp-window` is used, each individual is compared to that window's median mutational load and is marked as an outlier if its load is greater than `(1 + cutoff) * median` or less than `(1 - cutoff) * median`; windows with median zero are skipped. In the per-window plots, outlier individuals are shown with red bars. If `--fraction` is provided, windows with an outlier fraction greater than that threshold are written to `results/<ts_stem>_mutation_masked.bed` and are excluded from `results/<ts_stem>_outliers.bed`.
+Builds a self-contained HTML summary of per-individual mutational load. When `--window-size` or `--snp-window` is used, each individual is compared to that window's median mutational load and is marked as an outlier if its load is greater than `(1 + cutoff) * median` or less than `(1 - cutoff) * median`; windows with median zero are skipped. The HTML contains ASCII bar charts (outlier individuals shown in red), a per-individual outlier-window-count histogram, and a lineage summary table. This script is intended for interactive review; for pipeline BED output see `mutload_masks.py`.
 
 Inputs:
 - one tree sequence file
 
 Key outputs:
 - `results/<name>.html`
-- `results/<ts_stem>_outliers.bed` (if `--window-size` or `--snp-window` is used; excludes windows written to the mutation-masked BED when `--fraction` is set)
-- `results/<ts_stem>_mutation_masked.bed` (if `--fraction` is used)
 - `logs/<name>.log`
 
 Example:
@@ -234,9 +232,48 @@ Main options:
 - `--window-size`
 - `--snp-window`
 - `--cutoff`
-- `--fraction`
 - `--out`
 - `--suffix-to-strip`
+
+### `scripts/mutload_masks.py`
+Writes outlier and mutation-masked BED files for one tree sequence. This is the script called by the Snakemake pipeline for step 3; use `mutload_summary.py` for a human-readable HTML report.
+
+Behavior:
+- identifies per-window outlier individuals using the same median-based cutoff as `mutload_summary.py`
+- writes outlier windows (with outlier sample IDs and load values) to `--outlier-bed`
+- if `--fraction` is set, windows where the outlier fraction exceeds that threshold are written to `--masked-bed` instead and excluded from `--outlier-bed`; otherwise `--masked-bed` is created empty
+- chromosome label written to BED column 1 is set by `--chrom`
+
+Inputs:
+- one tree sequence file (`--ts`)
+
+Key outputs:
+- `--outlier-bed`: per-window outlier intervals with sample IDs
+- `--masked-bed`: windows with too many outliers (empty if `--fraction` is not set)
+- log file (defaults to `<outlier-bed-parent>/logs/<chrom>.<ts_stem>.mutload.log`)
+
+Example:
+```bash
+python scripts/mutload_masks.py \
+  --ts /path/to/trees/chr1/1.tsz \
+  --chrom chr1 \
+  --window-size 50000 \
+  --cutoff 0.25 \
+  --fraction 0.2 \
+  --outlier-bed step3/chr1/1.outliers.bed \
+  --masked-bed step3/chr1/1.mutation_masked.bed
+```
+
+Main options:
+- `--ts`
+- `--chrom`
+- `--window-size` / `--snp-window` (exactly one required)
+- `--cutoff`
+- `--fraction`
+- `--outlier-bed`
+- `--masked-bed`
+- `--suffix-to-strip`
+- `--log`
 
 ### `scripts/trim_regions.py`
 Applies a BED mask to a directory of tree sequences and writes trimmed tree files with compacted coordinates.
@@ -378,6 +415,7 @@ Main options:
 - `--ts-dir`
 - `--out-dir`
 - `--pattern`
+- `--replicate`
 - `--out-suffix`
 
 ### `scripts/coalescence_ne_plots_from_ts.py`
@@ -476,7 +514,8 @@ Use this module for internal script imports.
 - **Defaults & output locations:** many scripts write to a `results/` directory or to an output directory under the input tree-directory when `--out`/`--out-dir` are not provided. Examples:
   - `trim_samples.py`: default output is `results/<ts_stem>_trimmed.tsz` when `--out` is not given.
   - `trim_regions.py`: default `--out-dir` is `<ts-dir>/trimmed` and default log is `<out-dir>/trim_regions_log.txt`.
-  - `mutload_summary.py` and several plotting scripts write HTML/PNG files into `results/` by default; many have `--out` or `--out-dir` flags to override this.
+  - `mutload_summary.py` writes `results/<name>.html` and `logs/<name>.log`; no BED files are written (use `mutload_masks.py` for BED output).
+  - Several plotting scripts write PNG files into `results/` by default; most have `--out` or `--out-dir` flags to override this.
 - **Logging & errors:** scripts write summary logs into `logs/` or into the chosen `--out-dir` (see each script's `--log`/`--out-dir` options). Common failure modes include missing `tszip` for `.tsz` I/O, mismatched sequence lengths across chromosome files (checked by `trim_regions.py`), and invalid BED line formats (the loader will raise `ValueError` when a BED line has fewer than 3 columns). When a script prints an `ERROR:` or raises an exception, check the corresponding `logs/` or `<out-dir>/` log file for the detailed run record.
 
 ## Sample ID matching (trim_samples.py)
