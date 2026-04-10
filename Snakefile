@@ -30,7 +30,7 @@ if not ROOT_DIR.is_dir():
     raise WorkflowError(f"root_dir must be a directory: {ROOT_DIR}")
 
 TREE_PATTERN = str(config.get("tree_pattern", "*"))
-OUT_DIR = Path(config.get("out_dir", "snakemake_out"))
+OUT_DIR = Path(config.get("out_dir", "snakemake_out")).expanduser()
 BASE_NAME = str(config.get("base_name", ROOT_DIR.name))
 ALLOW_MISSING_REPLICATES = bool(config.get("allow_missing_replicates", False))
 SUFFIX_TO_STRIP = str(config.get("suffix_to_strip", "_anchorwave"))
