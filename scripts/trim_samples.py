@@ -101,6 +101,7 @@ def remove_ancestry(ts, samples, left, right):
     )
     tables.edges.keep_rows(~drop_edges)
     tables.sort()
+    tables.edges.drop_metadata()
     # Simplify drops the removed ancestry and may renumber nodes.
     tables.simplify()
     tables.edges.squash()
