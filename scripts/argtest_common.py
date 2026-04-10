@@ -43,7 +43,7 @@ def dump_ts(ts: tskit.TreeSequence, out_path: Path) -> None:
     ts.dump(str(out_path))
 
 
-def get_individual_name(ind, suffix_to_strip="_anchorwave") -> str:
+def get_individual_name(ind, suffix_to_strip="") -> str:
     # Prefer metadata id when present; otherwise fall back to a stable synthetic name.
     nm = None
     try:
@@ -58,7 +58,7 @@ def get_individual_name(ind, suffix_to_strip="_anchorwave") -> str:
     return nm.replace(suffix_to_strip, "")
 
 
-def sample_names(ts: tskit.TreeSequence, suffix_to_strip="_anchorwave"):
+def sample_names(ts: tskit.TreeSequence, suffix_to_strip=""):
     # Map each sample node to its individual name (or node id if missing).
     names = []
     for u in ts.samples():
@@ -92,7 +92,7 @@ def aggregate_by_individual(load, names):
     return agg, unique
 
 
-def name_to_nodes_map(ts: tskit.TreeSequence, suffix_to_strip="_anchorwave"):
+def name_to_nodes_map(ts: tskit.TreeSequence, suffix_to_strip=""):
     # Build lookup from individual name to all node ids for that individual.
     mapping = {}
     for ind_id, ind in enumerate(ts.individuals()):

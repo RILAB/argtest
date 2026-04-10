@@ -112,7 +112,7 @@ def parse_args():
         help="Outlier cutoff as a fraction of the window median (default: 0.25)",
     )
     p.add_argument("--out", default="mutational_load_summary.html")
-    p.add_argument("--suffix-to-strip", default="_anchorwave")
+    p.add_argument("--suffix-to-strip", default="")
     return p.parse_args()
 
 

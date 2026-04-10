@@ -43,7 +43,7 @@ def parse_args():
     )
     parser.add_argument(
         "--suffix-to-strip",
-        default="_anchorwave",
+        default="",
         help="Suffix removed from sample names before grouping to individuals.",
     )
     parser.add_argument("--outlier-bed", required=True, type=Path, help="Output outlier BED path.")

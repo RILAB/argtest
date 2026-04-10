@@ -63,7 +63,7 @@ def parse_args():
         help="BED file(s) of regions to remove per individual (comma-separated or repeated)",
     )
     p.add_argument("--out", help="Output tree sequence path (.ts, .trees, or .tsz)")
-    p.add_argument("--suffix-to-strip", default="_anchorwave")
+    p.add_argument("--suffix-to-strip", default="")
     p.add_argument(
         "--log",
         type=Path,

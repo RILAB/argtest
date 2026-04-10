@@ -119,7 +119,7 @@ low_access_cutoff_bp: 9000
 mutload_window_size: 10000
 mutload_cutoff: 0.25
 mutload_fraction: 0.8
-suffix_to_strip: "_anchorwave"
+suffix_to_strip: ""
 allow_missing_replicates: false
 base_name: "sim2chr"
 out_dir: "/tmp/argtest-snakemake-example-out"
@@ -256,7 +256,7 @@ Options:
 | `--snp-window INT` | Window size as a fixed number of variants. Mutually exclusive with `--window-size`. |
 | `--cutoff FLOAT` | Outlier cutoff as a fraction of the window median (default: `0.25`). An individual is an outlier if its load is outside `[(1−cutoff)×median, (1+cutoff)×median]`. |
 | `--out PATH` | Output filename (default: `mutational_load_summary.html`). Only the filename part is used; the file is always written to `<repo-root>/results/<filename>`. |
-| `--suffix-to-strip STR` | Suffix stripped from sample names before display (default: `_anchorwave`). |
+| `--suffix-to-strip STR` | Suffix stripped from sample names before display (default: `""`). |
 
 ### `scripts/mutload_masks.py`
 Writes outlier and mutation-masked BED files for one tree sequence. This is the script called by the Snakemake pipeline for step 3; use `mutload_summary.py` for a human-readable HTML report.
@@ -299,7 +299,7 @@ Options:
 | `--fraction FLOAT` | If provided, windows where the outlier fraction exceeds this threshold are written to `--masked-bed` and excluded from `--outlier-bed`; if omitted, `--masked-bed` is created empty. |
 | `--outlier-bed PATH` | *(required)* Output BED of per-window outlier intervals, with sample IDs and load values in extra columns. |
 | `--masked-bed PATH` | *(required)* Output BED of windows with too many outliers (empty when `--fraction` is not set). |
-| `--suffix-to-strip STR` | Suffix removed from sample names before grouping to individuals (default: `_anchorwave`). |
+| `--suffix-to-strip STR` | Suffix removed from sample names before grouping to individuals (default: `""`). |
 | `--log PATH` | Log file path (default: `<outlier-bed-parent>/logs/<chrom>.<ts_stem>.mutload.log`). |
 
 ### `scripts/combine_remove_masks.py`
@@ -403,7 +403,7 @@ Options:
 | `--individuals IDs` | Comma-separated individual IDs to remove across the entire sequence. |
 | `--remove PATH` | BED file of per-individual intervals to remove. Column 4 should contain the sample ID (comma-separated for multiple IDs sharing the same interval); if column 4 is absent the BED filename stem is used. Can be repeated or given as a comma-separated list to supply multiple BED files. |
 | `--out PATH` | Output tree sequence path (default: `results/<ts_stem>_trimmed.tsz`). |
-| `--suffix-to-strip STR` | Suffix removed from sample names before matching (default: `_anchorwave`). |
+| `--suffix-to-strip STR` | Suffix removed from sample names before matching (default: `""`). |
 | `--log PATH` | Log file path (default: `<out-parent>/logs/<ts_stem>_trim_samples.log`). |
 
 ### `scripts/validation_plots_from_ts.py`
@@ -637,7 +637,7 @@ Options:
 | `--mutload-cutoff FLOAT` | Outlier cutoff fraction for step 3 (default: `0.25`). |
 | `--mutload-fraction FLOAT` | If provided, windows with outlier fraction above this threshold are written to the mutation-masked BED in step 3. |
 | `--pattern GLOB` | Glob pattern for tree files inside each chromosome directory (default: `*`). |
-| `--suffix-to-strip STR` | Suffix stripped from individual IDs before name matching (default: `_anchorwave`). |
+| `--suffix-to-strip STR` | Suffix stripped from individual IDs before name matching (default: `""`). |
 | `--out-dir PATH` | Output directory (default: `<root>/batch_steps1_5`). |
 | `--merged-dir PATH` | Directory for per-replicate merged outputs (default: `<out-dir>/combined`). |
 | `--base-name STR` | Base name for merged output filenames (default: root directory name). |
@@ -668,7 +668,7 @@ Use this module for internal script imports.
 
 ## Sample ID matching (trim_samples.py)
 
-- `trim_samples.py` matches sample/individual IDs exactly against the tree sequence internal individual names as produced by `scripts/argtest_common.py`: `get_individual_name()` (this prefers `individual.metadata['id']` when present, otherwise a synthetic `ind<id>` name is used). Matching is exact and case-sensitive. The `--suffix-to-strip` option (default `_anchorwave`) is applied by name lookup and is removed via simple string replacement before matching; provide names that match the post-stripping individual names.
+- `trim_samples.py` matches sample/individual IDs exactly against the tree sequence internal individual names as produced by `scripts/argtest_common.py`: `get_individual_name()` (this prefers `individual.metadata['id']` when present, otherwise a synthetic `ind<id>` name is used). Matching is exact and case-sensitive. The `--suffix-to-strip` option (default `""`) is applied by name lookup and is removed via simple string replacement before matching; provide names that match the post-stripping individual names.
 
 ## Repository notes
 
