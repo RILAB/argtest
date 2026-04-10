@@ -7,7 +7,8 @@ Standalone scripts for post-processing, QC, and visualization of ARG tree sequen
 - [Install](#install)
 - [Suggested Workflow](#suggested-workflow)
 - [Snakemake Pipeline](#snakemake-pipeline)
-- [Scripts](#scripts): `hapmap_low_rec_mask` · `find_low_access_regions` · `mutload_summary` · `mutload_masks` · `combine_remove_masks` · `trim_regions` · `trim_regions_single` · `trim_samples` · `validation_plots_from_ts` · `merge_treefiles_by_replicate` · `coalescence_ne_plots_from_ts` · `compare_trees_html` · `trees_gallery_html` · `run_steps1_5_and_concat`
+- [Scripts](#scripts): `hapmap_low_rec_mask` · `find_low_access_regions` · `mutload_summary` · `mutload_masks` · `combine_remove_masks` · `trim_regions` · `trim_regions_single` · `trim_samples` · `validation_plots_from_ts` · `merge_treefiles_by_replicate`
+- [Auxiliary scripts](#auxiliary-scripts): `run_steps1_5_and_concat` · `coalescence_ne_plots_from_ts` · `compare_trees_html` · `trees_gallery_html`
 - [Shared module](#shared-module)
 - [Inputs, formats, defaults & logs](#inputs-formats-defaults--logs)
 - [Sample ID matching](#sample-id-matching-trim_samplespy)
@@ -502,6 +503,50 @@ Options:
 | `--out-suffix SUFFIX` | Output file suffix (`.tree`, `.trees`, or `.tsz`; default: suffix of the first file in each group). |
 | `--replicate ID` | If set, only write the merged output for this replicate ID. |
 
+## Auxiliary scripts
+
+Scripts not called by the Snakemake pipeline.
+
+### `scripts/run_steps1_5_and_concat.py`
+Convenience script that runs all five pipeline steps (low-rec mask → low-access mask → mutational-load masks → trim regions → trim samples) and the final per-replicate merge in a single invocation without Snakemake. Useful for small runs or testing.
+
+Example:
+```bash
+python scripts/run_steps1_5_and_concat.py \
+  --root /path/to/trees \
+  --hapmap maize.hapmap.tsv \
+  --fai maize.fa.fai \
+  --rec-fraction 0.1 \
+  --window-size 50000 \
+  --cutoff-bp 2500 \
+  --mutload-window-size 50000 \
+  --mutload-cutoff 0.25 \
+  --pattern "*.tsz" \
+  --out-dir results/batch
+```
+
+Options:
+
+| Flag | Description |
+|------|-------------|
+| `--root PATH` | *(required)* Root directory containing one subdirectory per chromosome. |
+| `--hapmap PATH` | *(required)* HapMap recombination map for step 1. |
+| `--fai PATH` | *(required)* FASTA index for chromosome lengths (step 1). |
+| `--rec-fraction FLOAT` | *(required)* Low-recombination fraction for step 1. |
+| `--window-size FLOAT` | *(required)* Window size in bp for low-accessibility step 2. |
+| `--cutoff-bp FLOAT` | *(required)* Accessibility cutoff in bp for step 2. |
+| `--mutload-window-size FLOAT` | *(required, or use `--mutload-snp-window`)* Mutational-load window size in bp for step 3. |
+| `--mutload-snp-window INT` | *(required, or use `--mutload-window-size`)* Mutational-load window size in variants for step 3. |
+| `--mutload-cutoff FLOAT` | Outlier cutoff fraction for step 3 (default: `0.25`). |
+| `--mutload-fraction FLOAT` | If provided, windows with outlier fraction above this threshold are written to the mutation-masked BED in step 3. |
+| `--pattern GLOB` | Glob pattern for tree files inside each chromosome directory (default: `*`). |
+| `--suffix-to-strip STR` | Suffix stripped from individual IDs before name matching (default: `""`). |
+| `--out-dir PATH` | Output directory (default: `<root>/batch_steps1_5`). |
+| `--merged-dir PATH` | Directory for per-replicate merged outputs (default: `<out-dir>/combined`). |
+| `--base-name STR` | Base name for merged output filenames (default: root directory name). |
+| `--out-suffix SUFFIX` | Output suffix for merged files (`.tree`, `.trees`, or `.tsz`; default: suffix of first input file). |
+| `--allow-missing-replicates` | Allow concatenation when a replicate is absent in some chromosome directories. |
+
 ### `scripts/coalescence_ne_plots_from_ts.py`
 Generates pair coalescence and effective population size plots from a set of TS replicates using explicit time bins.
 
@@ -603,46 +648,6 @@ Options:
 | `ts_top` | *(positional, required)* Tree sequence file rendered in the top row (`.ts`, `.trees`, or `.tsz`). |
 | `ts_bottom` | *(positional, required)* Tree sequence file rendered in the bottom row. |
 | `--out PATH` | Output HTML file (default: `trees_gallery.html`). |
-
-### `scripts/run_steps1_5_and_concat.py`
-Convenience script that runs all five pipeline steps (low-rec mask → low-access mask → mutational-load masks → trim regions → trim samples) and the final per-replicate merge in a single invocation without Snakemake. Useful for small runs or testing.
-
-Example:
-```bash
-python scripts/run_steps1_5_and_concat.py \
-  --root /path/to/trees \
-  --hapmap maize.hapmap.tsv \
-  --fai maize.fa.fai \
-  --rec-fraction 0.1 \
-  --window-size 50000 \
-  --cutoff-bp 2500 \
-  --mutload-window-size 50000 \
-  --mutload-cutoff 0.25 \
-  --pattern "*.tsz" \
-  --out-dir results/batch
-```
-
-Options:
-
-| Flag | Description |
-|------|-------------|
-| `--root PATH` | *(required)* Root directory containing one subdirectory per chromosome. |
-| `--hapmap PATH` | *(required)* HapMap recombination map for step 1. |
-| `--fai PATH` | *(required)* FASTA index for chromosome lengths (step 1). |
-| `--rec-fraction FLOAT` | *(required)* Low-recombination fraction for step 1. |
-| `--window-size FLOAT` | *(required)* Window size in bp for low-accessibility step 2. |
-| `--cutoff-bp FLOAT` | *(required)* Accessibility cutoff in bp for step 2. |
-| `--mutload-window-size FLOAT` | *(required, or use `--mutload-snp-window`)* Mutational-load window size in bp for step 3. |
-| `--mutload-snp-window INT` | *(required, or use `--mutload-window-size`)* Mutational-load window size in variants for step 3. |
-| `--mutload-cutoff FLOAT` | Outlier cutoff fraction for step 3 (default: `0.25`). |
-| `--mutload-fraction FLOAT` | If provided, windows with outlier fraction above this threshold are written to the mutation-masked BED in step 3. |
-| `--pattern GLOB` | Glob pattern for tree files inside each chromosome directory (default: `*`). |
-| `--suffix-to-strip STR` | Suffix stripped from individual IDs before name matching (default: `""`). |
-| `--out-dir PATH` | Output directory (default: `<root>/batch_steps1_5`). |
-| `--merged-dir PATH` | Directory for per-replicate merged outputs (default: `<out-dir>/combined`). |
-| `--base-name STR` | Base name for merged output filenames (default: root directory name). |
-| `--out-suffix SUFFIX` | Output suffix for merged files (`.tree`, `.trees`, or `.tsz`; default: suffix of first input file). |
-| `--allow-missing-replicates` | Allow concatenation when a replicate is absent in some chromosome directories. |
 
 ## Shared module
 
