@@ -91,6 +91,9 @@ def discover_tree_files():
             if not fnmatch.fnmatch(path.name, TREE_PATTERN):
                 continue
             rep = path.stem
+            chrom_prefix = chrom_dir.name + "."
+            if rep.startswith(chrom_prefix):
+                rep = rep[len(chrom_prefix):]
             if rep in by_rep:
                 raise WorkflowError(
                     f"Duplicate replicate '{rep}' in chromosome directory {chrom_dir}. "
@@ -166,6 +169,14 @@ def tree_inputs_for_chrom(wildcards):
     return [str(path) for path in CHROM_TO_REP[wildcards.chrom].values()]
 
 
+def step5_inputs_for_rep(wildcards):
+    return [
+        str(STEP5_DIR / chrom / f"{wildcards.rep}.{PAIR_EXT[(chrom, wildcards.rep)]}")
+        for chrom in CHROMS
+        if (chrom, wildcards.rep) in TS_LOOKUP
+    ]
+
+
 def ts_input_for_pair(wildcards):
     key = (wildcards.chrom, wildcards.rep)
     if key not in TS_LOOKUP:
@@ -195,38 +206,47 @@ rule step1_low_rec_masks:
         hapmap=str(HAPMAP),
         fai=str(FAI),
     output:
-        STEP1_TARGETS
+        str(STEP1_DIR / "{chrom}.low_rec.mask.bed")
+    log:
+        str(LOG_DIR / "step1" / "{chrom}.log")
     params:
         rec_fraction=REC_FRACTION,
         out_dir=str(STEP1_DIR),
     shell:
         """
         python scripts/hapmap_low_rec_mask.py \
-          --hapmap {input.hapmap} \
-          --fai {input.fai} \
+          --hapmap "{input.hapmap}" \
+          --fai "{input.fai}" \
           --rec-fraction {params.rec_fraction} \
-          --out-dir {params.out_dir}
+          --out-dir "{params.out_dir}" \
+          --chrom {wildcards.chrom} \
+          --log "{log}"
         """
+
+
+def first_ts_for_chrom(wildcards):
+    reps = sorted(CHROM_TO_REP[wildcards.chrom].keys(), key=natural_key)
+    return str(CHROM_TO_REP[wildcards.chrom][reps[0]])
 
 
 rule step2_low_access:
     input:
-        tree_inputs_for_chrom
+        first_ts_for_chrom
     output:
         str(STEP2_DIR / "{chrom}" / "{chrom}.low_access.bed")
+    log:
+        str(LOG_DIR / "step2" / "{chrom}.log")
     params:
-        ts_dir=lambda wc: str(ROOT_DIR / wc.chrom),
         window_size=LOW_ACCESS_WINDOW_SIZE,
         cutoff_bp=LOW_ACCESS_CUTOFF_BP,
-        pattern=TREE_PATTERN,
     shell:
         """
         python scripts/find_low_access_regions.py \
-          --ts-dir {params.ts_dir} \
+          --ts "{input}" \
           --window-size {params.window_size} \
           --cutoff-bp {params.cutoff_bp} \
-          --pattern '{params.pattern}' \
-          --out {output}
+          --out "{output}" \
+          --log "{log}"
         """
 
 
@@ -236,6 +256,8 @@ rule step3_mutload_masks:
     output:
         outlier=str(STEP3_DIR / "{chrom}" / "{rep}.outliers.bed"),
         masked=str(STEP3_DIR / "{chrom}" / "{rep}.mutation_masked.bed"),
+    log:
+        str(LOG_DIR / "step3" / "{chrom}" / "{rep}.log")
     params:
         window_arg=MUTLOAD_WINDOW_ARG,
         cutoff=MUTLOAD_CUTOFF,
@@ -244,14 +266,15 @@ rule step3_mutload_masks:
     shell:
         """
         python scripts/mutload_masks.py \
-          --ts {input.ts} \
+          --ts "{input.ts}" \
           --chrom {wildcards.chrom} \
-          --outlier-bed {output.outlier} \
-          --masked-bed {output.masked} \
+          --outlier-bed "{output.outlier}" \
+          --masked-bed "{output.masked}" \
           {params.window_arg} \
           --cutoff {params.cutoff} \
           {params.fraction_arg} \
-          --suffix-to-strip {params.suffix_to_strip}
+          --suffix-to-strip "{params.suffix_to_strip}" \
+          --log "{log}"
         """
 
 
@@ -262,12 +285,15 @@ rule step4_combine_remove_masks:
         masked=str(STEP3_DIR / "{chrom}" / "{rep}.mutation_masked.bed"),
     output:
         str(STEP4_MASK_DIR / "{chrom}" / "{rep}.remove_regions.bed")
+    log:
+        str(LOG_DIR / "step4_masks" / "{chrom}" / "{rep}.log")
     shell:
         """
         python scripts/combine_remove_masks.py \
           --chrom {wildcards.chrom} \
-          --out {output} \
-          --inputs {input.low_rec} {input.low_access} {input.masked}
+          --out "{output}" \
+          --inputs "{input.low_rec}" "{input.low_access}" "{input.masked}" \
+          --log "{log}"
         """
 
 
@@ -277,12 +303,18 @@ rule step4_trim_regions_single:
         mask_bed=str(STEP4_MASK_DIR / "{chrom}" / "{rep}.remove_regions.bed"),
     output:
         str(STEP4_TRIM_DIR / "{chrom}" / "{rep}.{ext}")
+    wildcard_constraints:
+        rep="|".join(re.escape(r) for r in REPLICATES),
+        ext="|".join(re.escape(s.lstrip(".")) for s in VALID_SUFFIXES),
+    log:
+        str(LOG_DIR / "step4_trim" / "{chrom}" / "{rep}.{ext}.log")
     shell:
         """
         python scripts/trim_regions_single.py \
-          --ts {input.ts} \
-          --remove {input.mask_bed} \
-          --out {output}
+          --ts "{input.ts}" \
+          --remove "{input.mask_bed}" \
+          --out "{output}" \
+          --log "{log}"
         """
 
 
@@ -292,25 +324,34 @@ rule step5_trim_samples_single:
         outlier=str(STEP3_DIR / "{chrom}" / "{rep}.outliers.bed"),
     output:
         str(STEP5_DIR / "{chrom}" / "{rep}.{ext}")
+    wildcard_constraints:
+        rep="|".join(re.escape(r) for r in REPLICATES),
+        ext="|".join(re.escape(s.lstrip(".")) for s in VALID_SUFFIXES),
+    log:
+        str(LOG_DIR / "step5" / "{chrom}" / "{rep}.{ext}.log")
     params:
         suffix_to_strip=SUFFIX_TO_STRIP,
-        log=lambda wc: str(LOG_DIR / "step5" / wc.chrom / f"{wc.rep}.trim_samples.log"),
     shell:
         """
         python scripts/trim_samples.py \
-          {input.ts} \
-          --remove {input.outlier} \
-          --out {output} \
-          --suffix-to-strip {params.suffix_to_strip} \
-          --log {params.log}
+          "{input.ts}" \
+          --remove "{input.outlier}" \
+          --out "{output}" \
+          --suffix-to-strip "{params.suffix_to_strip}" \
+          --log "{log}"
         """
 
 
 rule merge_replicates:
     input:
-        STEP5_TARGETS
+        step5_inputs_for_rep
     output:
-        MERGED_TARGETS
+        str(MERGED_DIR / f"{BASE_NAME}.combined.{{rep}}.{{ext}}")
+    wildcard_constraints:
+        rep="|".join(re.escape(r) for r in REPLICATES),
+        ext="|".join(re.escape(s.lstrip(".")) for s in VALID_SUFFIXES),
+    log:
+        str(LOG_DIR / "merge" / "{rep}.{ext}.log")
     params:
         ts_dir=str(STEP5_DIR),
         out_dir=str(MERGED_DIR),
@@ -319,9 +360,11 @@ rule merge_replicates:
     shell:
         """
         python scripts/merge_treefiles_by_replicate.py \
-          --ts-dir {params.ts_dir} \
+          --ts-dir "{params.ts_dir}" \
           --layout nested \
-          --base-name {params.base_name} \
-          --out-dir {params.out_dir} \
-          {params.merge_suffix_arg}
+          --base-name "{params.base_name}" \
+          --out-dir "{params.out_dir}" \
+          {params.merge_suffix_arg} \
+          --replicate "{wildcards.rep}" \
+          >> "{log}" 2>&1
         """
