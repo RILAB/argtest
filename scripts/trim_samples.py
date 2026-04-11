@@ -105,6 +105,8 @@ def remove_ancestry(ts, samples, left, right):
     # Simplify drops the removed ancestry and may renumber nodes.
     tables.simplify()
     tables.edges.squash()
+    tables.build_index()
+    tables.compute_mutation_parents()
     return tables.tree_sequence()
 
 
