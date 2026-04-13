@@ -60,6 +60,14 @@ def parse_args():
         default=None,
         help="Optional output suffix. Defaults to the suffix of the first file in each group.",
     )
+    p.add_argument(
+        "--replicate",
+        default=None,
+        help=(
+            "If set, only write the merged output for this replicate "
+            "(default: process all replicates)."
+        ),
+    )
     return p.parse_args()
 
 
@@ -141,8 +149,6 @@ def group_tree_files(paths, ts_dir: Path | None = None, layout: str = "flat", ba
             "Please use a single layout or set --layout explicitly."
         )
     detected = next(iter(mode_seen)) if mode_seen else None
-    if ts_dir is None:
-        return grouped, skipped
     return grouped, skipped, detected
 
 
@@ -188,6 +194,13 @@ def main():
         raise ValueError(f"No matching tree files found in {args.ts_dir}")
     if args.layout == "auto" and detected_layout is None:
         raise ValueError(f"No parseable tree files found in {args.ts_dir}")
+
+    if args.replicate is not None:
+        grouped = {k: v for k, v in grouped.items() if k[1] == args.replicate}
+        if not grouped:
+            raise ValueError(
+                f"No matching tree files found for replicate '{args.replicate}' in {args.ts_dir}"
+            )
 
     for (base, replicate), chrom_paths in sorted(grouped.items()):
         merged, ordered = merge_group(chrom_paths)

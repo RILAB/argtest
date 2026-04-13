@@ -40,10 +40,9 @@ def test_find_low_access_regions_default_log_goes_under_logs(tmp_path, monkeypat
             "A",
             (),
             {
-                "ts_dir": ts_dir,
+                "ts": ts_path,
                 "window_size": 5.0,
                 "cutoff_bp": 4.0,
-                "pattern": "*",
                 "out": out_bed,
                 "log": None,
             },

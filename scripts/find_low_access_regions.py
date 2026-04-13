@@ -78,10 +78,10 @@ def parse_args():
         description="Identify windows with too few accessible bp and write them as a BED file."
     )
     p.add_argument(
-        "--ts-dir",
+        "--ts",
         required=True,
         type=Path,
-        help="Directory containing tree sequence files (.tsz, .ts, .trees).",
+        help="Tree sequence file (.tsz, .ts, .trees) used to infer sequence length and mutation map.",
     )
     p.add_argument(
         "--window-size",
@@ -94,11 +94,6 @@ def parse_args():
         required=True,
         type=float,
         help="Minimum accessible bp in a window to keep it.",
-    )
-    p.add_argument(
-        "--pattern",
-        default="*",
-        help="Optional glob pattern to filter tree sequence filenames (default: '*').",
     )
     p.add_argument(
         "--out",
@@ -115,23 +110,8 @@ def parse_args():
     return p.parse_args()
 
 
-def find_tree_files(ts_dir: Path, pattern: str) -> list[Path]:
-    if not ts_dir.exists():
-        raise FileNotFoundError(f"Tree directory does not exist: {ts_dir}")
-    files = sorted(
-        [
-            p
-            for p in ts_dir.glob(pattern)
-            if p.is_file() and p.suffix in {".tsz", ".ts", ".trees"}
-        ]
-    )
-    if not files:
-        raise RuntimeError(f"No tree files found in {ts_dir} matching pattern '{pattern}'.")
-    return files
-
-
-def default_out_path(ts_dir: Path, window_size: float, cutoff_bp: float) -> Path:
-    return ts_dir / f"low_access.ws{format_num(window_size)}.accbp{format_num(cutoff_bp)}.bed"
+def default_out_path(ts_path: Path, window_size: float, cutoff_bp: float) -> Path:
+    return ts_path.parent / f"low_access.ws{format_num(window_size)}.accbp{format_num(cutoff_bp)}.bed"
 
 
 def default_log_path(out_path: Path) -> Path:
@@ -140,9 +120,9 @@ def default_log_path(out_path: Path) -> Path:
 
 def main():
     args = parse_args()
-    ts_files = find_tree_files(args.ts_dir, args.pattern)
-    first_ts = load_ts(ts_files[0])
-    mu_path = infer_mu_path(ts_files[0])
+    ts_path = args.ts
+    first_ts = load_ts(ts_path)
+    mu_path = infer_mu_path(ts_path)
     with open(mu_path, "rb") as fh:
         mu = pickle.load(fh)
     sequence_length = float(first_ts.sequence_length)
@@ -151,9 +131,9 @@ def main():
         windows[-1] = sequence_length
     acc_bp = overlap_lengths(accessible_intervals_from_mu(mu), windows)
 
-    out_path = args.out or default_out_path(args.ts_dir, args.window_size, args.cutoff_bp)
+    out_path = args.out or default_out_path(ts_path, args.window_size, args.cutoff_bp)
     lines = []
-    chrom = ts_files[0].stem
+    chrom = ts_path.stem
     for i in range(len(windows) - 1):
         if acc_bp[i] >= args.cutoff_bp:
             continue

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from argtest_common import merge_intervals
@@ -32,6 +33,7 @@ def parse_args():
 def read_intervals(path: Path):
     intervals = []
     if not path.exists():
+        print(f"WARNING: input BED not found, skipping: {path}", file=sys.stderr)
         return intervals
     with open(path, "r") as fh:
         for line in fh:

@@ -35,7 +35,7 @@ def test_group_tree_files():
         Path("base.chr2.1.trees"),
         Path("base.chr1.2.trees"),
     ]
-    grouped, skipped = merger.group_tree_files(paths)
+    grouped, skipped, _ = merger.group_tree_files(paths)
     assert skipped == []
     assert sorted(grouped.keys()) == [("base", "1"), ("base", "2")]
 
@@ -76,6 +76,7 @@ def test_main_writes_combined_file(tmp_path, monkeypatch):
                 "layout": "flat",
                 "base_name": None,
                 "out_suffix": None,
+                "replicate": None,
             },
         )(),
     )
@@ -132,6 +133,7 @@ def test_main_writes_combined_file_nested_layout(tmp_path, monkeypatch):
                 "layout": "nested",
                 "base_name": "base",
                 "out_suffix": None,
+                "replicate": None,
             },
         )(),
     )
@@ -141,3 +143,37 @@ def test_main_writes_combined_file_nested_layout(tmp_path, monkeypatch):
     assert out.exists()
     merged = tskit.load(out)
     assert merged.sequence_length == 12
+
+
+def test_main_replicate_filter_writes_only_matching(tmp_path, monkeypatch):
+    ts1 = make_simple_ts(length=5, site_pos=1)
+    ts2 = make_simple_ts(length=7, site_pos=2)
+    in_dir = tmp_path / "trees"
+    in_dir.mkdir()
+    ts1.dump(in_dir / "base.chr1.1.trees")
+    ts2.dump(in_dir / "base.chr2.1.trees")
+    ts1.dump(in_dir / "base.chr1.2.trees")
+    ts2.dump(in_dir / "base.chr2.2.trees")
+
+    monkeypatch.setattr(
+        merger,
+        "parse_args",
+        lambda: type(
+            "A",
+            (),
+            {
+                "ts_dir": in_dir,
+                "out_dir": tmp_path / "combined",
+                "pattern": "*",
+                "layout": "flat",
+                "base_name": None,
+                "out_suffix": None,
+                "replicate": "1",
+            },
+        )(),
+    )
+    merger.main()
+
+    out_dir = tmp_path / "combined"
+    assert (out_dir / "base.combined.1.trees").exists()
+    assert not (out_dir / "base.combined.2.trees").exists()

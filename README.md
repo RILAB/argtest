@@ -616,6 +616,8 @@ Options:
 | `--out-dir PATH` | Output directory for plots (default: `results/coalescence_ne_plots`). |
 | `--prefix STR` | Optional prefix prepended to output filenames. |
 
+> **TODO:** Running `coalescence_ne_plots_from_ts.py --sim N` before and after the pipeline (on the raw input tree sequences and on the step 5 output) and comparing the resulting Ne trajectories and simulation TSVs would be a useful formal QC step. Consider making this a standard part of the pipeline alongside `validation_plots_from_ts.py --compare`.
+
 ### `scripts/compare_trees_html.py`
 Renders one tree index from each of two tree sequences side-by-side into a single HTML file for visual comparison.
 
