@@ -120,6 +120,16 @@ def genome_windows(sequence_length: float, window_size: float) -> np.ndarray:
     return windows
 
 
+def accessible_per_window(stat_windows: np.ndarray, kept_intervals: list) -> np.ndarray:
+    """Return accessible bp per window given a list of [[left, right], ...] kept intervals."""
+    wl = stat_windows[:-1]
+    wr = stat_windows[1:]
+    acc = np.zeros(len(wl), dtype=float)
+    for left, right in kept_intervals:
+        acc += np.maximum(0.0, np.minimum(right, wr) - np.maximum(left, wl))
+    return acc
+
+
 def safe_nanmean(a: np.ndarray, axis=None):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
@@ -192,31 +202,66 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
 
     for ts_path in ts_files:
         ts = load_ts(ts_path)
+        # tskit requires windows[-1] == sequence_length exactly, so each replicate
+        # gets its own window grid.
+        rep_windows = genome_windows(ts.sequence_length, window_size)
         if n_samples is None:
             n_samples = ts.num_samples
-            stat_windows = genome_windows(ts.sequence_length, window_size)
         elif ts.num_samples != n_samples:
             raise RuntimeError(
                 f"Sample count mismatch: {ts_path} has {ts.num_samples}, expected {n_samples}."
             )
-        if float(ts.sequence_length) != float(stat_windows[-1]):
-            raise RuntimeError(
-                f"Sequence length mismatch: {ts_path} has {ts.sequence_length}, "
-                f"expected {stat_windows[-1]}."
-            )
-        load = mutational_load(ts) / float(ts.sequence_length)
+
+        # If the ts carries kept_intervals metadata (written by trim_regions_single),
+        # rescale windowed diversity to per-accessible-bp and NaN fully-masked windows.
+        # Original (untrimmed) ts have no kept_intervals and are treated as fully accessible.
+        kept_intervals = ts.metadata.get("kept_intervals") if ts.metadata else None
+        if kept_intervals is not None:
+            rep_acc = accessible_per_window(rep_windows, kept_intervals)
+            window_spans = rep_windows[1:] - rep_windows[:-1]
+            with np.errstate(invalid="ignore", divide="ignore"):
+                div_scale = np.where(rep_acc > 0, window_spans / rep_acc, np.nan)
+            total_accessible = float(sum(r - l for l, r in kept_intervals))
+        else:
+            div_scale = None
+            total_accessible = float(ts.sequence_length)
+
+        load = mutational_load(ts) / total_accessible
         load_vals.append(load)
         seq_lengths.append(float(ts.sequence_length))
-        site_div_vals.append(ts.diversity(mode="site", windows=stat_windows))
-        branch_div_vals.append(ts.diversity(mode="branch", windows=stat_windows))
-        site_td_vals.append(ts.Tajimas_D(mode="site", windows=stat_windows))
-        branch_td_vals.append(ts.Tajimas_D(mode="branch", windows=stat_windows))
+
+        site_div = ts.diversity(mode="site", windows=rep_windows)
+        branch_div = ts.diversity(mode="branch", windows=rep_windows)
+        site_td = ts.Tajimas_D(mode="site", windows=rep_windows)
+        branch_td = ts.Tajimas_D(mode="branch", windows=rep_windows)
+
+        if div_scale is not None:
+            site_div = site_div * div_scale
+            branch_div = branch_div * div_scale
+            # For Tajima's D, only NaN fully-masked windows; the ratio is approximately
+            # correct for partially-accessible windows.
+            td_nan = np.isnan(div_scale)
+            site_td = np.where(td_nan, np.nan, site_td)
+            branch_td = np.where(td_nan, np.nan, branch_td)
+
+        site_div_vals.append(site_div)
+        branch_div_vals.append(branch_div)
+        site_td_vals.append(site_td)
+        branch_td_vals.append(branch_td)
         site_afs_vals.append(
             ts.allele_frequency_spectrum(mode="site", polarised=not folded)
         )
         branch_afs_vals.append(
             ts.allele_frequency_spectrum(mode="branch", polarised=not folded)
         )
+
+    # Clip all windowed arrays to the shortest replicate so np.stack sees uniform shapes.
+    min_n_windows = min(len(a) for a in site_div_vals)
+    site_div_vals = [a[:min_n_windows] for a in site_div_vals]
+    branch_div_vals = [a[:min_n_windows] for a in branch_div_vals]
+    site_td_vals = [a[:min_n_windows] for a in site_td_vals]
+    branch_td_vals = [a[:min_n_windows] for a in branch_td_vals]
+    stat_windows = genome_windows(min(seq_lengths), window_size)
 
     n_files = len(ts_files)
     burnin = int(np.floor(n_files * burnin_frac))

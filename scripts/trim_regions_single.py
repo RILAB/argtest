@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from argtest_common import collapse_masked_intervals, dump_ts, load_ts, ratemap_from_keep_intervals
+from argtest_common import dump_ts, load_ts
 from trim_regions import complement_intervals, load_mask_intervals
 
 
@@ -31,8 +31,10 @@ def main():
     log_path.parent.mkdir(parents=True, exist_ok=True)
     masked = load_mask_intervals(args.remove, ts.sequence_length)
     keep = complement_intervals(masked, ts.sequence_length)
-    accessible = ratemap_from_keep_intervals(keep, ts.sequence_length)
-    trimmed = collapse_masked_intervals(ts, accessible)
+    trimmed = ts.keep_intervals(keep, simplify=False)
+    tables = trimmed.dump_tables()
+    tables.metadata = {"kept_intervals": [[float(l), float(r)] for l, r in keep]}
+    trimmed = tables.tree_sequence()
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     dump_ts(trimmed, args.out)

@@ -22,8 +22,13 @@ suffix_to_strip: "_anchorwave"
 
 # Concatenation behavior
 allow_missing_replicates: false
+burnin: 0
 base_name: "run"
 # merged_out_suffix: ".tsz"
 
 # Workflow outputs
 out_dir: "snakemake_out"
+
+# Step 6 - Validation plots (omit or set to null to skip)
+# validation_mutation_rate: 3e-9
+validation_first_chrom_only: true

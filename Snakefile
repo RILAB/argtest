@@ -33,6 +33,9 @@ TREE_PATTERN = str(config.get("tree_pattern", "*"))
 OUT_DIR = Path(config.get("out_dir", "snakemake_out")).expanduser()
 BASE_NAME = str(config.get("base_name", ROOT_DIR.name))
 ALLOW_MISSING_REPLICATES = bool(config.get("allow_missing_replicates", False))
+BURNIN = int(config.get("burnin", 0))
+if BURNIN < 0:
+    raise WorkflowError("burnin must be >= 0")
 SUFFIX_TO_STRIP = str(config.get("suffix_to_strip", "_anchorwave"))
 
 HAPMAP = Path(cfg_required("hapmap")).expanduser().resolve()
@@ -64,6 +67,11 @@ else:
 
 MUTLOAD_FRACTION_ARG = f"--fraction {MUTLOAD_FRACTION}" if MUTLOAD_FRACTION is not None else ""
 
+VALIDATION_MUTATION_RATE = config.get("validation_mutation_rate", None)
+if VALIDATION_MUTATION_RATE is not None:
+    VALIDATION_MUTATION_RATE = float(VALIDATION_MUTATION_RATE)
+VALIDATION_FIRST_CHROM_ONLY = bool(config.get("validation_first_chrom_only", True))
+
 MERGED_OUT_SUFFIX = config.get("merged_out_suffix", None)
 if MERGED_OUT_SUFFIX is not None and MERGED_OUT_SUFFIX not in VALID_SUFFIXES:
     raise WorkflowError(f"merged_out_suffix must be one of {sorted(VALID_SUFFIXES)}")
@@ -76,6 +84,7 @@ STEP4_MASK_DIR = OUT_DIR / "step4_masks"
 STEP4_TRIM_DIR = OUT_DIR / "step4_trimmed_regions"
 STEP5_DIR = OUT_DIR / "step5_trimmed_samples"
 MERGED_DIR = OUT_DIR / "combined"
+STEP6_DIR = OUT_DIR / "step6_validation"
 LOG_DIR = OUT_DIR / "logs"
 
 
@@ -117,9 +126,16 @@ REPLICATE_UNION = sorted(
     key=natural_key,
 )
 
+if BURNIN >= len(REPLICATE_UNION):
+    raise WorkflowError(
+        f"burnin ({BURNIN}) must be less than the number of replicates ({len(REPLICATE_UNION)})"
+    )
+
+REPLICATES = REPLICATE_UNION[BURNIN:]
+
 if not ALLOW_MISSING_REPLICATES:
     missing_messages = []
-    for rep in REPLICATE_UNION:
+    for rep in REPLICATES:
         missing = [chrom for chrom in CHROMS if rep not in CHROM_TO_REP[chrom]]
         if missing:
             missing_messages.append(f"{rep}: missing in {', '.join(missing)}")
@@ -130,8 +146,6 @@ if not ALLOW_MISSING_REPLICATES:
             + "\nSet allow_missing_replicates: true to allow partial concatenation."
         )
 
-REPLICATES = REPLICATE_UNION
-
 TS_LOOKUP = {
     (chrom, rep): path
     for chrom, reps in CHROM_TO_REP.items()
@@ -139,7 +153,11 @@ TS_LOOKUP = {
 }
 
 if ALLOW_MISSING_REPLICATES:
-    PAIRS = sorted(TS_LOOKUP.keys(), key=lambda item: (natural_key(item[1]), natural_key(item[0])))
+    _rep_set = set(REPLICATES)
+    PAIRS = sorted(
+        [(c, r) for (c, r) in TS_LOOKUP.keys() if r in _rep_set],
+        key=lambda item: (natural_key(item[1]), natural_key(item[0])),
+    )
 else:
     PAIRS = [(chrom, rep) for rep in REPLICATES for chrom in CHROMS]
 
@@ -163,6 +181,13 @@ MERGED_TARGETS = [
 
 if not MERGED_TARGETS:
     raise WorkflowError("No merged outputs were inferred from discovered inputs.")
+
+VALIDATION_CHROMS = [CHROMS[0]] if VALIDATION_FIRST_CHROM_ONLY else CHROMS
+STEP6_TARGETS = (
+    [str(STEP6_DIR / chrom / "done.txt") for chrom in VALIDATION_CHROMS]
+    if VALIDATION_MUTATION_RATE is not None
+    else []
+)
 
 
 def tree_inputs_for_chrom(wildcards):
@@ -198,7 +223,7 @@ def ts_input_for_pair_ext(wildcards):
 
 rule all:
     input:
-        MERGED_TARGETS
+        MERGED_TARGETS + STEP6_TARGETS
 
 
 rule step1_low_rec_masks:
@@ -368,3 +393,46 @@ rule merge_replicates:
           --replicate "{wildcards.rep}" \
           >> "{log}" 2>&1
         """
+
+
+def step6_inputs_for_chrom(wildcards):
+    return [
+        str(STEP5_DIR / wildcards.chrom / f"{rep}.{PAIR_EXT[(wildcards.chrom, rep)]}")
+        for rep in REPLICATES
+        if (wildcards.chrom, rep) in TS_LOOKUP
+    ]
+
+
+if VALIDATION_MUTATION_RATE is not None:
+    rule step6_validation_plots:
+        input:
+            step6_inputs_for_chrom
+        output:
+            str(STEP6_DIR / "{chrom}" / "done.txt")
+        log:
+            str(LOG_DIR / "step6" / "{chrom}.log")
+        params:
+            step5_dir=lambda wildcards: str(STEP5_DIR / wildcards.chrom),
+            initial_dir=lambda wildcards: str(ROOT_DIR / wildcards.chrom),
+            cleaned_out=lambda wildcards: str(STEP6_DIR / wildcards.chrom / "cleaned"),
+            original_out=lambda wildcards: str(STEP6_DIR / wildcards.chrom / "original"),
+            mutation_rate=VALIDATION_MUTATION_RATE,
+            pattern=lambda wildcards: "*.{}".format(
+                PAIR_EXT[(wildcards.chrom, sorted(CHROM_TO_REP[wildcards.chrom].keys(), key=natural_key)[0])]
+            ),
+        shell:
+            """
+            python scripts/validation_plots_from_ts.py \
+              --ts-dir "{params.step5_dir}" \
+              --pattern "{params.pattern}" \
+              --mutation-rate {params.mutation_rate} \
+              --out-dir "{params.cleaned_out}" \
+              >> "{log}" 2>&1
+            python scripts/validation_plots_from_ts.py \
+              --ts-dir "{params.initial_dir}" \
+              --pattern "{params.pattern}" \
+              --mutation-rate {params.mutation_rate} \
+              --out-dir "{params.original_out}" \
+              >> "{log}" 2>&1
+            touch "{output}"
+            """
