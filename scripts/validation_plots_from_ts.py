@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import pickle
 from pathlib import Path
 import warnings
 import csv
@@ -14,7 +15,12 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
-from argtest_common import load_ts, mutational_load
+from argtest_common import (
+    accessible_intervals_from_mu,
+    infer_mu_path,
+    load_ts,
+    mutational_load,
+)
 
 matplotlib.rcParams["figure.dpi"] = 300
 
@@ -113,6 +119,19 @@ def find_tree_files(ts_dir: Path, pattern: str) -> list[Path]:
     return files
 
 
+def _try_mu_intervals(ts_files: list[Path]):
+    """Return accessible intervals from the nearest *.mut_rate.p file, or None if not found."""
+    if not ts_files:
+        return None
+    try:
+        mu_path = infer_mu_path(ts_files[0])
+        with open(mu_path, "rb") as fh:
+            mu = pickle.load(fh)
+        return accessible_intervals_from_mu(mu)
+    except Exception:
+        return None
+
+
 def genome_windows(sequence_length: float, window_size: float) -> np.ndarray:
     windows = np.arange(0, float(sequence_length) + float(window_size), float(window_size), dtype=float)
     if windows[-1] > float(sequence_length):
@@ -200,6 +219,11 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
     n_samples = None
     stat_windows = None
 
+    # For original (untrimmed) ts that carry no kept_intervals metadata, try to
+    # find the *.mut_rate.p file and use its zero-rate regions as inaccessible.
+    # Same file applies to all replicates in the directory, so detect once.
+    mu_intervals = _try_mu_intervals(ts_files)
+
     for ts_path in ts_files:
         ts = load_ts(ts_path)
         # tskit requires windows[-1] == sequence_length exactly, so each replicate
@@ -212,19 +236,28 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
                 f"Sample count mismatch: {ts_path} has {ts.num_samples}, expected {n_samples}."
             )
 
-        # If the ts carries kept_intervals metadata (written by trim_regions_single),
-        # rescale windowed diversity to per-accessible-bp and NaN fully-masked windows.
-        # Original (untrimmed) ts have no kept_intervals and are treated as fully accessible.
+        # Determine accessible intervals for this replicate:
+        #   1. kept_intervals metadata (written by trim_regions_single) — exact post-pipeline mask
+        #   2. mu_intervals from *.mut_rate.p — pre-pipeline accessibility (rate > 0)
+        #   3. fallback: treat entire sequence as accessible
         kept_intervals = ts.metadata.get("kept_intervals") if ts.metadata else None
         if kept_intervals is not None:
-            rep_acc = accessible_per_window(rep_windows, kept_intervals)
+            acc_intervals = kept_intervals
+            total_accessible = float(sum(r - l for l, r in kept_intervals))
+        elif mu_intervals is not None:
+            acc_intervals = mu_intervals
+            total_accessible = float(np.sum(mu_intervals[:, 1] - mu_intervals[:, 0]))
+        else:
+            acc_intervals = None
+            total_accessible = float(ts.sequence_length)
+
+        if acc_intervals is not None:
+            rep_acc = accessible_per_window(rep_windows, acc_intervals)
             window_spans = rep_windows[1:] - rep_windows[:-1]
             with np.errstate(invalid="ignore", divide="ignore"):
                 div_scale = np.where(rep_acc > 0, window_spans / rep_acc, np.nan)
-            total_accessible = float(sum(r - l for l, r in kept_intervals))
         else:
             div_scale = None
-            total_accessible = float(ts.sequence_length)
 
         load = mutational_load(ts) / total_accessible
         load_vals.append(load)

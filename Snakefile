@@ -418,7 +418,7 @@ if VALIDATION_MUTATION_RATE is not None:
             original_out=lambda wildcards: str(STEP6_DIR / wildcards.chrom / "original"),
             mutation_rate=VALIDATION_MUTATION_RATE,
             pattern=lambda wildcards: "*.{}".format(
-                PAIR_EXT[(wildcards.chrom, sorted(CHROM_TO_REP[wildcards.chrom].keys(), key=natural_key)[0])]
+                next(ext for (c, _), ext in PAIR_EXT.items() if c == wildcards.chrom)
             ),
         shell:
             """

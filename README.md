@@ -429,6 +429,7 @@ Notes:
 - branch diversity is scaled by `--mutation-rate` for site-vs-branch comparison
 - trace plots are branch-only MCMC outcomes
 - for observed-vs-simulated plots, first run `coalescence_ne_plots_from_ts.py --sim N ...` to generate the simulation TSVs, then pass them via `--sim` (window stats) and `--sim-sfs` (SFS); the simulations can be reused across multiple validation runs without re-computing them
+- **`*.mut_rate.p` file required for original (untrimmed) tree sequences.** When running on the original SINGER output (before any masking), the script auto-detects the nearest `*.mut_rate.p` pickle file (searched in the ts directory and its parent, same logic as `find_low_access_regions.py`) and uses it to normalize diversity per accessible bp rather than per total window span. If no `*.mut_rate.p` is found, the script falls back to total window span and prints no warning. Trimmed tree sequences (step 4/5 output) carry `kept_intervals` metadata and do not need the file.
 
 Example:
 ```bash

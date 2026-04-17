@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 from __future__ import annotations
 
+import pickle
+import re
 import sys
 from bisect import bisect_right
 from pathlib import Path
@@ -359,6 +361,56 @@ def accessible_intervals_from_mu(mu):
     lefts = pos[:-1][keep]
     rights = pos[1:][keep]
     return np.column_stack([lefts, rights])
+
+
+def infer_mu_base(ts_stem: str, parent_stem: str | None = None) -> list[str]:
+    bases = [ts_stem]
+    if parent_stem:
+        bases.append(parent_stem)
+    for b in ([ts_stem] + ([parent_stem] if parent_stem else [])):
+        m = re.match(r"^(.+)\.(\d+)$", b)
+        if m:
+            bases.append(m.group(1))
+        m = re.match(r"^(.+)[_-](\d+)$", b)
+        if m:
+            bases.append(m.group(1))
+    dedup = []
+    seen: set = set()
+    for b in bases:
+        if b not in seen:
+            dedup.append(b)
+            seen.add(b)
+    return dedup
+
+
+def infer_mu_path(ts_path: Path) -> Path:
+    """Find the *.mut_rate.p file for *ts_path* by searching its parent directories."""
+    bases = infer_mu_base(ts_path.stem, parent_stem=ts_path.parent.name)
+    search_dirs = [ts_path.parent, ts_path.parent.parent]
+    for d in search_dirs:
+        for b in bases:
+            p = d / f"{b}.mut_rate.p"
+            if p.exists():
+                return p
+    candidates = []
+    for d in search_dirs:
+        if not d.exists():
+            continue
+        for p in d.glob("*.mut_rate.p"):
+            nm = p.name
+            if any(nm.startswith(f"{b}.") or nm == f"{b}.mut_rate.p" for b in bases):
+                candidates.append(p)
+    candidates = sorted(set(candidates))
+    if len(candidates) == 1:
+        return candidates[0]
+    if len(candidates) > 1:
+        raise RuntimeError(
+            f"Ambiguous mutation maps for {ts_path.name}: "
+            + ", ".join(str(x) for x in candidates)
+        )
+    raise FileNotFoundError(
+        f"Could not infer mutation map for {ts_path}. Tried bases={bases} in {search_dirs}"
+    )
 
 
 def overlap_lengths(intervals, windows):

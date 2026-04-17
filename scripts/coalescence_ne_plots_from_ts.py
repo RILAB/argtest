@@ -285,18 +285,24 @@ def main():
     rate_vals_full = np.stack(rate_vals_full, axis=0)
     pdf_vals = pdf_vals_full[:, keep_mask]
     rate_vals = rate_vals_full[:, keep_mask]
-    mean_pdf = safe_nanmean(pdf_vals[keep_post], axis=0)
+
+    # Convert PMF to density on log scale: divide by log bin width so equal
+    # area on the log x-axis equals equal probability.
+    bin_widths = np.log(time_windows[1:][keep_mask] / time_windows[:-1][keep_mask])
+    pdf_density = pdf_vals / bin_widths
+
+    mean_pdf = safe_nanmean(pdf_density[keep_post], axis=0)
     mean_rates = safe_nanmean(rate_vals[keep_post], axis=0)
 
     reps_kwargs = {"color": "gray", "alpha": 0.15}
     mean_kwargs = {"color": "black", "linewidth": 1.5}
 
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    for val in pdf_vals:
+    for val in pdf_density:
         ax.step(plot_breaks, val, **reps_kwargs)
     ax.step(plot_breaks, mean_pdf, **mean_kwargs)
     ax.set_xlabel("Adjusted generations in past")
-    ax.set_ylabel("Proportion coalescing pairs")
+    ax.set_ylabel("Coalescence density (proportion / log-generation)")
     ax.set_xscale("log")
     pdf_path = args.out_dir / f"{args.prefix}pair-coalescence-pdf.png"
     plt.savefig(pdf_path)
