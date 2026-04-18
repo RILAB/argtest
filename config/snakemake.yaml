@@ -32,3 +32,4 @@ out_dir: "/tmp/argtest-snakemake-example-out"
 # Step 6 - Validation plots (omit or set to null to skip)
 # validation_mutation_rate: 3e-9
 validation_first_chrom_only: true
+# validation_sim_branch: false  # set true to use msprime posterior-predictive (sim) stats instead of branch-mode

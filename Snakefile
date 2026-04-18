@@ -71,6 +71,7 @@ VALIDATION_MUTATION_RATE = config.get("validation_mutation_rate", None)
 if VALIDATION_MUTATION_RATE is not None:
     VALIDATION_MUTATION_RATE = float(VALIDATION_MUTATION_RATE)
 VALIDATION_FIRST_CHROM_ONLY = bool(config.get("validation_first_chrom_only", True))
+VALIDATION_SIM_BRANCH = bool(config.get("validation_sim_branch", False))
 
 MERGED_OUT_SUFFIX = config.get("merged_out_suffix", None)
 if MERGED_OUT_SUFFIX is not None and MERGED_OUT_SUFFIX not in VALID_SUFFIXES:
@@ -417,6 +418,7 @@ if VALIDATION_MUTATION_RATE is not None:
             cleaned_out=lambda wildcards: str(STEP6_DIR / wildcards.chrom / "cleaned"),
             original_out=lambda wildcards: str(STEP6_DIR / wildcards.chrom / "original"),
             mutation_rate=VALIDATION_MUTATION_RATE,
+            sim_branch_flag="--sim-branch" if VALIDATION_SIM_BRANCH else "",
             pattern=lambda wildcards: "*.{}".format(
                 next(ext for (c, _), ext in PAIR_EXT.items() if c == wildcards.chrom)
             ),
@@ -427,12 +429,14 @@ if VALIDATION_MUTATION_RATE is not None:
               --pattern "{params.pattern}" \
               --mutation-rate {params.mutation_rate} \
               --out-dir "{params.cleaned_out}" \
+              {params.sim_branch_flag} \
               >> "{log}" 2>&1
             python scripts/validation_plots_from_ts.py \
               --ts-dir "{params.initial_dir}" \
               --pattern "{params.pattern}" \
               --mutation-rate {params.mutation_rate} \
               --out-dir "{params.original_out}" \
+              {params.sim_branch_flag} \
               >> "{log}" 2>&1
             touch "{output}"
             """
