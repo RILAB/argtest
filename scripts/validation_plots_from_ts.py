@@ -547,17 +547,17 @@ def main():
     fig, ax = plt.subplots(1, 1, figsize=(8, 4), constrained_layout=True)
     ax.fill_between(pri["coord"], pri["q_branch_div"][0], pri["q_branch_div"][1],
                     color=PRI_BRANCH, alpha=0.1)
-    ax.plot(pri["coord"], pri["mean_branch_div"], "-o", c=PRI_BRANCH, markersize=3,
-            label=f"{pri_label} {pri['stat_label']}")
-    ax.plot(pri["coord"], pri["mean_site_div"], "-o", c=PRI_SITE, markersize=3,
-            label=f"{pri_label} site")
+    ax.scatter(pri["coord"], pri["mean_branch_div"], c=PRI_BRANCH, s=8,
+               label=f"{pri_label} {pri['stat_label']}")
+    ax.scatter(pri["coord"], pri["mean_site_div"], c=PRI_SITE, s=8,
+               label=f"{pri_label} site")
     if cmp is not None:
         ax.fill_between(cmp["coord"], cmp["q_branch_div"][0], cmp["q_branch_div"][1],
                         color=CMP_BRANCH, alpha=0.1)
-        ax.plot(cmp["coord"], cmp["mean_branch_div"], CMP_LS + "o", c=CMP_BRANCH, markersize=3,
-                label=f"{cmp_label} {cmp['stat_label']}")
-        ax.plot(cmp["coord"], cmp["mean_site_div"], CMP_LS + "o", c=CMP_SITE, markersize=3,
-                label=f"{cmp_label} site")
+        ax.scatter(cmp["coord"], cmp["mean_branch_div"], c=CMP_BRANCH, s=8, marker="^",
+                   label=f"{cmp_label} {cmp['stat_label']}")
+        ax.scatter(cmp["coord"], cmp["mean_site_div"], c=CMP_SITE, s=8, marker="^",
+                   label=f"{cmp_label} site")
     ax.set_xlabel("Position on chromosome")
     ax.set_ylabel("Diversity")
     ax.legend(fontsize=7)
@@ -610,17 +610,17 @@ def main():
     fig, ax = plt.subplots(1, 1, figsize=(8, 4), constrained_layout=True)
     ax.fill_between(pri["coord"], pri["q_branch_td"][0], pri["q_branch_td"][1],
                     color=PRI_BRANCH, alpha=0.1)
-    ax.plot(pri["coord"], pri["mean_branch_td"], "-o", c=PRI_BRANCH, markersize=3,
-            label=f"{pri_label} {pri['stat_label']}")
-    ax.plot(pri["coord"], pri["mean_site_td"], "-o", c=PRI_SITE, markersize=3,
-            label=f"{pri_label} site")
+    ax.scatter(pri["coord"], pri["mean_branch_td"], c=PRI_BRANCH, s=8,
+               label=f"{pri_label} {pri['stat_label']}")
+    ax.scatter(pri["coord"], pri["mean_site_td"], c=PRI_SITE, s=8,
+               label=f"{pri_label} site")
     if cmp is not None:
         ax.fill_between(cmp["coord"], cmp["q_branch_td"][0], cmp["q_branch_td"][1],
                         color=CMP_BRANCH, alpha=0.1)
-        ax.plot(cmp["coord"], cmp["mean_branch_td"], CMP_LS + "o", c=CMP_BRANCH, markersize=3,
-                label=f"{cmp_label} {cmp['stat_label']}")
-        ax.plot(cmp["coord"], cmp["mean_site_td"], CMP_LS + "o", c=CMP_SITE, markersize=3,
-                label=f"{cmp_label} site")
+        ax.scatter(cmp["coord"], cmp["mean_branch_td"], c=CMP_BRANCH, s=8, marker="^",
+                   label=f"{cmp_label} {cmp['stat_label']}")
+        ax.scatter(cmp["coord"], cmp["mean_site_td"], c=CMP_SITE, s=8, marker="^",
+                   label=f"{cmp_label} site")
     ax.set_xlabel("Position on chromosome")
     ax.set_ylabel("Tajima's D")
     ax.legend(fontsize=7)

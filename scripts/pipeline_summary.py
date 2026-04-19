@@ -252,7 +252,9 @@ img.plot{width:100%;border:1px solid #ddd;border-radius:4px;margin-bottom:4px}
 
 PLOTS = [
     ("mutational-load.png",              "Mutational load by sample"),
+    ("diversity-scatter.png",            "Diversity: site vs branch/sim"),
     ("diversity-skyline.png",            "Diversity skyline"),
+    ("tajima-d-scatter.png",             "Tajima's D: site vs branch/sim"),
     ("tajima-d-skyline.png",             "Tajima's D skyline"),
     ("frequency-spectrum-unfolded.png",  "SFS — unfolded"),
     ("frequency-spectrum-folded.png",    "SFS — folded"),
