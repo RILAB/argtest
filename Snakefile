@@ -189,6 +189,7 @@ STEP6_TARGETS = (
     if VALIDATION_MUTATION_RATE is not None
     else []
 )
+SUMMARY_TARGET = str(OUT_DIR / "pipeline_summary.html")
 
 
 def tree_inputs_for_chrom(wildcards):
@@ -224,7 +225,7 @@ def ts_input_for_pair_ext(wildcards):
 
 rule all:
     input:
-        MERGED_TARGETS + STEP6_TARGETS
+        MERGED_TARGETS + STEP6_TARGETS + [SUMMARY_TARGET]
 
 
 rule step1_low_rec_masks:
@@ -440,3 +441,39 @@ if VALIDATION_MUTATION_RATE is not None:
               >> "{log}" 2>&1
             touch "{output}"
             """
+
+
+rule step7_summary:
+    input:
+        fai=str(FAI),
+        targets=MERGED_TARGETS + STEP6_TARGETS,
+    output:
+        SUMMARY_TARGET
+    log:
+        str(LOG_DIR / "step7_summary.log")
+    params:
+        out_dir=str(OUT_DIR),
+        chroms=" ".join(CHROMS),
+        replicates=" ".join(REPLICATES),
+        rec_fraction=REC_FRACTION,
+        low_access_window=int(LOW_ACCESS_WINDOW_SIZE),
+        low_access_cutoff=int(LOW_ACCESS_CUTOFF_BP),
+        mutload_cutoff=MUTLOAD_CUTOFF,
+        mutation_rate=VALIDATION_MUTATION_RATE if VALIDATION_MUTATION_RATE is not None else "null",
+        sim_branch="true" if VALIDATION_SIM_BRANCH else "false",
+    shell:
+        """
+        python scripts/pipeline_summary.py \
+          --out-dir "{params.out_dir}" \
+          --fai "{input.fai}" \
+          --chroms {params.chroms} \
+          --replicates {params.replicates} \
+          --out "{output}" \
+          --rec-fraction {params.rec_fraction} \
+          --low-access-window {params.low_access_window} \
+          --low-access-cutoff {params.low_access_cutoff} \
+          --mutload-cutoff {params.mutload_cutoff} \
+          --mutation-rate {params.mutation_rate} \
+          --sim-branch {params.sim_branch} \
+          >> "{log}" 2>&1
+        """
