@@ -57,7 +57,7 @@ Supported treefile suffixes are `.ts`, `.trees`, and `.tsz`. Replicate IDs are t
 
 ### Required Inputs
 
-The Snakemake config expects these keys in a YAML file such as [config/snakemake.example.yaml](config/snakemake.example.yaml):
+The Snakemake config is in [config/snakemake.yaml](config/snakemake.yaml). Edit it for your project and supply it with `--configfile`. The file has an inline comment for every option; required keys are:
 
 - `root_dir`: path to the chromosome-subdirectory root
 - `hapmap`: HapMap recombination map used for step 1
@@ -102,29 +102,13 @@ From the repo root:
 ```bash
 module load conda
 conda activate argtest
-cp config/snakemake.example.yaml config/snakemake.yaml
 ```
+
+Edit `config/snakemake.yaml` to point at your data (at minimum set `root_dir`, `hapmap`, and `fai`), then run.
 
 #### Walk-through using bundled example data
 
-Use the committed example dataset at [example_data/sim_2chr_5rep_clean](example_data/sim_2chr_5rep_clean):
-
-```yaml
-root_dir: example_data/sim_2chr_5rep_clean/trees
-hapmap: example_data/sim_2chr_5rep_clean/hapmap/all.hapmap.tsv
-fai: example_data/sim_2chr_5rep_clean/sim.fai
-tree_pattern: "*.trees"
-rec_fraction: 0.1
-low_access_window_size: 10000
-low_access_cutoff_bp: 9000
-mutload_window_size: 10000
-mutload_cutoff: 0.25
-mutload_fraction: 0.8
-suffix_to_strip: ""
-allow_missing_replicates: false
-base_name: "sim2chr"
-out_dir: "/tmp/argtest-snakemake-example-out"
-```
+The committed [config/snakemake.yaml](config/snakemake.yaml) already points at the example dataset at [example_data/sim_2chr_5rep_clean](example_data/sim_2chr_5rep_clean) and can be used as-is for a test run.
 
 In sandboxed environments where `~/.cache` is read-only, set cache/temp dirs to `/tmp` when running Snakemake:
 

@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from argtest_common import dump_ts, load_ts
+import pickle
+
+from argtest_common import dump_ts, infer_mu_path, load_ts, ratemap_to_metadata
 from trim_regions import complement_intervals, load_mask_intervals
 
 
@@ -33,7 +35,15 @@ def main():
     keep = complement_intervals(masked, ts.sequence_length)
     trimmed = ts.keep_intervals(keep, simplify=False)
     tables = trimmed.dump_tables()
-    tables.metadata = {"kept_intervals": [[float(l), float(r)] for l, r in keep]}
+    metadata: dict = {"kept_intervals": [[float(l), float(r)] for l, r in keep]}
+    try:
+        mu_path = infer_mu_path(args.ts)
+        with open(mu_path, "rb") as fh:
+            mu = pickle.load(fh)
+        metadata.update(ratemap_to_metadata(mu))
+    except Exception:
+        pass
+    tables.metadata = metadata
     trimmed = tables.tree_sequence()
 
     args.out.parent.mkdir(parents=True, exist_ok=True)

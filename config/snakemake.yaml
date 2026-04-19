@@ -1,35 +1,117 @@
-# Required
+# Snakemake configuration for the ARG tree-sequence pipeline.
+# Edit this file for your project, then run:
+#   snakemake --cores N --configfile config/snakemake.yaml
+
+# --------------------------------------------------------------------------- #
+# Required paths
+# --------------------------------------------------------------------------- #
+
+# Root directory containing one subdirectory per chromosome, each holding one
+# tree sequence file per replicate (e.g. chr1/1.trees, chr1/2.trees, ...).
 root_dir: /home/jri/src/argtest/example_data/sim_2chr_5rep_clean/trees
+
+# HapMap-format recombination map used to identify low-recombination regions
+# in step 1. Format: msprime.RateMap.read_hapmap compatible TSV.
 hapmap: /home/jri/src/argtest/example_data/sim_2chr_5rep_clean/hapmap/all.hapmap.tsv
+
+# FASTA index (.fai) supplying chromosome lengths used in step 1.
 fai: /home/jri/src/argtest/example_data/sim_2chr_5rep_clean/sim.fai
 
-# Tree discovery
+# --------------------------------------------------------------------------- #
+# Tree file discovery
+# --------------------------------------------------------------------------- #
+
+# Glob pattern matched against filenames inside each chromosome subdirectory
+# to find tree sequence files. Supported suffixes: .ts, .trees, .tsz.
 tree_pattern: "*.trees"
 
-# Step 1
+# --------------------------------------------------------------------------- #
+# Step 1: low-recombination masking
+# --------------------------------------------------------------------------- #
+
+# Fraction of recombination-rate intervals (ranked by Rate(cM/Mb), lowest
+# first) to include in the low-recombination mask, per chromosome.
+# E.g. 0.1 masks the bottom 10 % of intervals.
 rec_fraction: 0.1
 
-# Step 2
+# --------------------------------------------------------------------------- #
+# Step 2: low-accessibility masking
+# --------------------------------------------------------------------------- #
+
+# Window size in bp for accessibility calculation.
 low_access_window_size: 50000
+
+# Windows with fewer accessible bp than this value are flagged as
+# low-accessibility and added to the mask.
 low_access_cutoff_bp: 2500
 
-# Step 3 (set exactly one of mutload_window_size or mutload_snp_window)
+# --------------------------------------------------------------------------- #
+# Step 3: mutational-load outlier masking
+# Set exactly ONE of mutload_window_size or mutload_snp_window.
+# --------------------------------------------------------------------------- #
+
+# Window size in bp for computing per-sample mutational load (fixed-bp mode).
 mutload_window_size: 50000
+
+# Window size as a fixed number of variants (fixed-SNP mode). Uncomment to
+# use instead of mutload_window_size.
 # mutload_snp_window: 500
+
+# Fraction above/below the per-window median load that marks a sample as an
+# outlier. E.g. 0.25 flags samples with load > 1.25× or < 0.75× the median.
 mutload_cutoff: 0.25
+
+# If provided, windows where the outlier fraction exceeds this threshold are
+# written to the mutation-masked BED (rather than the per-sample outlier BED)
+# and are removed entirely in step 4.
 mutload_fraction: 0.2
+
+# Suffix stripped from sample names before matching individual IDs in steps 3
+# and 5. Set to "" if sample names need no stripping.
 suffix_to_strip: "_anchorwave"
 
-# Concatenation behavior
+# --------------------------------------------------------------------------- #
+# Concatenation behavior (step 6 merging)
+# --------------------------------------------------------------------------- #
+
+# If true, allow merging when a replicate is absent in some chromosome
+# directories (the missing chromosome is simply skipped). Set false to require
+# all chromosomes to be present for every replicate.
 allow_missing_replicates: false
+
+# Replicate index at which MCMC chains are considered converged; replicates
+# below this index are discarded before concatenation.
 burnin: 0
+
+# Prefix used for merged output filenames: <base_name>.combined.<replicate>.<suffix>.
 base_name: "run"
+
+# Suffix for merged output files. Uncomment and set to force a specific suffix
+# (.ts, .trees, or .tsz); default is to inherit the suffix of the first input.
 # merged_out_suffix: ".tsz"
 
+# --------------------------------------------------------------------------- #
 # Workflow outputs
+# --------------------------------------------------------------------------- #
+
+# Root directory for all Snakemake outputs. Tilde (~) is expanded.
 out_dir: "/tmp/argtest-snakemake-example-out"
 
-# Step 6 - Validation plots (omit or set to null to skip)
+# --------------------------------------------------------------------------- #
+# Step 6: validation plots (omit validation_mutation_rate or set to null to skip)
+# --------------------------------------------------------------------------- #
+
+# Mutation rate (per bp per generation) used to scale branch-mode diversity
+# for comparison to site-mode diversity in validation plots.
 validation_mutation_rate: 1e-8
+
+# If true, run validation plots only for the first chromosome (faster for
+# quick QC checks). Set false to run for all chromosomes.
 validation_first_chrom_only: true
-validation_sim_branch: true  # set true to use msprime posterior-predictive (sim) stats instead of branch-mode
+
+# If true, simulate mutations on each posterior ARG replicate with msprime at
+# the inferred mutation rate and compute site-mode statistics from those
+# simulations (posterior predictive check). Requires a *.mut_rate.p file
+# co-located with the tree sequences. If false, branch-mode statistics scaled
+# by validation_mutation_rate are used instead.
+validation_sim_branch: true

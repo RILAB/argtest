@@ -27,13 +27,7 @@ conda activate argtest
 
 ## Configure
 
-Copy and edit:
-
-```bash
-cp config/snakemake.example.yaml config/snakemake.yaml
-```
-
-Set at least:
+Edit `config/snakemake.yaml` for your project. The file has an inline comment for every option. At minimum set:
 
 - `root_dir`
 - `hapmap`

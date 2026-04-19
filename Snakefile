@@ -18,7 +18,7 @@ def cfg_required(key: str):
     if key not in config or config[key] in (None, ""):
         raise WorkflowError(
             f"Missing required config key '{key}'. "
-            "Provide a config file with --configfile (see config/snakemake.example.yaml)."
+            "Provide a config file with --configfile (see config/snakemake.yaml)."
         )
     return config[key]
 

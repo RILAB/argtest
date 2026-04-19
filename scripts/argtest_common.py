@@ -353,6 +353,38 @@ def merge_intervals(intervals):
     return merged
 
 
+def ratemap_to_metadata(mu) -> dict:
+    """Serialize a RateMap to a JSON-safe dict for storage in tree-sequence metadata."""
+    return {
+        "mu_position": list(float(x) for x in mu.position),
+        "mu_rate": list(float(x) for x in mu.rate),
+    }
+
+
+def ratemap_from_metadata(md: dict):
+    """Reconstruct a RateMap from metadata produced by ratemap_to_metadata, or None."""
+    if not md or "mu_position" not in md or "mu_rate" not in md:
+        return None
+    _require_msprime()
+    return msprime.RateMap(position=md["mu_position"], rate=md["mu_rate"])
+
+
+def merge_ratemaps(ratemaps: list, offsets: list):
+    """Concatenate per-chromosome RateMaps into one by shifting each by its offset."""
+    _require_msprime()
+    all_pos: list[float] = []
+    all_rate: list[float] = []
+    for mu, offset in zip(ratemaps, offsets):
+        pos = [float(x) + offset for x in mu.position]
+        rate = [float(x) for x in mu.rate]
+        if all_pos:
+            all_pos.extend(pos[1:])  # drop duplicate junction point
+        else:
+            all_pos.extend(pos)
+        all_rate.extend(rate)
+    return msprime.RateMap(position=all_pos, rate=all_rate)
+
+
 def accessible_intervals_from_mu(mu):
     # Convert mutation-rate map into explicit accessible intervals.
     pos = np.asarray(mu.position, dtype=float)

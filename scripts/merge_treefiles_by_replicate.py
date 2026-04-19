@@ -6,7 +6,7 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
-from argtest_common import dump_ts, load_ts
+from argtest_common import dump_ts, load_ts, merge_ratemaps, ratemap_from_metadata, ratemap_to_metadata
 
 
 VALID_SUFFIXES = {".tree", ".trees", ".tsz"}
@@ -154,9 +154,25 @@ def group_tree_files(paths, ts_dir: Path | None = None, layout: str = "flat", ba
 
 def merge_group(paths):
     chrom_paths = sorted(paths, key=lambda item: natural_key(item[0]))
-    merged = load_ts(chrom_paths[0][1])
-    for _, path in chrom_paths[1:]:
-        merged = merged.concatenate(load_ts(path))
+    tseqs = [load_ts(p) for _, p in chrom_paths]
+
+    merged = tseqs[0]
+    for ts in tseqs[1:]:
+        merged = merged.concatenate(ts)
+
+    # Merge per-chromosome ratemaps (if all chromosomes carry one in metadata).
+    ratemaps = [ratemap_from_metadata(ts.metadata or {}) for ts in tseqs]
+    if all(mu is not None for mu in ratemaps):
+        offsets = []
+        cumulative = 0.0
+        for ts in tseqs:
+            offsets.append(cumulative)
+            cumulative += float(ts.sequence_length)
+        merged_mu = merge_ratemaps(ratemaps, offsets)
+        tables = merged.dump_tables()
+        tables.metadata = {**(merged.metadata or {}), **ratemap_to_metadata(merged_mu)}
+        merged = tables.tree_sequence()
+
     return merged, chrom_paths
 
 
