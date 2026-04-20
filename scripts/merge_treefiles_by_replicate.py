@@ -6,6 +6,8 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
+import tskit
+
 from argtest_common import dump_ts, load_ts, merge_ratemaps, ratemap_from_metadata, ratemap_to_metadata
 
 
@@ -170,7 +172,9 @@ def merge_group(paths):
             cumulative += float(ts.sequence_length)
         merged_mu = merge_ratemaps(ratemaps, offsets)
         tables = merged.dump_tables()
-        tables.metadata = {**(merged.metadata or {}), **ratemap_to_metadata(merged_mu)}
+        existing = merged.metadata if isinstance(merged.metadata, dict) else {}
+        tables.metadata_schema = tskit.MetadataSchema({"codec": "json"})
+        tables.metadata = {**existing, **ratemap_to_metadata(merged_mu)}
         merged = tables.tree_sequence()
 
     return merged, chrom_paths

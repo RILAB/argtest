@@ -226,5 +226,5 @@ def test_snakemake_real_run(tmp_path):
     assert (dataset["out_dir"] / "step5_trimmed_samples" / "chr1" / "1.tsz").exists()
 
     merged_ts = load_ts(combined[0])
-    assert 0 < merged_ts.sequence_length < 4000
+    assert 0 < merged_ts.sequence_length <= 8000  # 2 chromosomes × 4000 bp each
     assert merged_ts.num_sites > 0

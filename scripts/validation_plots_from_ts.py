@@ -26,6 +26,7 @@ from argtest_common import (
     load_ts,
     mutational_load,
     ratemap_from_metadata,
+    tree_covered_accessible_bp,
 )
 
 matplotlib.rcParams["figure.dpi"] = 300
@@ -284,14 +285,12 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
         #   3. fallback: treat entire sequence as accessible
         kept_intervals = ts.metadata.get("kept_intervals") if ts.metadata else None
         if kept_intervals is not None:
-            acc_intervals = kept_intervals
-            total_accessible = float(sum(r - l for l, r in kept_intervals))
+            acc_intervals = np.asarray(kept_intervals, dtype=float)
         elif mu_intervals is not None:
             acc_intervals = mu_intervals
-            total_accessible = float(np.sum(mu_intervals[:, 1] - mu_intervals[:, 0]))
         else:
             acc_intervals = None
-            total_accessible = float(ts.sequence_length)
+        total_accessible = tree_covered_accessible_bp(ts, acc_intervals)
 
         if acc_intervals is not None:
             rep_acc = accessible_per_window(rep_windows, acc_intervals)

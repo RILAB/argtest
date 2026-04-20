@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pickle
 
+import tskit
+
 from argtest_common import dump_ts, infer_mu_path, load_ts, ratemap_to_metadata
 from trim_regions import complement_intervals, load_mask_intervals
 
@@ -43,6 +45,7 @@ def main():
         metadata.update(ratemap_to_metadata(mu))
     except Exception:
         pass
+    tables.metadata_schema = tskit.MetadataSchema({"codec": "json"})
     tables.metadata = metadata
     trimmed = tables.tree_sequence()
 

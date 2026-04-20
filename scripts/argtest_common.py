@@ -395,6 +395,32 @@ def accessible_intervals_from_mu(mu):
     return np.column_stack([lefts, rights])
 
 
+def tree_covered_accessible_bp(ts: tskit.TreeSequence, acc_intervals=None) -> float:
+    # Total accessible bp that is also covered by a non-empty tree (num_edges > 0).
+    # Matches singer-snakemake's extract_accessible_ratemap approach.
+    # acc_intervals: array-like of [left, right] pairs, or None to use full sequence.
+    if acc_intervals is None:
+        return float(sum(
+            t.interval.right - t.interval.left
+            for t in ts.trees() if t.num_edges > 0
+        ))
+    acc = np.asarray(acc_intervals, dtype=float)
+    total = 0.0
+    ai = 0
+    n = len(acc)
+    for tree in ts.trees():
+        if tree.num_edges == 0:
+            continue
+        tl, tr = float(tree.interval.left), float(tree.interval.right)
+        while ai < n and acc[ai, 1] <= tl:
+            ai += 1
+        j = ai
+        while j < n and acc[j, 0] < tr:
+            total += min(acc[j, 1], tr) - max(acc[j, 0], tl)
+            j += 1
+    return total
+
+
 def infer_mu_base(ts_stem: str, parent_stem: str | None = None) -> list[str]:
     bases = [ts_stem]
     if parent_stem:

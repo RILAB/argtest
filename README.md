@@ -7,7 +7,7 @@ Standalone scripts for post-processing, QC, and visualization of ARG tree sequen
 - [Install](#install)
 - [Suggested Workflow](#suggested-workflow)
 - [Snakemake Pipeline](#snakemake-pipeline)
-- [Scripts](#scripts): `hapmap_low_rec_mask` · `find_low_access_regions` · `mutload_summary` · `mutload_masks` · `combine_remove_masks` · `trim_regions` · `trim_regions_single` · `trim_samples` · `validation_plots_from_ts` · `merge_treefiles_by_replicate`
+- [Scripts](#scripts): `hapmap_low_rec_mask` · `find_low_access_regions` · `mutload_summary` · `mutload_masks` · `combine_remove_masks` · `trim_regions` · `trim_regions_single` · `trim_samples` · `validation_plots_from_ts` · `merge_treefiles_by_replicate` · `pipeline_summary`
 - [Auxiliary scripts](#auxiliary-scripts): `run_steps1_5_and_concat` · `coalescence_ne_plots_from_ts` · `compare_trees_html` · `trees_gallery_html`
 - [Shared module](#shared-module)
 - [Inputs, formats, defaults & logs](#inputs-formats-defaults--logs)
@@ -32,8 +32,9 @@ One reasonable post-processing workflow for ARG tree sequences in this repo is:
 3. **Find windows with aberrant mutational load** All samples in a tree should have the same number of derived mutations, since all have the same distance from root. In windows of `number` SNPs, identify individuals with `X`% more or fewer derived mutations than the window median. Use [scripts/mutload_summary.py](scripts/mutload_summary.py) for an interactive HTML summary (ASCII bar charts with outlier individuals highlighted in red, plus a lineage table). Use [scripts/mutload_masks.py](scripts/mutload_masks.py) to write the outlier and mutation-masked BED files needed for the pipeline; this is what the Snakemake workflow calls.
 4. **Remove affected regions** For each chromosome, combine the BED files from steps 1-3 (<chr>.low_rec.mask.bed, low_access.ws<window>.accbp<cutoff>.bed, and <ts_stem>_mutation_masked.bed), then remove those genomic regions from a directory of tree sequences with [scripts/trim_regions.py](scripts/trim_regions.py). This script applies a supplied BED mask and writes trimmed tree sequences.
 5. **Remove affected samples** In many cases, only a few samples within a window will be problematic. They could have evidence of introgression (identified using e.g. [TRACE](https://github.com/YulinZhang9806/trace)) or odd patterns of derived mutations (see step 3). Using a bedfile specifying regions and individuals, prune those individuals from the trees with [scripts/trim_samples.py](scripts/trim_samples.py).
-6. **Validate** Run the validation plots with [scripts/validation_plots_from_ts.py](scripts/validation_plots_from_ts.py) to get a sense of the cleaned ARG. This gives a compact set of QC plots for mutational load, diversity, Tajima's D, and related summaries. Compare these to the same plots run on the original treesequences.
-7. If satisfied, merge chromosomes for each replicate for downstream analysis using [scripts/merge_treefiles_by_replicate.py](scripts/merge_treefiles_by_replicate.py). This concatenates chromosome-specific tree files into one combined tree sequence per replicate.
+6. **Validate** Run the validation plots with [scripts/validation_plots_from_ts.py](scripts/validation_plots_from_ts.py) to get a sense of the cleaned ARG. This gives a compact set of QC plots for mutational load, diversity, Tajima's D, and the site-frequency spectrum (both folded and unfolded). Compare these to the same plots run on the original tree sequences.
+7. If satisfied, merge chromosomes for each replicate for downstream analysis using [scripts/merge_treefiles_by_replicate.py](scripts/merge_treefiles_by_replicate.py). This concatenates chromosome-specific tree files into one combined tree sequence per replicate. Mutation-rate ratemaps embedded in each chromosome's metadata are merged and carried forward in the combined output.
+8. **Summarise** Generate a self-contained HTML pipeline summary with [scripts/pipeline_summary.py](scripts/pipeline_summary.py). This collects genome retention statistics across all pipeline steps (mean ± SD across replicates for per-replicate steps), per-individual outlier counts from step 5, and embeds the validation plots for every chromosome in a single HTML file.
 
 ## Snakemake Pipeline
 
@@ -83,9 +84,10 @@ The Snakemake workflow runs the same logical steps as the manual workflow:
 1. Build per-chromosome low-recombination BED masks
 2. Build per-chromosome low-accessibility BED masks
 3. Build per-chromosome, per-replicate mutational-load outlier BEDs and optional mutation-masked BEDs
-4. Combine the BED masks and trim affected regions from each treefile
+4. Combine the BED masks and trim affected regions from each treefile; the mutation-rate ratemap is embedded in each trimmed treefile's metadata
 5. Trim the affected samples from each trimmed treefile
-6. Concatenate chromosomes for each replicate into one combined tree sequence
+6. Concatenate chromosomes for each replicate into one combined tree sequence; ratemaps are merged across chromosomes and carried forward
+7. (optional) Run validation plots on original and cleaned tree sequences and generate a self-contained HTML pipeline summary
 
 The final merged outputs are named:
 
@@ -137,6 +139,8 @@ By default, Snakemake writes outputs beneath `out_dir` with subdirectories for e
   step4_trimmed_regions/
   step5_trimmed_samples/
   combined/
+  validation/          # step 6 validation plots (original and cleaned), if configured
+  pipeline_summary.html
   logs/
 ```
 
@@ -395,25 +399,26 @@ Options:
 Generates SINGER-style validation/diagnostic plots (excluding coalescence/Ne curves) directly from a set of TS replicates.
 
 Plots produced:
-- `mutational-load.png`
-- `mutational-load-trace.png`
-- `diversity-scatter.png`
-- `diversity-skyline.png`
-- `diversity-trace.png`
-- `tajima-d-scatter.png`
-- `tajima-d-skyline.png`
-- `tajima-d-trace.png`
-- `frequency-spectrum.png`
+- `mutational-load.png` — per-sample load bar chart (posterior mean ± 95 % CI)
+- `mutational-load-trace.png` — per-sample load across MCMC replicates
+- `diversity-scatter.png` — branch × μ vs site diversity per window
+- `diversity-skyline.png` — diversity along the chromosome (posterior mean, scatter points + CI band)
+- `tajima-d-scatter.png` — branch vs site Tajima's D per window
+- `tajima-d-skyline.png` — Tajima's D along the chromosome
+- `frequency-spectrum-unfolded.png` — derived-allele frequency spectrum
+- `frequency-spectrum-folded.png` — minor-allele frequency spectrum
 - optional observed-vs-sim density plots (when `--sim` TSV is provided):
   - `diversity-density-vs-sim.png`
   - `tajima-d-density-vs-sim.png`
 - `summary.txt`
 
 Notes:
-- branch diversity is scaled by `--mutation-rate` for site-vs-branch comparison
-- trace plots are branch-only MCMC outcomes
-- for observed-vs-simulated plots, first run `coalescence_ne_plots_from_ts.py --sim N ...` to generate the simulation TSVs, then pass them via `--sim` (window stats) and `--sim-sfs` (SFS); the simulations can be reused across multiple validation runs without re-computing them
-- **`*.mut_rate.p` file required for original (untrimmed) tree sequences.** When running on the original SINGER output (before any masking), the script auto-detects the nearest `*.mut_rate.p` pickle file (searched in the ts directory and its parent, same logic as `find_low_access_regions.py`) and uses it to normalize diversity per accessible bp rather than per total window span. If no `*.mut_rate.p` is found, the script falls back to total window span and prints no warning. Trimmed tree sequences (step 4/5 output) carry `kept_intervals` metadata and do not need the file.
+- both folded and unfolded SFS plots are always produced
+- branch diversity is scaled by `--mutation-rate` for site-vs-branch comparison; with `--sim-branch`, msprime simulates mutations on the ARG topology at the inferred mutation rate and site-mode statistics are computed on the simulated tree sequence instead
+- skyline plots show posterior-mean scatter points with a 95 % CI shaded band; no connecting lines
+- mutational load normalization uses accessible bp that is also covered by a non-empty tree interval (intervals with no edges are excluded from both numerator and denominator), matching the singer-snakemake approach
+- for observed-vs-simulated plots, first run `coalescence_ne_plots_from_ts.py --sim N ...` to generate the simulation TSVs, then pass them via `--sim` (window stats) and `--sim-sfs` (SFS)
+- **`*.mut_rate.p` file required for original (untrimmed) tree sequences.** When running on the original SINGER output, the script auto-detects the nearest `*.mut_rate.p` pickle file and uses it to determine accessible bp. Trimmed tree sequences (step 4/5 output) carry `kept_intervals` metadata and do not need the file; combined (step 6) outputs carry the merged ratemap in their metadata.
 
 Example:
 ```bash
@@ -447,7 +452,7 @@ Options:
 | `--pattern GLOB` | Glob pattern for input trees (default: `*.tsz`). |
 | `--window-size FLOAT` | Window size in bp for diversity and Tajima's D plots (default: `50000`). |
 | `--burnin-frac FLOAT` | Fraction of initial trees to discard as burn-in when computing posterior means (default: `0.5`). |
-| `--folded` | Plot folded SFS (minor-allele frequency) instead of polarised derived-frequency SFS. |
+| `--sim-branch` | Simulate mutations on the ARG topology via msprime at the inferred mutation rate and compute site-mode statistics — a posterior predictive check matching the original nspope/singer-snakemake approach. Requires a `*.mut_rate.p` file or ratemap in tree-sequence metadata; falls back to a uniform scalar rate (`--mutation-rate`) if neither is found. |
 | `--sim PATH` | Optional TSV of simulated window statistics (from `coalescence_ne_plots_from_ts.py --sim`) for observed-vs-simulated density plots. |
 | `--sim-sfs PATH` | Optional TSV of simulated site frequency spectra (from `coalescence_ne_plots_from_ts.py`) for an observed-vs-simulated SFS plot. |
 | `--compare PATH` | Optional second tree-sequence directory to overlay on all plots for comparison (e.g. pre- vs post-pipeline). Uses the same `--pattern`, `--window-size`, `--burnin-frac`, and `--mutation-rate` as the primary directory. Each dataset is labelled by its directory name. |
@@ -488,6 +493,33 @@ Options:
 | `--out-dir PATH` | Output directory for merged tree sequences (default: `<ts-dir>/combined`). |
 | `--out-suffix SUFFIX` | Output file suffix (`.tree`, `.trees`, or `.tsz`; default: suffix of the first file in each group). |
 | `--replicate ID` | If set, only write the merged output for this replicate ID. |
+
+### `scripts/pipeline_summary.py`
+Generates a self-contained HTML pipeline summary report. All plots are base64-embedded so the file is portable with no external dependencies.
+
+Content:
+- **Run info**: config parameters (root dir, chromosomes, replicates, masking thresholds, validation settings)
+- **Genome retention table**: per-chromosome bp removed by each step; steps 1–2 are replicate-independent; step 3 mask bp shown as mean ± SD across replicates; retention percentage colour-coded (green ≥ 85 %, orange 70–85 %, red < 70 %)
+- **Sample trimming table**: individuals with the most outlier windows across all replicates (mean ± SD windows flagged, chromosomes affected, bp removed)
+- **Validation plots**: original (pre-pipeline) and cleaned (post-pipeline) plots side-by-side for every chromosome; includes scatter plots and SFS but not trace plots
+
+Called by Snakemake step 7; output path is `<out_dir>/pipeline_summary.html`.
+
+Example:
+```bash
+python scripts/pipeline_summary.py \
+  --fai reference.fa.fai \
+  --out-dir amaranth_results \
+  --chroms 1 2 3 \
+  --replicates 0 1 2 \
+  --rec-fraction 0.10 \
+  --low-access-window 50000 \
+  --low-access-cutoff 2500 \
+  --mutload-cutoff 0.25 \
+  --mutation-rate 1e-8 \
+  --sim-branch \
+  --out pipeline_summary.html
+```
 
 ## Auxiliary scripts
 
@@ -667,3 +699,7 @@ Use this module for internal script imports.
 
 - Generated `logs/` and `results/` are git-ignored.
 - `.DS_Store` is git-ignored.
+
+## Acknowledgements
+
+None of this would be possible without the patient help and advice of Nate Pope. Any errors, bad code, or poor interpretations, however, are my responsbility alone.

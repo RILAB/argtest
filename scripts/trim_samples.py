@@ -130,7 +130,7 @@ def main():
         }
         remove_intervals = merge_intervals(remove_intervals, full)
 
-    if not remove_intervals:
+    if not args.remove and not args.individuals:
         raise SystemExit("ERROR: provide --individuals and/or --remove")
 
 
