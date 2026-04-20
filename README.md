@@ -146,8 +146,6 @@ By default, Snakemake writes outputs beneath `out_dir` with subdirectories for e
 
 Intermediate filenames include both chromosome and replicate information so they stay unique across the full workflow.
 
-For a more detailed walkthrough of the Snakemake inputs and outputs, see [snakemake.md](snakemake.md).
-
 ## Scripts
 
 ### `scripts/hapmap_low_rec_mask.py`
