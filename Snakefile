@@ -405,36 +405,77 @@ def step6_inputs_for_chrom(wildcards):
     ]
 
 
+def step6_original_inputs_for_chrom(wildcards):
+    return [
+        str(TS_LOOKUP[(wildcards.chrom, rep)])
+        for rep in REPLICATES
+        if (wildcards.chrom, rep) in TS_LOOKUP
+    ]
+
+
 if VALIDATION_MUTATION_RATE is not None:
     rule step6_validation_plots:
         input:
-            step6_inputs_for_chrom
+            cleaned=step6_inputs_for_chrom,
+            original=step6_original_inputs_for_chrom,
         output:
             str(STEP6_DIR / "{chrom}" / "done.txt")
         log:
             str(LOG_DIR / "step6" / "{chrom}.log")
         params:
-            step5_dir=lambda wildcards: str(STEP5_DIR / wildcards.chrom),
-            initial_dir=lambda wildcards: str(ROOT_DIR / wildcards.chrom),
             cleaned_out=lambda wildcards: str(STEP6_DIR / wildcards.chrom / "cleaned"),
             original_out=lambda wildcards: str(STEP6_DIR / wildcards.chrom / "original"),
             mutation_rate=VALIDATION_MUTATION_RATE,
             sim_branch_flag="--sim-branch" if VALIDATION_SIM_BRANCH else "",
-            pattern=lambda wildcards: "*.{}".format(
-                next(ext for (c, _), ext in PAIR_EXT.items() if c == wildcards.chrom)
-            ),
         shell:
             """
+            cleaned_stage_root="$(mktemp -d /tmp/argtest-step6-cleaned.XXXXXX)"
+            original_stage_root="$(mktemp -d /tmp/argtest-step6-original.XXXXXX)"
+            trap 'rm -rf "$cleaned_stage_root" "$original_stage_root"' EXIT
+
+            cleaned_stage="$cleaned_stage_root/{wildcards.chrom}"
+            original_stage="$original_stage_root/{wildcards.chrom}"
+            mkdir -p "$cleaned_stage" "$original_stage"
+
+            for f in {input.cleaned:q}; do
+              ln -s "$f" "$cleaned_stage/$(basename "$f")"
+            done
+
+            original_files=({input.original:q})
+            for f in "${{original_files[@]}}"; do
+              ln -s "$f" "$original_stage/$(basename "$f")"
+            done
+
+            if [ "${{#original_files[@]}}" -gt 0 ]; then
+              mu_path="$(python - "${{original_files[0]}}" <<'PY'
+from pathlib import Path
+import sys
+sys.path.insert(0, "scripts")
+from argtest_common import infer_mu_path
+try:
+    print(infer_mu_path(Path(sys.argv[1])))
+except Exception:
+    print("")
+PY
+)"
+              if [ -n "$mu_path" ] && [ -f "$mu_path" ]; then
+                ln -s "$mu_path" "$original_stage_root/$(basename "$mu_path")" || true
+                ln -s "$mu_path" "$original_stage/$(basename "$mu_path")" || true
+              fi
+            fi
+
             python scripts/validation_plots_from_ts.py \
-              --ts-dir "{params.step5_dir}" \
-              --pattern "{params.pattern}" \
+              --ts-dir "$cleaned_stage" \
+              --pattern "*" \
+              --burnin-frac 0 \
               --mutation-rate {params.mutation_rate} \
               --out-dir "{params.cleaned_out}" \
               {params.sim_branch_flag} \
               >> "{log}" 2>&1
             python scripts/validation_plots_from_ts.py \
-              --ts-dir "{params.initial_dir}" \
-              --pattern "{params.pattern}" \
+              --ts-dir "$original_stage" \
+              --pattern "*" \
+              --burnin-frac 0 \
               --mutation-rate {params.mutation_rate} \
               --out-dir "{params.original_out}" \
               {params.sim_branch_flag} \

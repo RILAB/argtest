@@ -44,6 +44,28 @@ def read_fai(path: Path) -> dict[str, int]:
     return lengths
 
 
+def _fai_num_index(chrom_lengths: dict[str, int]) -> dict[str, int]:
+    """Map trailing-digit suffix → length, skipping ambiguous entries."""
+    by_num: dict[str, int | None] = {}
+    for name, length in chrom_lengths.items():
+        m = re.search(r"(\d+)$", name)
+        if m:
+            num = m.group(1)
+            by_num[num] = None if num in by_num else length
+    return {k: v for k, v in by_num.items() if v is not None}
+
+
+def lookup_chrom_len(chrom: str, chrom_lengths: dict[str, int], by_num: dict[str, int]) -> int:
+    """Look up chrom length; fall back to numeric-suffix match if name not in FAI."""
+    v = chrom_lengths.get(chrom)
+    if v is not None:
+        return v
+    m = re.search(r"(\d+)$", chrom)
+    if m:
+        return by_num.get(m.group(1), 0)
+    return 0
+
+
 def bed_bp(path: Path) -> int:
     if not path.exists():
         return 0
@@ -146,9 +168,10 @@ def collect_retention(chroms, replicates, out_dir, chrom_lengths):
     step3_dir = out_dir / "step3_mutload"
     step4_mask_dir = out_dir / "step4_masks"
 
+    by_num = _fai_num_index(chrom_lengths)
     rows = []
     for chrom in chroms:
-        seq_len = chrom_lengths.get(chrom, 0)
+        seq_len = lookup_chrom_len(chrom, chrom_lengths, by_num)
         s1 = bed_bp(step1_dir / f"{chrom}.low_rec.mask.bed")
         s2 = bed_bp(step2_dir / chrom / f"{chrom}.low_access.bed")
 

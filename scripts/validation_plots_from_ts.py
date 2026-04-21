@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import pickle
+import re
 from pathlib import Path
 import warnings
 import csv
@@ -125,12 +126,38 @@ def parse_args():
             "cannot be found."
         ),
     )
+    p.add_argument(
+        "--mcmc-thin",
+        type=int,
+        default=1,
+        help=(
+            "Thinning interval between replicate IDs for trace x-axes. "
+            "MCMC iteration is computed as replicate_id * mcmc_thin (default: 1)."
+        ),
+    )
     return p.parse_args()
+
+
+def natural_sort_key(text: str):
+    parts = re.split(r"(\d+)", text)
+    key = []
+    for part in parts:
+        if part.isdigit():
+            key.append((0, int(part)))
+        else:
+            key.append((1, part.lower()))
+    return key
+
+
+def extract_replicate_id(path: Path):
+    m = re.search(r"(\d+)$", path.stem)
+    return int(m.group(1)) if m else None
 
 
 def find_tree_files(ts_dir: Path, pattern: str) -> list[Path]:
     files = sorted(
-        [p for p in ts_dir.glob(pattern) if p.is_file() and p.suffix in {".tsz", ".ts", ".trees"}]
+        [p for p in ts_dir.glob(pattern) if p.is_file() and p.suffix in {".tsz", ".ts", ".trees"}],
+        key=lambda p: natural_sort_key(p.stem),
     )
     if not files:
         raise RuntimeError(f"No tree files found in {ts_dir} matching pattern '{pattern}'.")
@@ -242,6 +269,7 @@ def load_sim_sfs(path: Path, *, folded: bool) -> np.ndarray:
 
 def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
                   mutation_rate: float,
+                  mcmc_thin: int = 1,
                   sim_branch: bool = False, mu_ratemap=None) -> dict:
     """Load all tree sequences in ts_files and return per-replicate statistics."""
     if sim_branch and msprime is None:
@@ -267,7 +295,13 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
     else:
         mu_intervals = _try_mu_intervals(ts_files)
 
-    for i, ts_path in enumerate(ts_files):
+    parsed_rep_ids = [extract_replicate_id(p) for p in ts_files]
+    replicate_ids = np.array(
+        [rid if rid is not None else i for i, rid in enumerate(parsed_rep_ids)],
+        dtype=int,
+    )
+
+    for i, (ts_path, rep_id) in enumerate(zip(ts_files, replicate_ids)):
         ts = load_ts(ts_path)
         # tskit requires windows[-1] == sequence_length exactly, so each replicate
         # gets its own window grid.
@@ -316,9 +350,9 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
         if _do_sim:
             # Posterior predictive check: simulate mutations on the ARG topology at
             # the observed mutation rate, then compute site-mode stats on the result.
-            # Seed is deterministic from replicate index so runs are reproducible.
+            # Seed is deterministic from replicate id so runs are reproducible.
             sim_ts = msprime.sim_mutations(
-                ts, rate=_sim_rate, keep=False, random_seed=1 + i * 1000
+                ts, rate=_sim_rate, keep=False, random_seed=1 + int(rep_id) * 1000
             )
             branch_div_raw = sim_ts.diversity(
                 mode="site", windows=rep_windows, span_normalise=False
@@ -380,6 +414,8 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
     n_files = len(ts_files)
     burnin = int(np.floor(n_files * burnin_frac))
     keep_idx = np.arange(n_files)
+    mcmc_iterates = replicate_ids * int(mcmc_thin)
+    burnin_iterate = int(mcmc_iterates[burnin]) if burnin < n_files else int(mcmc_iterates[-1])
     keep_post = keep_idx[burnin:] if burnin < n_files else keep_idx[-1:]
 
     load_vals = np.stack(load_vals, axis=-1)        # [sample, replicate]
@@ -399,7 +435,10 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
         "seq_lengths": np.array(seq_lengths),
         "coord": coord,
         "keep_idx": keep_idx,
+        "replicate_ids": replicate_ids,
+        "mcmc_iterates": mcmc_iterates,
         "burnin": burnin,
+        "burnin_iterate": burnin_iterate,
         "keep_post": keep_post,
         "stat_label": "sim" if _do_sim else "branch",
         # raw per-replicate arrays (needed for trace and sim-density plots)
@@ -429,6 +468,8 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
 
 def main():
     args = parse_args()
+    if args.mcmc_thin <= 0:
+        raise ValueError("--mcmc-thin must be > 0.")
     ts_files = find_tree_files(args.ts_dir, args.pattern)
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -446,6 +487,7 @@ def main():
 
     pri = collect_stats(
         ts_files, args.window_size, args.burnin_frac, args.mutation_rate,
+        mcmc_thin=args.mcmc_thin,
         sim_branch=args.sim_branch, mu_ratemap=mu_ratemap,
     )
     pri_label = args.ts_dir.name
@@ -457,6 +499,7 @@ def main():
         cmp_mu_ratemap = _try_mu_ratemap(cmp_files) if args.sim_branch else None
         cmp = collect_stats(
             cmp_files, args.window_size, args.burnin_frac, args.mutation_rate,
+            mcmc_thin=args.mcmc_thin,
             sim_branch=args.sim_branch, mu_ratemap=cmp_mu_ratemap,
         )
         cmp_label = args.compare.name
@@ -497,21 +540,21 @@ def main():
     # ------------------------------------------------------------------ #
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
     for i in range(pri["load_vals"].shape[0]):
-        ax.plot(pri["keep_idx"], pri["load_vals"][i], "-", color=PRI_SITE,
+        ax.plot(pri["mcmc_iterates"], pri["load_vals"][i], "-", color=PRI_SITE,
                 linewidth=0.5, alpha=0.2)
-    ax.axvline(pri["burnin"], color=PRI_BRANCH, linestyle="--", linewidth=1,
+    ax.axvline(pri["burnin_iterate"], color=PRI_BRANCH, linestyle="--", linewidth=1,
                label=f"{pri_label} burnin")
     if cmp is not None:
         for i in range(cmp["load_vals"].shape[0]):
-            ax.plot(cmp["keep_idx"], cmp["load_vals"][i], "-", color=CMP_BRANCH,
+            ax.plot(cmp["mcmc_iterates"], cmp["load_vals"][i], "-", color=CMP_BRANCH,
                     linewidth=0.5, alpha=0.2)
-        ax.axvline(cmp["burnin"], color=CMP_BRANCH, linestyle="--", linewidth=1,
+        ax.axvline(cmp["burnin_iterate"], color=CMP_BRANCH, linestyle="--", linewidth=1,
                    label=f"{cmp_label} burnin")
     # invisible proxy artists for dataset labels in legend
     ax.plot([], [], "-", color=PRI_SITE, linewidth=1, label=pri_label)
     if cmp is not None:
         ax.plot([], [], "-", color=CMP_BRANCH, linewidth=1, label=cmp_label)
-    ax.set_xlabel("Replicate index")
+    ax.set_xlabel("MCMC iteration")
     ax.set_ylabel("Derived mutations / base in each sample")
     ax.legend()
     trace_path = args.out_dir / f"{args.prefix}mutational-load-trace.png"
@@ -568,10 +611,10 @@ def main():
     # Diversity trace across replicates
     # ------------------------------------------------------------------ #
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    ax.plot(pri["keep_idx"], pri["trace_branch_div"], "-", c=PRI_BRANCH, label=pri_label)
+    ax.plot(pri["mcmc_iterates"], pri["trace_branch_div"], "-", c=PRI_BRANCH, label=pri_label)
     if cmp is not None:
-        ax.plot(cmp["keep_idx"], cmp["trace_branch_div"], CMP_LS, c=CMP_BRANCH, label=cmp_label)
-    ax.set_xlabel("Replicate index")
+        ax.plot(cmp["mcmc_iterates"], cmp["trace_branch_div"], CMP_LS, c=CMP_BRANCH, label=cmp_label)
+    ax.set_xlabel("MCMC iteration")
     _div_trace_ylabel = (
         "Simulated genome-wide diversity (sim)" if pri_slabel == "sim"
         else "Expected genome-wide diversity (branch × mu)"
@@ -631,10 +674,10 @@ def main():
     # Tajima's D trace
     # ------------------------------------------------------------------ #
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    ax.plot(pri["keep_idx"], pri["trace_branch_td"], "-", c=PRI_BRANCH, label=pri_label)
+    ax.plot(pri["mcmc_iterates"], pri["trace_branch_td"], "-", c=PRI_BRANCH, label=pri_label)
     if cmp is not None:
-        ax.plot(cmp["keep_idx"], cmp["trace_branch_td"], CMP_LS, c=CMP_BRANCH, label=cmp_label)
-    ax.set_xlabel("Replicate index")
+        ax.plot(cmp["mcmc_iterates"], cmp["trace_branch_td"], CMP_LS, c=CMP_BRANCH, label=cmp_label)
+    ax.set_xlabel("MCMC iteration")
     _td_trace_ylabel = (
         "Simulated genome-wide Tajima's D (sim)" if pri_slabel == "sim"
         else "Expected genome-wide Tajima's D (branch)"
@@ -768,6 +811,9 @@ def main():
             f"n_files={pri['n_files']}",
             f"burnin_frac={args.burnin_frac}",
             f"burnin_index={pri['burnin']}",
+            f"mcmc_thin={args.mcmc_thin}",
+            f"mcmc_iter_min={int(pri['mcmc_iterates'][0])}",
+            f"mcmc_iter_max={int(pri['mcmc_iterates'][-1])}",
             f"window_size={args.window_size}",
             f"mutation_rate={args.mutation_rate}",
             f"sim_branch={args.sim_branch}",
