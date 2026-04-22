@@ -2,6 +2,10 @@
 
 Snakemake pipeline for post-processing, QC, and visualization of ARG tree sequences (`.ts`, `.trees`, `.tsz`).
 
+If you use, please cite:
+
+Ross-Ibarra, J. 2026. ARGtest: tools for QC and validation of ancestral recombination graphs. [doi: https://doi.org/10.5281/zenodo.19698118】（https://doi.org/10.5281/zenodo.19698118）
+
 ## Contents
 
 - [Install](#install)
@@ -700,4 +704,4 @@ Use this module for internal script imports.
 
 ## Acknowledgements
 
-None of this would be possible without the patient help and advice of Nate Pope. Any errors, bad code, or poor interpretations, however, are my responsbility alone.
+None of this would be possible without the patient help and advice of Nate Pope. Any errors, bad code, or poor interpretations, however, are my responsbility alone. This repo also uses code from Nate Pope's [singer-snakemake](https://github.com/nspope/singer-snakemake).
