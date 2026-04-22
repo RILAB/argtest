@@ -1,6 +1,6 @@
 # ARG Tree Sequence Utilities and Validation Plotting
 
-Standalone scripts for post-processing, QC, and visualization of ARG tree sequences (`.ts`, `.trees`, `.tsz`).
+Snakemake pipeline for post-processing, QC, and visualization of ARG tree sequences (`.ts`, `.trees`, `.tsz`).
 
 ## Contents
 
