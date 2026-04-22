@@ -4,8 +4,7 @@ Snakemake pipeline for post-processing, QC, and visualization of ARG tree sequen
 
 If you use, please cite:
 
-Ross-Ibarra, J. 2026. ARGtest: tools for QC and validation of ancestral recombination graphs. [doi: https://doi.org/10.5281/zenodo.19698118】（https://doi.org/10.5281/zenodo.19698118）
-
+Ross-Ibarra, J. 2026. ARGtest: tools for QC and validation of ancestral recombination graphs. [doi: 10.5281/zenodo.19698118](https://doi.org/10.5281/zenodo.19698118) 
 ## Contents
 
 - [Install](#install)
