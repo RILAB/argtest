@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 from __future__ import annotations
 
+import pickle
+import re
 import sys
 from bisect import bisect_right
 from pathlib import Path
@@ -43,7 +45,7 @@ def dump_ts(ts: tskit.TreeSequence, out_path: Path) -> None:
     ts.dump(str(out_path))
 
 
-def get_individual_name(ind, suffix_to_strip="_anchorwave") -> str:
+def get_individual_name(ind, suffix_to_strip="") -> str:
     # Prefer metadata id when present; otherwise fall back to a stable synthetic name.
     nm = None
     try:
@@ -58,7 +60,7 @@ def get_individual_name(ind, suffix_to_strip="_anchorwave") -> str:
     return nm.replace(suffix_to_strip, "")
 
 
-def sample_names(ts: tskit.TreeSequence, suffix_to_strip="_anchorwave"):
+def sample_names(ts: tskit.TreeSequence, suffix_to_strip=""):
     # Map each sample node to its individual name (or node id if missing).
     names = []
     for u in ts.samples():
@@ -92,7 +94,7 @@ def aggregate_by_individual(load, names):
     return agg, unique
 
 
-def name_to_nodes_map(ts: tskit.TreeSequence, suffix_to_strip="_anchorwave"):
+def name_to_nodes_map(ts: tskit.TreeSequence, suffix_to_strip=""):
     # Build lookup from individual name to all node ids for that individual.
     mapping = {}
     for ind_id, ind in enumerate(ts.individuals()):
@@ -351,6 +353,38 @@ def merge_intervals(intervals):
     return merged
 
 
+def ratemap_to_metadata(mu) -> dict:
+    """Serialize a RateMap to a JSON-safe dict for storage in tree-sequence metadata."""
+    return {
+        "mu_position": list(float(x) for x in mu.position),
+        "mu_rate": list(float(x) for x in mu.rate),
+    }
+
+
+def ratemap_from_metadata(md: dict):
+    """Reconstruct a RateMap from metadata produced by ratemap_to_metadata, or None."""
+    if not md or "mu_position" not in md or "mu_rate" not in md:
+        return None
+    _require_msprime()
+    return msprime.RateMap(position=md["mu_position"], rate=md["mu_rate"])
+
+
+def merge_ratemaps(ratemaps: list, offsets: list):
+    """Concatenate per-chromosome RateMaps into one by shifting each by its offset."""
+    _require_msprime()
+    all_pos: list[float] = []
+    all_rate: list[float] = []
+    for mu, offset in zip(ratemaps, offsets):
+        pos = [float(x) + offset for x in mu.position]
+        rate = [float(x) for x in mu.rate]
+        if all_pos:
+            all_pos.extend(pos[1:])  # drop duplicate junction point
+        else:
+            all_pos.extend(pos)
+        all_rate.extend(rate)
+    return msprime.RateMap(position=all_pos, rate=all_rate)
+
+
 def accessible_intervals_from_mu(mu):
     # Convert mutation-rate map into explicit accessible intervals.
     pos = np.asarray(mu.position, dtype=float)
@@ -359,6 +393,82 @@ def accessible_intervals_from_mu(mu):
     lefts = pos[:-1][keep]
     rights = pos[1:][keep]
     return np.column_stack([lefts, rights])
+
+
+def tree_covered_accessible_bp(ts: tskit.TreeSequence, acc_intervals=None) -> float:
+    # Total accessible bp that is also covered by a non-empty tree (num_edges > 0).
+    # Matches singer-snakemake's extract_accessible_ratemap approach.
+    # acc_intervals: array-like of [left, right] pairs, or None to use full sequence.
+    if acc_intervals is None:
+        return float(sum(
+            t.interval.right - t.interval.left
+            for t in ts.trees() if t.num_edges > 0
+        ))
+    acc = np.asarray(acc_intervals, dtype=float)
+    total = 0.0
+    ai = 0
+    n = len(acc)
+    for tree in ts.trees():
+        if tree.num_edges == 0:
+            continue
+        tl, tr = float(tree.interval.left), float(tree.interval.right)
+        while ai < n and acc[ai, 1] <= tl:
+            ai += 1
+        j = ai
+        while j < n and acc[j, 0] < tr:
+            total += min(acc[j, 1], tr) - max(acc[j, 0], tl)
+            j += 1
+    return total
+
+
+def infer_mu_base(ts_stem: str, parent_stem: str | None = None) -> list[str]:
+    bases = [ts_stem]
+    if parent_stem:
+        bases.append(parent_stem)
+    for b in ([ts_stem] + ([parent_stem] if parent_stem else [])):
+        m = re.match(r"^(.+)\.(\d+)$", b)
+        if m:
+            bases.append(m.group(1))
+        m = re.match(r"^(.+)[_-](\d+)$", b)
+        if m:
+            bases.append(m.group(1))
+    dedup = []
+    seen: set = set()
+    for b in bases:
+        if b not in seen:
+            dedup.append(b)
+            seen.add(b)
+    return dedup
+
+
+def infer_mu_path(ts_path: Path) -> Path:
+    """Find the *.mut_rate.p file for *ts_path* by searching its parent directories."""
+    bases = infer_mu_base(ts_path.stem, parent_stem=ts_path.parent.name)
+    search_dirs = [ts_path.parent, ts_path.parent.parent]
+    for d in search_dirs:
+        for b in bases:
+            p = d / f"{b}.mut_rate.p"
+            if p.exists():
+                return p
+    candidates = []
+    for d in search_dirs:
+        if not d.exists():
+            continue
+        for p in d.glob("*.mut_rate.p"):
+            nm = p.name
+            if any(nm.startswith(f"{b}.") or nm == f"{b}.mut_rate.p" for b in bases):
+                candidates.append(p)
+    candidates = sorted(set(candidates))
+    if len(candidates) == 1:
+        return candidates[0]
+    if len(candidates) > 1:
+        raise RuntimeError(
+            f"Ambiguous mutation maps for {ts_path.name}: "
+            + ", ".join(str(x) for x in candidates)
+        )
+    raise FileNotFoundError(
+        f"Could not infer mutation map for {ts_path}. Tried bases={bases} in {search_dirs}"
+    )
 
 
 def overlap_lengths(intervals, windows):

@@ -1,3 +1,7 @@
+.claude/
+.codex
+.snakemake/
+.vscode/
 argcheck.ipynb
 __pycache__/
 .DS_Store

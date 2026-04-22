@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import argparse
 import os
+import pickle
+import re
 from pathlib import Path
 import warnings
 import csv
@@ -14,7 +16,19 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
-from argtest_common import load_ts, mutational_load
+try:
+    import msprime
+except ImportError:
+    msprime = None
+
+from argtest_common import (
+    accessible_intervals_from_mu,
+    infer_mu_path,
+    load_ts,
+    mutational_load,
+    ratemap_from_metadata,
+    tree_covered_accessible_bp,
+)
 
 matplotlib.rcParams["figure.dpi"] = 300
 
@@ -91,22 +105,107 @@ def parse_args():
             "Ne plot is computed as 1/(2*coal_rate)."
         ),
     )
+    p.add_argument(
+        "--compare",
+        type=Path,
+        default=None,
+        help=(
+            "Optional second tree-sequence directory to overlay on all plots for comparison "
+            "(e.g. pre- vs post-pipeline). Uses the same --pattern, --window-size, "
+            "--burnin-frac, and --mutation-rate as the primary directory."
+        ),
+    )
+    p.add_argument(
+        "--sim-branch",
+        action="store_true",
+        help=(
+            "Use msprime.sim_mutations to simulate site mutations on each ARG replicate, "
+            "then compute site-mode statistics — a posterior predictive check matching the "
+            "original nspope/singer-snakemake approach. Requires a *.mut_rate.p file "
+            "co-located with the tree sequences. Falls back to branch-mode if the file "
+            "cannot be found."
+        ),
+    )
+    p.add_argument(
+        "--mcmc-thin",
+        type=int,
+        default=1,
+        help=(
+            "Thinning interval between replicate IDs for trace x-axes. "
+            "MCMC iteration is computed as replicate_id * mcmc_thin (default: 1)."
+        ),
+    )
     return p.parse_args()
+
+
+def natural_sort_key(text: str):
+    parts = re.split(r"(\d+)", text)
+    key = []
+    for part in parts:
+        if part.isdigit():
+            key.append((0, int(part)))
+        else:
+            key.append((1, part.lower()))
+    return key
+
+
+def extract_replicate_id(path: Path):
+    m = re.search(r"(\d+)$", path.stem)
+    return int(m.group(1)) if m else None
 
 
 def find_tree_files(ts_dir: Path, pattern: str) -> list[Path]:
     files = sorted(
-        [p for p in ts_dir.glob(pattern) if p.is_file() and p.suffix in {".tsz", ".ts", ".trees"}]
+        [p for p in ts_dir.glob(pattern) if p.is_file() and p.suffix in {".tsz", ".ts", ".trees"}],
+        key=lambda p: natural_sort_key(p.stem),
     )
     if not files:
         raise RuntimeError(f"No tree files found in {ts_dir} matching pattern '{pattern}'.")
     return files
+
+
+def _try_mu_ratemap(ts_files: list[Path]):
+    """Return a RateMap from ts metadata (preferred) or nearest *.mut_rate.p file, or None."""
+    if not ts_files:
+        return None
+    # Prefer ratemap embedded in tree-sequence metadata (trimmed/combined ts).
+    try:
+        mu = ratemap_from_metadata(load_ts(ts_files[0]).metadata or {})
+        if mu is not None:
+            return mu
+    except Exception:
+        pass
+    # Fallback: look for *.mut_rate.p file alongside the tree sequences.
+    try:
+        mu_path = infer_mu_path(ts_files[0])
+        with open(mu_path, "rb") as fh:
+            return pickle.load(fh)
+    except Exception:
+        return None
+
+
+def _try_mu_intervals(ts_files: list[Path]):
+    """Return accessible intervals from the nearest *.mut_rate.p file, or None if not found."""
+    mu = _try_mu_ratemap(ts_files)
+    return accessible_intervals_from_mu(mu) if mu is not None else None
+
 
 def genome_windows(sequence_length: float, window_size: float) -> np.ndarray:
     windows = np.arange(0, float(sequence_length) + float(window_size), float(window_size), dtype=float)
     if windows[-1] > float(sequence_length):
         windows[-1] = float(sequence_length)
     return windows
+
+
+def accessible_per_window(stat_windows: np.ndarray, kept_intervals: list) -> np.ndarray:
+    """Return accessible bp per window given a list of [[left, right], ...] kept intervals."""
+    wl = stat_windows[:-1]
+    wr = stat_windows[1:]
+    acc = np.zeros(len(wl), dtype=float)
+    for left, right in kept_intervals:
+        acc += np.maximum(0.0, np.minimum(right, wr) - np.maximum(left, wl))
+    return acc
+
 
 def safe_nanmean(a: np.ndarray, axis=None):
     with warnings.catch_warnings():
@@ -168,85 +267,267 @@ def load_sim_sfs(path: Path, *, folded: bool) -> np.ndarray:
     return out
 
 
-def main():
-    args = parse_args()
-    ts_files = find_tree_files(args.ts_dir, args.pattern)
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-    burnin = int(np.floor(len(ts_files) * args.burnin_frac))
-    keep_idx = np.arange(len(ts_files))
-    keep_post = keep_idx[burnin:] if burnin < len(ts_files) else keep_idx[-1:]
+def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
+                  mutation_rate: float,
+                  mcmc_thin: int = 1,
+                  sim_branch: bool = False, mu_ratemap=None) -> dict:
+    """Load all tree sequences in ts_files and return per-replicate statistics."""
+    if sim_branch and msprime is None:
+        raise RuntimeError("msprime is required for --sim-branch mode")
 
-    load_vals = []
-    seq_lengths = []
-    site_div_vals = []
-    branch_div_vals = []
-    site_td_vals = []
-    branch_td_vals = []
-    site_afs_vals = []
-    branch_afs_vals = []
+    _do_sim = sim_branch
+    # Use the spatial ratemap when available, otherwise fall back to a uniform scalar rate.
+    _sim_rate = mu_ratemap if mu_ratemap is not None else mutation_rate
+    # In sim mode mu is already baked into simulated sites; no further scaling needed.
+    mu_scale = 1.0 if _do_sim else mutation_rate
 
+    load_vals, seq_lengths = [], []
+    site_div_vals, branch_div_vals = [], []
+    site_td_vals, branch_td_vals = [], []
+    site_afs_unfolded_vals, branch_afs_unfolded_vals = [], []
+    site_afs_folded_vals, branch_afs_folded_vals = [], []
     n_samples = None
     stat_windows = None
-    for ts_path in ts_files:
+
+    # Derive accessibility intervals from ratemap if available, else probe the directory.
+    if mu_ratemap is not None:
+        mu_intervals = accessible_intervals_from_mu(mu_ratemap)
+    else:
+        mu_intervals = _try_mu_intervals(ts_files)
+
+    parsed_rep_ids = [extract_replicate_id(p) for p in ts_files]
+    replicate_ids = np.array(
+        [rid if rid is not None else i for i, rid in enumerate(parsed_rep_ids)],
+        dtype=int,
+    )
+
+    for i, (ts_path, rep_id) in enumerate(zip(ts_files, replicate_ids)):
         ts = load_ts(ts_path)
+        # tskit requires windows[-1] == sequence_length exactly, so each replicate
+        # gets its own window grid.
+        rep_windows = genome_windows(ts.sequence_length, window_size)
         if n_samples is None:
             n_samples = ts.num_samples
-            stat_windows = genome_windows(ts.sequence_length, args.window_size)
         elif ts.num_samples != n_samples:
             raise RuntimeError(
                 f"Sample count mismatch: {ts_path} has {ts.num_samples}, expected {n_samples}."
             )
-        if float(ts.sequence_length) != float(stat_windows[-1]):
-            raise RuntimeError(
-                f"Sequence length mismatch: {ts_path} has {ts.sequence_length}, "
-                f"expected {stat_windows[-1]}."
-            )
 
-        load = mutational_load(ts)
-        load = load / float(ts.sequence_length)
+        # Determine accessible intervals for this replicate:
+        #   1. kept_intervals metadata (written by trim_regions_single) — exact post-pipeline mask
+        #   2. mu_intervals from *.mut_rate.p — pre-pipeline accessibility (rate > 0)
+        #   3. fallback: treat entire sequence as accessible
+        kept_intervals = ts.metadata.get("kept_intervals") if ts.metadata else None
+        if kept_intervals is not None:
+            acc_intervals = np.asarray(kept_intervals, dtype=float)
+        elif mu_intervals is not None:
+            acc_intervals = mu_intervals
+        else:
+            acc_intervals = None
+        total_accessible = tree_covered_accessible_bp(ts, acc_intervals)
+
+        if acc_intervals is not None:
+            rep_acc = accessible_per_window(rep_windows, acc_intervals)
+            window_spans = rep_windows[1:] - rep_windows[:-1]
+            with np.errstate(invalid="ignore", divide="ignore"):
+                div_scale = np.where(rep_acc > 0, window_spans / rep_acc, np.nan)
+        else:
+            rep_acc = None
+            div_scale = None
+
+        load = mutational_load(ts) / total_accessible
         load_vals.append(load)
         seq_lengths.append(float(ts.sequence_length))
-        site_div_vals.append(ts.diversity(mode="site", windows=stat_windows))
-        branch_div_vals.append(ts.diversity(mode="branch", windows=stat_windows))
-        site_td_vals.append(ts.Tajimas_D(mode="site", windows=stat_windows))
-        branch_td_vals.append(ts.Tajimas_D(mode="branch", windows=stat_windows))
-        site_afs_vals.append(
-            ts.allele_frequency_spectrum(mode="site", polarised=not args.folded)
-        )
-        branch_afs_vals.append(
-            ts.allele_frequency_spectrum(mode="branch", polarised=not args.folded)
-        )
 
-    load_vals = np.stack(load_vals, axis=-1)  # [sample, replicate]
+        # Site-mode stats on the real (observed) tree sequence.
+        site_div = ts.diversity(mode="site", windows=rep_windows)
+        site_td = ts.Tajimas_D(mode="site", windows=rep_windows)
+        if div_scale is not None:
+            site_div = site_div * div_scale
+            # For Tajima's D, only NaN fully-masked windows.
+            site_td = np.where(np.isnan(div_scale), np.nan, site_td)
+
+        if _do_sim:
+            # Posterior predictive check: simulate mutations on the ARG topology at
+            # the observed mutation rate, then compute site-mode stats on the result.
+            # Seed is deterministic from replicate id so runs are reproducible.
+            sim_ts = msprime.sim_mutations(
+                ts, rate=_sim_rate, keep=False, random_seed=1 + int(rep_id) * 1000
+            )
+            branch_div_raw = sim_ts.diversity(
+                mode="site", windows=rep_windows, span_normalise=False
+            )
+            branch_td = sim_ts.Tajimas_D(mode="site", windows=rep_windows)
+            if rep_acc is not None:
+                with np.errstate(invalid="ignore", divide="ignore"):
+                    branch_div = np.where(rep_acc > 0, branch_div_raw / rep_acc, np.nan)
+                branch_td = np.where(rep_acc <= 0, np.nan, branch_td)
+            else:
+                window_spans = rep_windows[1:] - rep_windows[:-1]
+                with np.errstate(invalid="ignore", divide="ignore"):
+                    branch_div = branch_div_raw / window_spans
+            # Normalize AFS by accessible bp so site and sim are on the same scale.
+            branch_afs_unfolded = (
+                sim_ts.allele_frequency_spectrum(mode="site", polarised=True)
+                / total_accessible
+            )
+            branch_afs_folded = (
+                sim_ts.allele_frequency_spectrum(mode="site", polarised=False)
+                / total_accessible
+            )
+            site_afs_unfolded = (
+                ts.allele_frequency_spectrum(mode="site", polarised=True)
+                / total_accessible
+            )
+            site_afs_folded = (
+                ts.allele_frequency_spectrum(mode="site", polarised=False)
+                / total_accessible
+            )
+        else:
+            branch_div = ts.diversity(mode="branch", windows=rep_windows)
+            branch_td = ts.Tajimas_D(mode="branch", windows=rep_windows)
+            if div_scale is not None:
+                branch_div = branch_div * div_scale
+                branch_td = np.where(np.isnan(div_scale), np.nan, branch_td)
+            branch_afs_unfolded = ts.allele_frequency_spectrum(mode="branch", polarised=True)
+            branch_afs_folded = ts.allele_frequency_spectrum(mode="branch", polarised=False)
+            site_afs_unfolded = ts.allele_frequency_spectrum(mode="site", polarised=True)
+            site_afs_folded = ts.allele_frequency_spectrum(mode="site", polarised=False)
+
+        site_div_vals.append(site_div)
+        branch_div_vals.append(branch_div)
+        site_td_vals.append(site_td)
+        branch_td_vals.append(branch_td)
+        site_afs_unfolded_vals.append(site_afs_unfolded)
+        branch_afs_unfolded_vals.append(branch_afs_unfolded)
+        site_afs_folded_vals.append(site_afs_folded)
+        branch_afs_folded_vals.append(branch_afs_folded)
+
+    # Clip all windowed arrays to the shortest replicate so np.stack sees uniform shapes.
+    min_n_windows = min(len(a) for a in site_div_vals)
+    site_div_vals = [a[:min_n_windows] for a in site_div_vals]
+    branch_div_vals = [a[:min_n_windows] for a in branch_div_vals]
+    site_td_vals = [a[:min_n_windows] for a in site_td_vals]
+    branch_td_vals = [a[:min_n_windows] for a in branch_td_vals]
+    stat_windows = genome_windows(min(seq_lengths), window_size)
+
+    n_files = len(ts_files)
+    burnin = int(np.floor(n_files * burnin_frac))
+    keep_idx = np.arange(n_files)
+    mcmc_iterates = replicate_ids * int(mcmc_thin)
+    burnin_iterate = int(mcmc_iterates[burnin]) if burnin < n_files else int(mcmc_iterates[-1])
+    keep_post = keep_idx[burnin:] if burnin < n_files else keep_idx[-1:]
+
+    load_vals = np.stack(load_vals, axis=-1)        # [sample, replicate]
     site_div_vals = np.stack(site_div_vals, axis=-1)  # [window, replicate]
     branch_div_vals = np.stack(branch_div_vals, axis=-1)
     site_td_vals = np.stack(site_td_vals, axis=-1)
     branch_td_vals = np.stack(branch_td_vals, axis=-1)
-    site_afs_vals = np.stack(site_afs_vals, axis=-1)  # [freq_bin, replicate]
-    branch_afs_vals = np.stack(branch_afs_vals, axis=-1)
-    seq_lengths = np.array(seq_lengths)
+    site_afs_unfolded_vals = np.stack(site_afs_unfolded_vals, axis=-1)  # [freq_bin, replicate]
+    branch_afs_unfolded_vals = np.stack(branch_afs_unfolded_vals, axis=-1)
+    site_afs_folded_vals = np.stack(site_afs_folded_vals, axis=-1)
+    branch_afs_folded_vals = np.stack(branch_afs_folded_vals, axis=-1)
     coord = stat_windows[:-1] / 2.0 + stat_windows[1:] / 2.0
 
-    mean_load = safe_nanmean(load_vals[:, keep_post], axis=-1)
-    q_load = safe_nanquantile(load_vals[:, keep_post], [0.025, 0.975], axis=-1)
-    mean_site_div = safe_nanmean(site_div_vals[:, keep_post], axis=-1)
-    mean_branch_div = safe_nanmean(branch_div_vals[:, keep_post], axis=-1) * args.mutation_rate
-    q_branch_div = safe_nanquantile(branch_div_vals[:, keep_post], [0.025, 0.975], axis=-1) * args.mutation_rate
-    mean_site_td = safe_nanmean(site_td_vals[:, keep_post], axis=-1)
-    mean_branch_td = safe_nanmean(branch_td_vals[:, keep_post], axis=-1)
-    q_branch_td = safe_nanquantile(branch_td_vals[:, keep_post], [0.025, 0.975], axis=-1)
-    trace_branch_div = safe_nanmean(branch_div_vals, axis=0) * args.mutation_rate
-    trace_branch_td = safe_nanmean(branch_td_vals, axis=0)
-    mean_site_afs = safe_nanmean(site_afs_vals[:, keep_post], axis=-1)
-    mean_branch_afs = safe_nanmean(branch_afs_vals[:, keep_post], axis=-1) * args.mutation_rate
-    q_branch_afs = safe_nanquantile(branch_afs_vals[:, keep_post], [0.025, 0.975], axis=-1) * args.mutation_rate
+    return {
+        "n_files": n_files,
+        "n_samples": n_samples,
+        "seq_lengths": np.array(seq_lengths),
+        "coord": coord,
+        "keep_idx": keep_idx,
+        "replicate_ids": replicate_ids,
+        "mcmc_iterates": mcmc_iterates,
+        "burnin": burnin,
+        "burnin_iterate": burnin_iterate,
+        "keep_post": keep_post,
+        "stat_label": "sim" if _do_sim else "branch",
+        # raw per-replicate arrays (needed for trace and sim-density plots)
+        "load_vals": load_vals,
+        "site_div_vals": site_div_vals,
+        "branch_div_vals": branch_div_vals,
+        "site_td_vals": site_td_vals,
+        # summarised stats (posterior means / quantiles)
+        "mean_load": safe_nanmean(load_vals[:, keep_post], axis=-1),
+        "q_load": safe_nanquantile(load_vals[:, keep_post], [0.025, 0.975], axis=-1),
+        "mean_site_div": safe_nanmean(site_div_vals[:, keep_post], axis=-1),
+        "mean_branch_div": safe_nanmean(branch_div_vals[:, keep_post], axis=-1) * mu_scale,
+        "q_branch_div": safe_nanquantile(branch_div_vals[:, keep_post], [0.025, 0.975], axis=-1) * mu_scale,
+        "mean_site_td": safe_nanmean(site_td_vals[:, keep_post], axis=-1),
+        "mean_branch_td": safe_nanmean(branch_td_vals[:, keep_post], axis=-1),
+        "q_branch_td": safe_nanquantile(branch_td_vals[:, keep_post], [0.025, 0.975], axis=-1),
+        "trace_branch_div": safe_nanmean(branch_div_vals, axis=0) * mu_scale,
+        "trace_branch_td": safe_nanmean(branch_td_vals, axis=0),
+        "mean_site_afs_unfolded": safe_nanmean(site_afs_unfolded_vals[:, keep_post], axis=-1),
+        "mean_branch_afs_unfolded": safe_nanmean(branch_afs_unfolded_vals[:, keep_post], axis=-1) * mu_scale,
+        "q_branch_afs_unfolded": safe_nanquantile(branch_afs_unfolded_vals[:, keep_post], [0.025, 0.975], axis=-1) * mu_scale,
+        "mean_site_afs_folded": safe_nanmean(site_afs_folded_vals[:, keep_post], axis=-1),
+        "mean_branch_afs_folded": safe_nanmean(branch_afs_folded_vals[:, keep_post], axis=-1) * mu_scale,
+        "q_branch_afs_folded": safe_nanquantile(branch_afs_folded_vals[:, keep_post], [0.025, 0.975], axis=-1) * mu_scale,
+    }
 
+
+def main():
+    args = parse_args()
+    if args.mcmc_thin <= 0:
+        raise ValueError("--mcmc-thin must be > 0.")
+    ts_files = find_tree_files(args.ts_dir, args.pattern)
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+
+    mu_ratemap = None
+    if args.sim_branch:
+        if msprime is None:
+            raise RuntimeError("msprime is required for --sim-branch mode")
+        mu_ratemap = _try_mu_ratemap(ts_files)
+        if mu_ratemap is None:
+            import warnings
+            warnings.warn(
+                "--sim-branch requested but no *.mut_rate.p file found; "
+                "simulating with uniform rate (--mutation-rate)."
+            )
+
+    pri = collect_stats(
+        ts_files, args.window_size, args.burnin_frac, args.mutation_rate,
+        mcmc_thin=args.mcmc_thin,
+        sim_branch=args.sim_branch, mu_ratemap=mu_ratemap,
+    )
+    pri_label = args.ts_dir.name
+
+    cmp = None
+    cmp_label = None
+    if args.compare is not None:
+        cmp_files = find_tree_files(args.compare, args.pattern)
+        cmp_mu_ratemap = _try_mu_ratemap(cmp_files) if args.sim_branch else None
+        cmp = collect_stats(
+            cmp_files, args.window_size, args.burnin_frac, args.mutation_rate,
+            mcmc_thin=args.mcmc_thin,
+            sim_branch=args.sim_branch, mu_ratemap=cmp_mu_ratemap,
+        )
+        cmp_label = args.compare.name
+
+    # Color / style scheme:
+    #   color meaning: black = site, firebrick = branch (consistent across both datasets)
+    #   line style: solid = primary, dashed = compare
+    PRI_SITE = "black"
+    PRI_BRANCH = "firebrick"
+    CMP_SITE = "dimgray"
+    CMP_BRANCH = "steelblue"
+    CMP_LS = "--"
+
+    # ------------------------------------------------------------------ #
     # Mutational load by sample (posterior summary)
-    samples = np.arange(mean_load.size)
-    fig, ax = plt.subplots(1, 1, figsize=(max(5, 0.1 * samples.size), 4), constrained_layout=True)
-    ax.axhline(y=float(np.nanmean(mean_load)), color="firebrick", linestyle="dashed", label="mean")
-    ax.plot(samples, mean_load, "o", color="black", markersize=2)
-    ax.vlines(samples, q_load[0], q_load[1], color="black", label="95% interval")
+    # ------------------------------------------------------------------ #
+    n_width = max(pri["mean_load"].size, cmp["mean_load"].size if cmp else 0)
+    fig, ax = plt.subplots(1, 1, figsize=(max(5, 0.1 * n_width), 4), constrained_layout=True)
+    samples = np.arange(pri["mean_load"].size)
+    ax.axhline(y=float(np.nanmean(pri["mean_load"])), color=PRI_BRANCH, linestyle="dashed")
+    ax.plot(samples, pri["mean_load"], "o", color=PRI_SITE, markersize=2, label=pri_label)
+    ax.vlines(samples, pri["q_load"][0], pri["q_load"][1], color=PRI_SITE)
+    if cmp is not None:
+        c_samples = np.arange(cmp["mean_load"].size)
+        ax.axhline(y=float(np.nanmean(cmp["mean_load"])), color=CMP_BRANCH, linestyle="dashed",
+                   alpha=0.7)
+        ax.plot(c_samples, cmp["mean_load"], "o", color=CMP_BRANCH, markersize=2, label=cmp_label)
+        ax.vlines(c_samples, cmp["q_load"][0], cmp["q_load"][1], color=CMP_BRANCH, alpha=0.6)
     ax.set_xlabel("Sample ID")
     ax.set_ylabel("Derived mutations / base")
     ax.legend()
@@ -254,100 +535,208 @@ def main():
     plt.savefig(load_path)
     plt.clf()
 
+    # ------------------------------------------------------------------ #
     # Mutational load trace across replicates
+    # ------------------------------------------------------------------ #
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    for i in range(load_vals.shape[0]):
-        ax.plot(keep_idx, load_vals[i], "-", color="black", linewidth=0.5, alpha=0.2)
-    ax.axvline(burnin, color="firebrick", linestyle="--", linewidth=1, label="burnin cutoff")
-    ax.set_xlabel("Replicate index")
+    for i in range(pri["load_vals"].shape[0]):
+        ax.plot(pri["mcmc_iterates"], pri["load_vals"][i], "-", color=PRI_SITE,
+                linewidth=0.5, alpha=0.2)
+    ax.axvline(pri["burnin_iterate"], color=PRI_BRANCH, linestyle="--", linewidth=1,
+               label=f"{pri_label} burnin")
+    if cmp is not None:
+        for i in range(cmp["load_vals"].shape[0]):
+            ax.plot(cmp["mcmc_iterates"], cmp["load_vals"][i], "-", color=CMP_BRANCH,
+                    linewidth=0.5, alpha=0.2)
+        ax.axvline(cmp["burnin_iterate"], color=CMP_BRANCH, linestyle="--", linewidth=1,
+                   label=f"{cmp_label} burnin")
+    # invisible proxy artists for dataset labels in legend
+    ax.plot([], [], "-", color=PRI_SITE, linewidth=1, label=pri_label)
+    if cmp is not None:
+        ax.plot([], [], "-", color=CMP_BRANCH, linewidth=1, label=cmp_label)
+    ax.set_xlabel("MCMC iteration")
     ax.set_ylabel("Derived mutations / base in each sample")
     ax.legend()
     trace_path = args.out_dir / f"{args.prefix}mutational-load-trace.png"
     plt.savefig(trace_path)
     plt.clf()
 
-    # Diversity: observed(site) vs expected(branch)
+    # ------------------------------------------------------------------ #
+    # Diversity: site vs branch/sim scatter
+    # ------------------------------------------------------------------ #
+    pri_slabel = pri["stat_label"]
+    pri_div_ylabel = (
+        "Simulated diversity per window (sim)" if pri_slabel == "sim"
+        else "Expected diversity per window (branch × mu)"
+    )
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    ax.scatter(mean_site_div, mean_branch_div, c="firebrick", s=8)
-    x = float(np.nanmean(mean_site_div))
+    ax.scatter(pri["mean_site_div"], pri["mean_branch_div"], c=PRI_BRANCH, s=8, label=pri_label)
+    if cmp is not None:
+        ax.scatter(cmp["mean_site_div"], cmp["mean_branch_div"], c=CMP_BRANCH, s=8,
+                   marker="^", label=cmp_label)
+    x = float(np.nanmean(pri["mean_site_div"]))
     ax.axline((x, x), slope=1.0, color="black", linestyle="dashed")
-    ax.set_xlabel("Observed diversity per window")
-    ax.set_ylabel("Expected diversity per window (simulated from ARG)")
+    ax.set_xlabel("Observed diversity per window (site)")
+    ax.set_ylabel(pri_div_ylabel)
+    ax.legend()
     div_scatter_path = args.out_dir / f"{args.prefix}diversity-scatter.png"
     plt.savefig(div_scatter_path)
     plt.clf()
 
+    # ------------------------------------------------------------------ #
+    # Diversity skyline
+    # ------------------------------------------------------------------ #
     fig, ax = plt.subplots(1, 1, figsize=(8, 4), constrained_layout=True)
-    ax.fill_between(coord, q_branch_div[0], q_branch_div[1], color="firebrick", alpha=0.1)
-    ax.plot(coord, mean_branch_div, "-o", c="firebrick", label="branch", markersize=3)
-    ax.plot(coord, mean_site_div, "-o", c="black", label="site", markersize=3)
+    ax.fill_between(pri["coord"], pri["q_branch_div"][0], pri["q_branch_div"][1],
+                    color=PRI_BRANCH, alpha=0.1)
+    ax.scatter(pri["coord"], pri["mean_branch_div"], c=PRI_BRANCH, s=8,
+               label=f"{pri_label} {pri['stat_label']}")
+    ax.scatter(pri["coord"], pri["mean_site_div"], c=PRI_SITE, s=8,
+               label=f"{pri_label} site")
+    if cmp is not None:
+        ax.fill_between(cmp["coord"], cmp["q_branch_div"][0], cmp["q_branch_div"][1],
+                        color=CMP_BRANCH, alpha=0.1)
+        ax.scatter(cmp["coord"], cmp["mean_branch_div"], c=CMP_BRANCH, s=8, marker="^",
+                   label=f"{cmp_label} {cmp['stat_label']}")
+        ax.scatter(cmp["coord"], cmp["mean_site_div"], c=CMP_SITE, s=8, marker="^",
+                   label=f"{cmp_label} site")
     ax.set_xlabel("Position on chromosome")
     ax.set_ylabel("Diversity")
-    ax.legend()
+    ax.legend(fontsize=7)
     div_skyline_path = args.out_dir / f"{args.prefix}diversity-skyline.png"
     plt.savefig(div_skyline_path)
     plt.clf()
 
+    # ------------------------------------------------------------------ #
+    # Diversity trace across replicates
+    # ------------------------------------------------------------------ #
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    ax.plot(keep_idx, trace_branch_div, "-", c="firebrick", label="branch")
-    ax.set_xlabel("Replicate index")
-    ax.set_ylabel("Expected genome-wide diversity")
+    ax.plot(pri["mcmc_iterates"], pri["trace_branch_div"], "-", c=PRI_BRANCH, label=pri_label)
+    if cmp is not None:
+        ax.plot(cmp["mcmc_iterates"], cmp["trace_branch_div"], CMP_LS, c=CMP_BRANCH, label=cmp_label)
+    ax.set_xlabel("MCMC iteration")
+    _div_trace_ylabel = (
+        "Simulated genome-wide diversity (sim)" if pri_slabel == "sim"
+        else "Expected genome-wide diversity (branch × mu)"
+    )
+    ax.set_ylabel(_div_trace_ylabel)
     ax.legend()
     div_trace_path = args.out_dir / f"{args.prefix}diversity-trace.png"
     plt.savefig(div_trace_path)
     plt.clf()
 
-    # Tajima's D: observed(site) vs expected(branch)
+    # ------------------------------------------------------------------ #
+    # Tajima's D: site vs branch scatter
+    # ------------------------------------------------------------------ #
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    ax.scatter(mean_site_td, mean_branch_td, c="firebrick", s=8)
-    x = float(np.nanmean(mean_site_td))
+    ax.scatter(pri["mean_site_td"], pri["mean_branch_td"], c=PRI_BRANCH, s=8, label=pri_label)
+    if cmp is not None:
+        ax.scatter(cmp["mean_site_td"], cmp["mean_branch_td"], c=CMP_BRANCH, s=8,
+                   marker="^", label=cmp_label)
+    x = float(np.nanmean(pri["mean_site_td"]))
     ax.axline((x, x), slope=1.0, color="black", linestyle="dashed")
-    ax.set_xlabel("Observed Tajima's D per window")
-    ax.set_ylabel("Expected Tajima's D per window (simulated from ARG)")
+    ax.set_xlabel("Observed Tajima's D per window (site)")
+    _td_ylabel = (
+        "Simulated Tajima's D per window (sim)" if pri_slabel == "sim"
+        else "Expected Tajima's D per window (branch)"
+    )
+    ax.set_ylabel(_td_ylabel)
+    ax.legend()
     td_scatter_path = args.out_dir / f"{args.prefix}tajima-d-scatter.png"
     plt.savefig(td_scatter_path)
     plt.clf()
 
+    # ------------------------------------------------------------------ #
+    # Tajima's D skyline
+    # ------------------------------------------------------------------ #
     fig, ax = plt.subplots(1, 1, figsize=(8, 4), constrained_layout=True)
-    ax.fill_between(coord, q_branch_td[0], q_branch_td[1], color="firebrick", alpha=0.1)
-    ax.plot(coord, mean_branch_td, "-o", c="firebrick", label="branch", markersize=3)
-    ax.plot(coord, mean_site_td, "-o", c="black", label="site", markersize=3)
+    ax.fill_between(pri["coord"], pri["q_branch_td"][0], pri["q_branch_td"][1],
+                    color=PRI_BRANCH, alpha=0.1)
+    ax.scatter(pri["coord"], pri["mean_branch_td"], c=PRI_BRANCH, s=8,
+               label=f"{pri_label} {pri['stat_label']}")
+    ax.scatter(pri["coord"], pri["mean_site_td"], c=PRI_SITE, s=8,
+               label=f"{pri_label} site")
+    if cmp is not None:
+        ax.fill_between(cmp["coord"], cmp["q_branch_td"][0], cmp["q_branch_td"][1],
+                        color=CMP_BRANCH, alpha=0.1)
+        ax.scatter(cmp["coord"], cmp["mean_branch_td"], c=CMP_BRANCH, s=8, marker="^",
+                   label=f"{cmp_label} {cmp['stat_label']}")
+        ax.scatter(cmp["coord"], cmp["mean_site_td"], c=CMP_SITE, s=8, marker="^",
+                   label=f"{cmp_label} site")
     ax.set_xlabel("Position on chromosome")
     ax.set_ylabel("Tajima's D")
-    ax.legend()
+    ax.legend(fontsize=7)
     td_skyline_path = args.out_dir / f"{args.prefix}tajima-d-skyline.png"
     plt.savefig(td_skyline_path)
     plt.clf()
 
+    # ------------------------------------------------------------------ #
+    # Tajima's D trace
+    # ------------------------------------------------------------------ #
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    ax.plot(keep_idx, trace_branch_td, "-", c="firebrick", label="branch")
-    ax.set_xlabel("Replicate index")
-    ax.set_ylabel("Expected genome-wide Tajima's D")
+    ax.plot(pri["mcmc_iterates"], pri["trace_branch_td"], "-", c=PRI_BRANCH, label=pri_label)
+    if cmp is not None:
+        ax.plot(cmp["mcmc_iterates"], cmp["trace_branch_td"], CMP_LS, c=CMP_BRANCH, label=cmp_label)
+    ax.set_xlabel("MCMC iteration")
+    _td_trace_ylabel = (
+        "Simulated genome-wide Tajima's D (sim)" if pri_slabel == "sim"
+        else "Expected genome-wide Tajima's D (branch)"
+    )
+    ax.set_ylabel(_td_trace_ylabel)
     ax.legend()
     td_trace_path = args.out_dir / f"{args.prefix}tajima-d-trace.png"
     plt.savefig(td_trace_path)
     plt.clf()
 
-    # Site vs branch SFS
-    freq = np.arange(1, mean_site_afs.size)
-    fig, ax = plt.subplots(1, 1, figsize=(8, 4), constrained_layout=True)
-    ax.fill_between(freq, q_branch_afs[0, 1:], q_branch_afs[1, 1:], color="firebrick", alpha=0.1)
-    ax.scatter(freq, mean_branch_afs[1:], c="firebrick", label="branch (scaled by mu)", s=8)
-    ax.scatter(freq, mean_site_afs[1:], c="black", label="site observed", s=8)
-    ax.set_xlabel("Minor allele frequency" if args.folded else "Derived allele frequency")
-    ax.set_ylabel("# of variants / base")
-    ax.set_yscale("log")
-    ax.legend()
-    sfs_path = args.out_dir / f"{args.prefix}frequency-spectrum.png"
-    plt.savefig(sfs_path)
-    plt.clf()
+    # ------------------------------------------------------------------ #
+    # Site vs branch SFS — unfolded and folded
+    # ------------------------------------------------------------------ #
+    _pri_afs_blabel = "sim" if pri["stat_label"] == "sim" else "branch (×mu)"
+    for _fold, _xlabel, _suffix in [
+        (False, "Derived allele frequency", "unfolded"),
+        (True,  "Minor allele frequency",   "folded"),
+    ]:
+        _site_key   = f"mean_site_afs_{'folded' if _fold else 'unfolded'}"
+        _branch_key = f"mean_branch_afs_{'folded' if _fold else 'unfolded'}"
+        _q_key      = f"q_branch_afs_{'folded' if _fold else 'unfolded'}"
+        freq = np.arange(1, pri[_site_key].size)
+        fig, ax = plt.subplots(1, 1, figsize=(8, 4), constrained_layout=True)
+        ax.fill_between(freq, pri[_q_key][0, 1:], pri[_q_key][1, 1:],
+                        color=PRI_BRANCH, alpha=0.1)
+        ax.scatter(freq, pri[_branch_key][1:], c=PRI_BRANCH, s=8,
+                   label=f"{pri_label} {_pri_afs_blabel}")
+        ax.scatter(freq, pri[_site_key][1:], c=PRI_SITE, s=8,
+                   label=f"{pri_label} site")
+        if cmp is not None:
+            _cmp_afs_blabel = "sim" if cmp["stat_label"] == "sim" else "branch (×mu)"
+            c_freq = np.arange(1, cmp[_site_key].size)
+            ax.fill_between(c_freq, cmp[_q_key][0, 1:], cmp[_q_key][1, 1:],
+                            color=CMP_BRANCH, alpha=0.1)
+            ax.scatter(c_freq, cmp[_branch_key][1:], c=CMP_BRANCH, s=8, marker="^",
+                       label=f"{cmp_label} {_cmp_afs_blabel}")
+            ax.scatter(c_freq, cmp[_site_key][1:], c=CMP_SITE, s=8, marker="^",
+                       label=f"{cmp_label} site")
+        ax.set_xlabel(_xlabel)
+        ax.set_ylabel("# of variants / base")
+        ax.set_yscale("log")
+        ax.legend(fontsize=7)
+        if _suffix == "unfolded":
+            sfs_unfolded_path = args.out_dir / f"{args.prefix}frequency-spectrum-unfolded.png"
+            plt.savefig(sfs_unfolded_path)
+        else:
+            sfs_folded_path = args.out_dir / f"{args.prefix}frequency-spectrum-folded.png"
+            plt.savefig(sfs_folded_path)
+        plt.clf()
 
+    # ------------------------------------------------------------------ #
+    # Optional: observed vs simulated density plots (primary dataset only)
+    # ------------------------------------------------------------------ #
     sim_pi_density_path = None
     sim_td_density_path = None
     if args.sim is not None:
         sim_pi, sim_td = load_sim_window_stats(args.sim)
-        obs_pi = site_div_vals[:, keep_post].reshape(-1)
-        obs_td = site_td_vals[:, keep_post].reshape(-1)
+        obs_pi = pri["site_div_vals"][:, pri["keep_post"]].reshape(-1)
+        obs_td = pri["site_td_vals"][:, pri["keep_post"]].reshape(-1)
         obs_pi = obs_pi[np.isfinite(obs_pi)]
         obs_td = obs_td[np.isfinite(obs_td)]
         sim_pi = sim_pi[np.isfinite(sim_pi)]
@@ -356,8 +745,10 @@ def main():
         if obs_pi.size and sim_pi.size:
             fig, ax = plt.subplots(1, 1, figsize=(6, 4), constrained_layout=True)
             bins = 50
-            ax.hist(obs_pi, bins=bins, density=True, alpha=0.4, color="black", label="observed (site)")
-            ax.hist(sim_pi, bins=bins, density=True, alpha=0.4, color="firebrick", label="simulated")
+            ax.hist(obs_pi, bins=bins, density=True, alpha=0.4, color="black",
+                    label=f"observed — {pri_label}")
+            ax.hist(sim_pi, bins=bins, density=True, alpha=0.4, color=PRI_BRANCH,
+                    label="simulated")
             ax.set_xlabel("Nucleotide diversity (pi) per window")
             ax.set_ylabel("Density")
             ax.legend()
@@ -368,8 +759,10 @@ def main():
         if obs_td.size and sim_td.size:
             fig, ax = plt.subplots(1, 1, figsize=(6, 4), constrained_layout=True)
             bins = 50
-            ax.hist(obs_td, bins=bins, density=True, alpha=0.4, color="black", label="observed (site)")
-            ax.hist(sim_td, bins=bins, density=True, alpha=0.4, color="firebrick", label="simulated")
+            ax.hist(obs_td, bins=bins, density=True, alpha=0.4, color="black",
+                    label=f"observed — {pri_label}")
+            ax.hist(sim_td, bins=bins, density=True, alpha=0.4, color=PRI_BRANCH,
+                    label="simulated")
             ax.set_xlabel("Tajima's D per window")
             ax.set_ylabel("Density")
             ax.legend()
@@ -377,74 +770,87 @@ def main():
             plt.savefig(sim_td_density_path)
             plt.clf()
 
-    sim_sfs_plot_path = None
+    sim_sfs_unfolded_plot_path = None
+    sim_sfs_folded_plot_path = None
     if args.sim_sfs is not None:
-        sim_sfs_vals = load_sim_sfs(args.sim_sfs, folded=args.folded)  # [bin, sim]
-        sim_mean_sfs = safe_nanmean(sim_sfs_vals, axis=-1)
-        sim_q_sfs = safe_nanquantile(sim_sfs_vals, [0.025, 0.975], axis=-1)
-        n = min(mean_site_afs.size, sim_mean_sfs.size)
-        freq = np.arange(1, n)
-        fig, ax = plt.subplots(1, 1, figsize=(8, 4), constrained_layout=True)
-        ax.fill_between(freq, sim_q_sfs[0, 1:n], sim_q_sfs[1, 1:n], color="steelblue", alpha=0.15)
-        ax.scatter(freq, sim_mean_sfs[1:n], c="steelblue", label="simulated", s=8)
-        ax.scatter(freq, mean_site_afs[1:n], c="black", label="observed (site)", s=8)
-        ax.set_xlabel("Minor allele frequency" if args.folded else "Derived allele frequency")
-        ax.set_ylabel("# of variants / base")
-        ax.set_yscale("log")
-        ax.legend()
-        sim_sfs_plot_path = args.out_dir / f"{args.prefix}frequency-spectrum-vs-sim.png"
-        plt.savefig(sim_sfs_plot_path)
-        plt.clf()
+        for _fold, _xlabel, _suffix in [
+            (False, "Derived allele frequency", "unfolded"),
+            (True,  "Minor allele frequency",   "folded"),
+        ]:
+            _obs_key = f"mean_site_afs_{'folded' if _fold else 'unfolded'}"
+            sim_sfs_vals = load_sim_sfs(args.sim_sfs, folded=_fold)
+            sim_mean_sfs = safe_nanmean(sim_sfs_vals, axis=-1)
+            sim_q_sfs = safe_nanquantile(sim_sfs_vals, [0.025, 0.975], axis=-1)
+            n = min(pri[_obs_key].size, sim_mean_sfs.size)
+            freq = np.arange(1, n)
+            fig, ax = plt.subplots(1, 1, figsize=(8, 4), constrained_layout=True)
+            ax.fill_between(freq, sim_q_sfs[0, 1:n], sim_q_sfs[1, 1:n], color="steelblue", alpha=0.15)
+            ax.scatter(freq, sim_mean_sfs[1:n], c="steelblue", label="simulated", s=8)
+            ax.scatter(freq, pri[_obs_key][1:n], c="black",
+                       label=f"observed — {pri_label}", s=8)
+            ax.set_xlabel(_xlabel)
+            ax.set_ylabel("# of variants / base")
+            ax.set_yscale("log")
+            ax.legend()
+            _plot_path = args.out_dir / f"{args.prefix}frequency-spectrum-vs-sim-{_suffix}.png"
+            plt.savefig(_plot_path)
+            plt.clf()
+            if _suffix == "unfolded":
+                sim_sfs_unfolded_plot_path = _plot_path
+            else:
+                sim_sfs_folded_plot_path = _plot_path
 
+    # ------------------------------------------------------------------ #
+    # Summary
+    # ------------------------------------------------------------------ #
     summary_path = args.out_dir / f"{args.prefix}summary.txt"
     summary_path.write_text(
-        "\n".join(
-            [
-                f"ts_dir={args.ts_dir}",
-                f"pattern={args.pattern}",
-                f"n_files={len(ts_files)}",
-                f"burnin_frac={args.burnin_frac}",
-                f"burnin_index={burnin}",
-                f"window_size={args.window_size}",
-                f"mutation_rate={args.mutation_rate}",
-                f"folded_sfs={args.folded}",
-                f"sim_tsv={args.sim}",
-                f"sim_sfs_tsv={args.sim_sfs}",
-                f"n_samples={n_samples}",
-                f"sequence_length_min={float(np.min(seq_lengths))}",
-                f"sequence_length_max={float(np.max(seq_lengths))}",
-                f"mutational_load_plot={load_path}",
-                f"mutational_load_trace_plot={trace_path}",
-                f"diversity_scatter_plot={div_scatter_path}",
-                f"diversity_skyline_plot={div_skyline_path}",
-                f"diversity_trace_plot={div_trace_path}",
-                f"tajima_d_scatter_plot={td_scatter_path}",
-                f"tajima_d_skyline_plot={td_skyline_path}",
-                f"tajima_d_trace_plot={td_trace_path}",
-                f"frequency_spectrum_plot={sfs_path}",
-                f"frequency_spectrum_vs_sim_plot={sim_sfs_plot_path}",
-                f"diversity_density_vs_sim_plot={sim_pi_density_path}",
-                f"tajima_d_density_vs_sim_plot={sim_td_density_path}",
-            ]
-        )
-        + "\n"
+        "\n".join([
+            f"ts_dir={args.ts_dir}",
+            f"pattern={args.pattern}",
+            f"n_files={pri['n_files']}",
+            f"burnin_frac={args.burnin_frac}",
+            f"burnin_index={pri['burnin']}",
+            f"mcmc_thin={args.mcmc_thin}",
+            f"mcmc_iter_min={int(pri['mcmc_iterates'][0])}",
+            f"mcmc_iter_max={int(pri['mcmc_iterates'][-1])}",
+            f"window_size={args.window_size}",
+            f"mutation_rate={args.mutation_rate}",
+            f"sim_branch={args.sim_branch}",
+            f"stat_mode={pri['stat_label']}",
+            f"both_sfs=True",
+            f"compare_dir={args.compare}",
+            f"n_files_compare={cmp['n_files'] if cmp else 'n/a'}",
+            f"sim_tsv={args.sim}",
+            f"sim_sfs_tsv={args.sim_sfs}",
+            f"n_samples={pri['n_samples']}",
+            f"sequence_length_min={float(np.min(pri['seq_lengths']))}",
+            f"sequence_length_max={float(np.max(pri['seq_lengths']))}",
+            f"mutational_load_plot={load_path}",
+            f"mutational_load_trace_plot={trace_path}",
+            f"diversity_scatter_plot={div_scatter_path}",
+            f"diversity_skyline_plot={div_skyline_path}",
+            f"diversity_trace_plot={div_trace_path}",
+            f"tajima_d_scatter_plot={td_scatter_path}",
+            f"tajima_d_skyline_plot={td_skyline_path}",
+            f"tajima_d_trace_plot={td_trace_path}",
+            f"frequency_spectrum_unfolded_plot={sfs_unfolded_path}",
+            f"frequency_spectrum_folded_plot={sfs_folded_path}",
+            f"frequency_spectrum_vs_sim_unfolded_plot={sim_sfs_unfolded_plot_path}",
+            f"frequency_spectrum_vs_sim_folded_plot={sim_sfs_folded_plot_path}",
+            f"diversity_density_vs_sim_plot={sim_pi_density_path}",
+            f"tajima_d_density_vs_sim_plot={sim_td_density_path}",
+        ]) + "\n"
     )
 
-    print(f"Wrote: {load_path}")
-    print(f"Wrote: {trace_path}")
-    print(f"Wrote: {div_scatter_path}")
-    print(f"Wrote: {div_skyline_path}")
-    print(f"Wrote: {div_trace_path}")
-    print(f"Wrote: {td_scatter_path}")
-    print(f"Wrote: {td_skyline_path}")
-    print(f"Wrote: {td_trace_path}")
-    print(f"Wrote: {sfs_path}")
-    if sim_sfs_plot_path is not None:
-        print(f"Wrote: {sim_sfs_plot_path}")
-    if sim_pi_density_path is not None:
-        print(f"Wrote: {sim_pi_density_path}")
-    if sim_td_density_path is not None:
-        print(f"Wrote: {sim_td_density_path}")
+    for p in [load_path, trace_path, div_scatter_path, div_skyline_path, div_trace_path,
+              td_scatter_path, td_skyline_path, td_trace_path,
+              sfs_unfolded_path, sfs_folded_path]:
+        print(f"Wrote: {p}")
+    for p in [sim_sfs_unfolded_plot_path, sim_sfs_folded_plot_path,
+              sim_pi_density_path, sim_td_density_path]:
+        if p is not None:
+            print(f"Wrote: {p}")
     print(f"Wrote: {summary_path}")
 
 

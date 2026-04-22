@@ -63,12 +63,12 @@ def parse_args():
         help="BED file(s) of regions to remove per individual (comma-separated or repeated)",
     )
     p.add_argument("--out", help="Output tree sequence path (.ts, .trees, or .tsz)")
-    p.add_argument("--suffix-to-strip", default="_anchorwave")
+    p.add_argument("--suffix-to-strip", default="")
     p.add_argument(
         "--log",
         type=Path,
         default=None,
-        help="Optional log file path (default: results/<ts_stem>_trim_samples.log).",
+        help="Optional log file path (default: <out.parent>/logs/<ts_stem>_trim_samples.log).",
     )
     return p.parse_args()
 
@@ -101,9 +101,12 @@ def remove_ancestry(ts, samples, left, right):
     )
     tables.edges.keep_rows(~drop_edges)
     tables.sort()
+    tables.edges.drop_metadata()
     # Simplify drops the removed ancestry and may renumber nodes.
     tables.simplify()
     tables.edges.squash()
+    tables.build_index()
+    tables.compute_mutation_parents()
     return tables.tree_sequence()
 
 
@@ -111,6 +114,7 @@ def main():
     args = parse_args()
     ts_path = Path(args.ts)
     ts = load_ts(ts_path)
+    default_out_dir = ts_path.parent / "trimmed"
 
     remove_intervals = {}
     if args.remove:
@@ -126,7 +130,7 @@ def main():
         }
         remove_intervals = merge_intervals(remove_intervals, full)
 
-    if not remove_intervals:
+    if not args.remove and not args.individuals:
         raise SystemExit("ERROR: provide --individuals and/or --remove")
 
 
@@ -151,10 +155,9 @@ def main():
     if args.out:
         out_path = Path(args.out)
     else:
-        # Default output to results/ with a trimmed suffix.
-        out_dir = Path(__file__).resolve().parent.parent / "results"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"{ts_path.stem}_trimmed.tsz"
+        # Default output to a sibling trimmed/ directory with a trimmed suffix.
+        default_out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = default_out_dir / f"{ts_path.stem}_trimmed.tsz"
     dump_ts(trimmed_ts, out_path)
 
     # Summary to stdout/stderr and optional log
@@ -164,7 +167,7 @@ def main():
     )
     print(summary)
     print(summary, file=sys.stderr)
-    log_path = args.log or (Path(__file__).resolve().parent.parent / "results" / f"{ts_path.stem}_trim_samples.log")
+    log_path = args.log or (out_path.parent / "logs" / f"{ts_path.stem}_trim_samples.log")
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, "w") as fh:

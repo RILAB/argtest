@@ -8,4 +8,5 @@ dependencies:
   - tskit
   - tszip
   - msprime
+  - Snakemake=9.16.2
   - pytest
