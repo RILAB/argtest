@@ -15,18 +15,83 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Generate pipeline summary HTML.")
-    p.add_argument("--out-dir", required=True, type=Path)
-    p.add_argument("--fai", required=True, type=Path)
-    p.add_argument("--chroms", required=True, nargs="+")
-    p.add_argument("--replicates", required=True, nargs="+")
-    p.add_argument("--out", required=True, type=Path)
-    p.add_argument("--rec-fraction", type=float, default=None)
-    p.add_argument("--low-access-window", type=int, default=None)
-    p.add_argument("--low-access-cutoff", type=int, default=None)
-    p.add_argument("--mutload-cutoff", type=float, default=None)
-    p.add_argument("--mutation-rate", default=None)
-    p.add_argument("--sim-branch", default="false")
+    p = argparse.ArgumentParser(
+        description=(
+            "Generate a self-contained HTML pipeline summary (run info, "
+            "per-chromosome genome retention table, per-individual outlier "
+            "counts, and embedded validation plots)."
+        ),
+    )
+    p.add_argument(
+        "--out-dir",
+        required=True,
+        type=Path,
+        help=(
+            "Snakemake output root containing step1..step6 subdirectories. "
+            "Used to locate mask BEDs, trimmed treefiles, and validation PNGs."
+        ),
+    )
+    p.add_argument(
+        "--fai",
+        required=True,
+        type=Path,
+        help="FASTA index (.fai) supplying per-chromosome lengths.",
+    )
+    p.add_argument(
+        "--chroms",
+        required=True,
+        nargs="+",
+        help="Chromosome names to include in the report (space-separated).",
+    )
+    p.add_argument(
+        "--replicates",
+        required=True,
+        nargs="+",
+        help="Replicate IDs to aggregate across (space-separated).",
+    )
+    p.add_argument(
+        "--out",
+        required=True,
+        type=Path,
+        help="Output HTML path (typically <out-dir>/pipeline_summary.html).",
+    )
+    p.add_argument(
+        "--rec-fraction",
+        type=float,
+        default=None,
+        help="Step 1 --rec-fraction value, echoed into the Run-info block.",
+    )
+    p.add_argument(
+        "--low-access-window",
+        type=int,
+        default=None,
+        help="Step 2 --window-size value, echoed into the Run-info block.",
+    )
+    p.add_argument(
+        "--low-access-cutoff",
+        type=int,
+        default=None,
+        help="Step 2 --cutoff-bp value, echoed into the Run-info block.",
+    )
+    p.add_argument(
+        "--mutload-cutoff",
+        type=float,
+        default=None,
+        help="Step 3 --cutoff value, echoed into the Run-info block.",
+    )
+    p.add_argument(
+        "--mutation-rate",
+        default=None,
+        help="Validation-plot mutation rate, echoed into the Run-info block.",
+    )
+    p.add_argument(
+        "--sim-branch",
+        default="false",
+        help=(
+            'Whether step 6 used --sim-branch. Accepts "true"/"false" as a '
+            'string (default: "false"); echoed into the Run-info block.'
+        ),
+    )
     return p.parse_args()
 
 

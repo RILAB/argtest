@@ -27,7 +27,11 @@ def parse_args():
     )
     p.add_argument("ts_top", help="Top tree sequence file (.ts, .trees, or .tsz)")
     p.add_argument("ts_bottom", help="Bottom tree sequence file (.ts, .trees, or .tsz)")
-    p.add_argument("--out", default="trees_gallery.html", help="Output HTML file")
+    p.add_argument(
+        "--out",
+        default="trees_gallery.html",
+        help="Output HTML file (default: trees_gallery.html).",
+    )
     return p.parse_args()
 
 

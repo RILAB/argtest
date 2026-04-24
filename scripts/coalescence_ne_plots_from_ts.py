@@ -22,17 +22,58 @@ def parse_args():
     p = argparse.ArgumentParser(
         description="Generate pair coalescence and Ne plots from a set of tree sequence replicates."
     )
-    p.add_argument("--ts-dir", required=True, type=Path)
-    p.add_argument("--pattern", default="*.tsz")
-    p.add_argument("--out-dir", type=Path, default=Path("results/coalescence_ne_plots"))
-    p.add_argument("--time-bins-file", required=True, type=Path)
-    p.add_argument("--burnin-frac", type=float, default=0.5)
-    p.add_argument("--tail-cutoff", type=float, default=1e-12)
+    p.add_argument(
+        "--ts-dir",
+        required=True,
+        type=Path,
+        help="Directory containing tree sequence files (.tsz, .ts, .trees).",
+    )
+    p.add_argument(
+        "--pattern",
+        default="*.tsz",
+        help="Glob pattern for input trees (default: *.tsz).",
+    )
+    p.add_argument(
+        "--out-dir",
+        type=Path,
+        default=Path("results/coalescence_ne_plots"),
+        help="Output directory for plots (default: results/coalescence_ne_plots).",
+    )
+    p.add_argument(
+        "--time-bins-file",
+        required=True,
+        type=Path,
+        help=(
+            "File of explicit time-bin edges (one per line) defining the "
+            "coalescence time grid."
+        ),
+    )
+    p.add_argument(
+        "--burnin-frac",
+        type=float,
+        default=0.5,
+        help=(
+            "Fraction of initial MCMC trees to discard as burn-in when "
+            "computing posterior means (default: 0.5)."
+        ),
+    )
+    p.add_argument(
+        "--tail-cutoff",
+        type=float,
+        default=1e-12,
+        help=(
+            "Minimum probability-mass threshold for pair-coalescence tail "
+            "trimming (default: 1e-12)."
+        ),
+    )
     p.add_argument(
         "--time-adjust",
         type=float,
         default=1.0,
-        help="Divide time-bin x-values by this factor for plotting.",
+        help=(
+            "Divide plotted time-axis values by this factor (e.g. generations "
+            "per year) to convert to calendar time (default: 1.0)."
+        ),
     )
     p.add_argument(
         "--log-rates",
@@ -93,7 +134,11 @@ def parse_args():
         default=50_000.0,
         help="Window size (bp) for simulated diversity/Tajima's D TSV (default: 50000).",
     )
-    p.add_argument("--prefix", default="")
+    p.add_argument(
+        "--prefix",
+        default="",
+        help="Optional prefix prepended to output filenames (default: none).",
+    )
     return p.parse_args()
 
 

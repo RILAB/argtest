@@ -7,3 +7,11 @@ __pycache__/
 .DS_Store
 logs/
 results/
+
+# Local backup copies created before in-place edits
+*.bak
+
+# Local large data / results directories (chromosome-per-subdir layouts)
+amaranth/
+amaranth_firstry/
+amaranth_results/

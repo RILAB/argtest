@@ -31,7 +31,8 @@ tree_pattern: "*.trees"
 
 # Fraction of recombination-rate intervals (ranked by Rate(cM/Mb), lowest
 # first) to include in the low-recombination mask, per chromosome.
-# E.g. 0.1 masks the bottom 10 % of intervals.
+# E.g. 0.1 masks the bottom 10 % of intervals. Use 0.0 to write empty
+# low-recombination masks, which keeps the bundled example data unchanged.
 rec_fraction: 0.0
 
 # --------------------------------------------------------------------------- #
@@ -79,9 +80,11 @@ suffix_to_strip: "_anchorwave"
 # all chromosomes to be present for every replicate.
 allow_missing_replicates: false
 
-# Replicate index at which MCMC chains are considered converged; replicates
-# below this index are discarded before concatenation.
-burnin: 50 # use one half of number of SINGER MCMC samples
+# Number of leading discovered replicates to discard before concatenation.
+# WARNING: burnin is applied after tree discovery and must be smaller than the
+# number of discovered replicates/samples. The bundled example has 5 replicates,
+# so burnin must be 0-4; use 0 here so the example runs as-is.
+burnin: 0
 
 # Prefix used for merged output filenames: <base_name>.combined.<replicate>.<suffix>.
 base_name: "run"

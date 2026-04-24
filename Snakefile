@@ -7,7 +7,7 @@ from pathlib import Path
 from snakemake.exceptions import WorkflowError
 
 
-VALID_SUFFIXES = {".tree", ".trees", ".tsz"}
+VALID_SUFFIXES = {".ts", ".trees", ".tsz"}
 
 
 def natural_key(text: str):

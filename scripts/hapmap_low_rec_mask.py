@@ -42,8 +42,8 @@ def parse_args():
         help="Optional log file path (default: <out-dir>/logs/hapmap_low_rec_mask.log).",
     )
     args = p.parse_args()
-    if not 0 < args.rec_fraction <= 1:
-        raise ValueError("--rec-fraction must be in the interval (0, 1].")
+    if not 0 <= args.rec_fraction <= 1:
+        raise ValueError("--rec-fraction must be in the interval [0, 1].")
     return args
 
 
@@ -138,7 +138,7 @@ def main():
             per_chrom[chrom] = 0
             continue
 
-        n_keep = max(1, math.ceil(len(intervals) * args.rec_fraction))
+        n_keep = math.ceil(len(intervals) * args.rec_fraction)
         keep = set(sorted(range(len(intervals)), key=lambda i: intervals[i][2])[:n_keep])
         lines = [
             f"{chrom}\t{start}\t{end}\t{rate:.6g}"

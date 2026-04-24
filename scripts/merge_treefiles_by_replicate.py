@@ -11,7 +11,7 @@ import tskit
 from argtest_common import dump_ts, load_ts, merge_ratemaps, ratemap_from_metadata, ratemap_to_metadata
 
 
-VALID_SUFFIXES = {".tree", ".trees", ".tsz"}
+VALID_SUFFIXES = {".ts", ".trees", ".tsz"}
 
 
 def parse_args():
@@ -58,7 +58,7 @@ def parse_args():
     )
     p.add_argument(
         "--out-suffix",
-        choices=[".tree", ".trees", ".tsz"],
+        choices=[".ts", ".trees", ".tsz"],
         default=None,
         help="Optional output suffix. Defaults to the suffix of the first file in each group.",
     )

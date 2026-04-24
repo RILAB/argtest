@@ -58,7 +58,7 @@ The Snakemake workflow is designed for a directory layout with one subdirectory 
     ...
 ```
 
-Supported treefile suffixes are `.ts`, `.trees`, and `.tsz`. Replicate IDs are taken from the filename stem, so `chr1/1.tsz` is replicate `1` for chromosome `chr1`.
+The Snakemake workflow discovers treefiles with suffixes `.ts`, `.trees`, and `.tsz`. Replicate IDs are taken from the filename stem, so `chr1/1.tsz` is replicate `1` for chromosome `chr1`.
 
 ### Required Inputs
 
@@ -69,19 +69,19 @@ Required keys:
 - `root_dir`: path to the chromosome-subdirectory root
 - `hapmap`: HapMap recombination map used for step 1
 - `fai`: FASTA index used for chromosome lengths
-- `rec_fraction`: fraction of recombination-rate intervals (ranked by `Rate(cM/Mb)`, lowest first) to include in the low-recombination mask; e.g. `0.1` masks the bottom 10 % of intervals
+- `rec_fraction`: fraction of recombination-rate intervals (ranked by `Rate(cM/Mb)`, lowest first) to include in the low-recombination mask; e.g. `0.1` masks the bottom 10 % of intervals, while `0.0` writes empty low-recombination masks
 - `low_access_window_size`: window size in bp for step 2
 - `low_access_cutoff_bp`: minimum accessible bp per window for step 2
 - exactly one of `mutload_window_size` or `mutload_snp_window` for step 3
 
 Optional keys (all have sensible defaults):
 
-- `tree_pattern`: glob for treefiles within each chromosome directory (default: `"*"`), for example `"*.tsz"`
+- `tree_pattern`: glob for treefiles within each chromosome directory (default: `"*"`), for example `"*.trees"` or `"*.tsz"`
 - `mutload_cutoff`: outlier cutoff fraction for step 3 (default: `0.25`)
 - `mutload_fraction`: fraction threshold for writing mutation-masked BED rows in step 3
 - `suffix_to_strip`: suffix removed from sample IDs before matching in step 3 and step 5 (default: `"_anchorwave"`)
 - `allow_missing_replicates`: set to `true` to concatenate partial replicate sets (default: `false`)
-- `burnin`: number of leading MCMC-sample replicates to discard before concatenation (default: `0`)
+- `burnin`: number of leading discovered replicates to discard before concatenation (default: `0`); must be smaller than the number of replicates discovered after applying `tree_pattern`
 - `base_name`: prefix used for merged outputs (default: name of `root_dir`)
 - `merged_out_suffix`: force a specific output suffix for merged files (`.ts`, `.trees`, `.tsz`); default is to inherit the suffix of the first input
 - `out_dir`: output root for Snakemake products (default: `snakemake_out`; tilde is expanded)
@@ -124,7 +124,7 @@ Edit `config/snakemake.yaml` to point at your data (at minimum set `root_dir`, `
 
 #### Walk-through using bundled example data
 
-The committed [config/snakemake.yaml](config/snakemake.yaml) already points at the example dataset at [example_data/sim_2chr_5rep_clean](example_data/sim_2chr_5rep_clean) and can be used as-is for a test run.
+The committed [config/snakemake.yaml](config/snakemake.yaml) already points at the example dataset at [example_data/sim_2chr_5rep_clean](example_data/sim_2chr_5rep_clean) and can be used as-is for a test run. It uses `rec_fraction: 0.0` to write empty low-recombination masks and `burnin: 0` because the bundled example has 5 discovered replicates; `burnin` must always be smaller than the discovered replicate count.
 
 In sandboxed environments where `~/.cache` is read-only, set cache/temp dirs to `/tmp` when running Snakemake:
 
@@ -174,6 +174,10 @@ Pipeline scripts (called by the Snakefile). Run any with `--help` for arguments,
 - [`validation_plots_from_ts.py`](scripts/validation_plots_from_ts.py) — SINGER-style QC plots (mutational load, diversity, Tajima's D, folded/unfolded SFS) across TS replicates; optional observed-vs-simulated overlays.
 - [`merge_treefiles_by_replicate.py`](scripts/merge_treefiles_by_replicate.py) — concatenate chromosome-specific tree-sequence files by replicate; embedded mutation-rate ratemaps are merged and carried forward.
 - [`pipeline_summary.py`](scripts/pipeline_summary.py) — self-contained HTML report of genome retention, per-individual outlier counts, and embedded validation plots.
+
+### ⚠️ Warning: summary statistics after sample pruning
+
+Diversity (π), Tajima's D, and SFS in this pipeline are computed with [tskit](https://tskit.dev/)'s built-in methods (`ts.diversity`, `ts.Tajimas_D`, `ts.allele_frequency_spectrum`). These normalize by a **constant** `n · (n − 1) / 2` based on the sample set passed in, so when the sample size varies across regions — as it does after `trim_samples.py` removes individuals over BED intervals — the per-window statistics are **not correctly normalized** for the locally retained sample count. Treat post-pruning stats with caution, and prefer comparisons on replicates where sample membership is uniform across the genome.
 
 ## Auxiliary scripts
 

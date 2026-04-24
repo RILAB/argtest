@@ -60,10 +60,23 @@ def parse_args():
     p.add_argument(
         "--remove",
         action="append",
-        help="BED file(s) of regions to remove per individual (comma-separated or repeated)",
+        help=(
+            "BED file of per-individual intervals to remove. Column 4 should "
+            "contain the sample ID (comma-separated for multiple IDs sharing "
+            "the same interval); if column 4 is absent the BED filename stem "
+            "is used. Can be repeated or given as a comma-separated list to "
+            "supply multiple BED files."
+        ),
     )
-    p.add_argument("--out", help="Output tree sequence path (.ts, .trees, or .tsz)")
-    p.add_argument("--suffix-to-strip", default="")
+    p.add_argument(
+        "--out",
+        help="Output tree sequence path (default: results/<ts_stem>_trimmed.tsz).",
+    )
+    p.add_argument(
+        "--suffix-to-strip",
+        default="",
+        help='Suffix removed from sample names before matching (default: "").',
+    )
     p.add_argument(
         "--log",
         type=Path,

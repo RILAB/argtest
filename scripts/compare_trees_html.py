@@ -29,7 +29,11 @@ def parse_args():
     p.add_argument("index_a", type=int, help="Tree index for the first file (0-based)")
     p.add_argument("ts_b", help="Second tree sequence file (.ts, .trees, or .tsz)")
     p.add_argument("index_b", type=int, help="Tree index for the second file (0-based)")
-    p.add_argument("--out", default="tree_compare.html", help="Output HTML file")
+    p.add_argument(
+        "--out",
+        default="tree_compare.html",
+        help="Output HTML file (default: tree_compare.html).",
+    )
     return p.parse_args()
 
 

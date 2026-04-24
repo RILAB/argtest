@@ -111,8 +111,20 @@ def parse_args():
         default=0.25,
         help="Outlier cutoff as a fraction of the window median (default: 0.25)",
     )
-    p.add_argument("--out", default="mutational_load_summary.html")
-    p.add_argument("--suffix-to-strip", default="")
+    p.add_argument(
+        "--out",
+        default="mutational_load_summary.html",
+        help=(
+            "Output filename (default: mutational_load_summary.html). Only the "
+            "filename part is used; the file is always written to "
+            "<repo-root>/results/<filename>."
+        ),
+    )
+    p.add_argument(
+        "--suffix-to-strip",
+        default="",
+        help='Suffix stripped from sample names before display (default: "").',
+    )
     return p.parse_args()
 
 
