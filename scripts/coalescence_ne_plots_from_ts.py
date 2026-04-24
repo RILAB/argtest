@@ -1,4 +1,14 @@
 #!/usr/bin/env python
+"""Generate pair-coalescence and Ne plots from tree-sequence replicates.
+
+WARNING: tskit computes coalescence rates under the assumption that every
+tree spans the full sample set. On ARGs with partial trees — e.g. after
+`trim_regions.py` / `trim_samples.py` have removed intervals or individuals,
+or any tree sequence with locally reduced sample membership — the rate is
+not corrected for the per-tree effective sample count and the resulting Ne
+estimate is biased. Treat Ne output from such tree sequences with caution
+until the rate calculation is patched (see project TODO list).
+"""
 from __future__ import annotations
 
 import argparse
@@ -20,7 +30,14 @@ matplotlib.rcParams["figure.dpi"] = 300
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Generate pair coalescence and Ne plots from a set of tree sequence replicates."
+        description=(
+            "Generate pair coalescence and Ne plots from a set of tree "
+            "sequence replicates. WARNING: tskit's coalescence-rate "
+            "calculation does not correct for partial trees (trees that "
+            "cover only a subset of samples after region/sample trimming), "
+            "so Ne estimates on trimmed ARGs are biased — see the module "
+            "docstring for details."
+        ),
     )
     p.add_argument(
         "--ts-dir",
