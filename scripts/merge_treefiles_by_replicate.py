@@ -162,19 +162,33 @@ def merge_group(paths):
     for ts in tseqs[1:]:
         merged = merged.concatenate(ts)
 
-    # Merge per-chromosome ratemaps (if all chromosomes carry one in metadata).
+    # tskit's concatenate keeps only the first ts's top-level metadata, so any
+    # coordinate-shifted fields (ratemap, kept_intervals) must be re-merged here
+    # against the cumulative per-chromosome offsets.
+    offsets = []
+    cumulative = 0.0
+    for ts in tseqs:
+        offsets.append(cumulative)
+        cumulative += float(ts.sequence_length)
+
+    extra: dict = {}
+
     ratemaps = [ratemap_from_metadata(ts.metadata or {}) for ts in tseqs]
     if all(mu is not None for mu in ratemaps):
-        offsets = []
-        cumulative = 0.0
-        for ts in tseqs:
-            offsets.append(cumulative)
-            cumulative += float(ts.sequence_length)
-        merged_mu = merge_ratemaps(ratemaps, offsets)
+        extra.update(ratemap_to_metadata(merge_ratemaps(ratemaps, offsets)))
+
+    kept_lists = [(ts.metadata or {}).get("kept_intervals") for ts in tseqs]
+    if all(k is not None for k in kept_lists):
+        merged_kept: list = []
+        for off, intervals in zip(offsets, kept_lists):
+            merged_kept.extend([[float(l) + off, float(r) + off] for l, r in intervals])
+        extra["kept_intervals"] = merged_kept
+
+    if extra:
         tables = merged.dump_tables()
         existing = merged.metadata if isinstance(merged.metadata, dict) else {}
         tables.metadata_schema = tskit.MetadataSchema({"codec": "json"})
-        tables.metadata = {**existing, **ratemap_to_metadata(merged_mu)}
+        tables.metadata = {**existing, **extra}
         merged = tables.tree_sequence()
 
     return merged, chrom_paths

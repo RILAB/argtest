@@ -40,6 +40,28 @@ def test_group_tree_files():
     assert sorted(grouped.keys()) == [("base", "1"), ("base", "2")]
 
 
+def make_simple_ts_with_kept(length, site_pos, kept_intervals):
+    ts = make_simple_ts(length=length, site_pos=site_pos)
+    tables = ts.dump_tables()
+    tables.metadata_schema = tskit.MetadataSchema({"codec": "json"})
+    tables.metadata = {"kept_intervals": [[float(l), float(r)] for l, r in kept_intervals]}
+    return tables.tree_sequence()
+
+
+def test_merge_group_offsets_kept_intervals(tmp_path):
+    ts1 = make_simple_ts_with_kept(length=5, site_pos=1, kept_intervals=[[0, 3]])
+    ts2 = make_simple_ts_with_kept(length=7, site_pos=2, kept_intervals=[[1, 4], [5, 7]])
+    p1 = tmp_path / "base.chr1.1.trees"
+    p2 = tmp_path / "base.chr2.1.trees"
+    ts1.dump(p1)
+    ts2.dump(p2)
+
+    merged, _ = merger.merge_group([("chr1", p1), ("chr2", p2)])
+
+    assert merged.sequence_length == 12
+    assert merged.metadata["kept_intervals"] == [[0.0, 3.0], [6.0, 9.0], [10.0, 12.0]]
+
+
 def test_merge_group_concatenates_sequence_length(tmp_path, monkeypatch):
     ts1 = make_simple_ts(length=5, site_pos=1)
     ts2 = make_simple_ts(length=7, site_pos=2)
