@@ -369,6 +369,36 @@ def ratemap_from_metadata(md: dict):
     return msprime.RateMap(position=md["mu_position"], rate=md["mu_rate"])
 
 
+def resolve_mu_rate(ts: tskit.TreeSequence, ts_path: Path, scalar_fallback: float | None = None):
+    """Resolve a mutation rate for `msprime.sim_mutations` from (in order):
+    ts metadata ratemap, *.mut_rate.p sibling file, or a scalar fallback.
+    Returns an msprime.RateMap or float; raises if nothing is available.
+    """
+    _require_msprime()
+    md_rate = ratemap_from_metadata((ts.metadata or {}) if ts.metadata is not None else {})
+    if md_rate is not None:
+        return md_rate
+    try:
+        mu_path = infer_mu_path(ts_path)
+    except (FileNotFoundError, RuntimeError):
+        mu_path = None
+    if mu_path is not None:
+        with open(mu_path, "rb") as fh:
+            obj = pickle.load(fh)
+        if isinstance(obj, msprime.RateMap):
+            return obj
+        # Some fixtures pickle a SimpleNamespace with .position/.rate; rebuild a RateMap.
+        if hasattr(obj, "position") and hasattr(obj, "rate"):
+            return msprime.RateMap(position=list(obj.position), rate=list(obj.rate))
+        raise RuntimeError(f"Unrecognized mutation-rate object in {mu_path}: {type(obj)}")
+    if scalar_fallback is not None:
+        return float(scalar_fallback)
+    raise FileNotFoundError(
+        f"No mutation rate available for {ts_path}: ts.metadata has no ratemap, "
+        f"no *.mut_rate.p file found, and no --mutation-rate fallback was given."
+    )
+
+
 def merge_ratemaps(ratemaps: list, offsets: list):
     """Concatenate per-chromosome RateMaps into one by shifting each by its offset."""
     _require_msprime()

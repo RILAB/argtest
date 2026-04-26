@@ -155,8 +155,11 @@ def build_dataset(root: Path) -> dict[str, Path]:
         "low_access_window_size": 1000,
         "low_access_cutoff_bp": 600,
         "mutload_window_size": 1000,
-        "mutload_cutoff": 0.25,
-        "mutload_fraction": 0.2,
+        # Sim-based expected per individual >> observed on this tiny fixture, so
+        # set the cutoff wide enough that pipeline plumbing is tested without
+        # mutload masking everything. Outlier-detection accuracy is covered by
+        # the unit tests in tests/test_mutload_masks.py.
+        "mutload_cutoff": 2.0,
         "suffix_to_strip": "_anchorwave",
         "allow_missing_replicates": False,
         "base_name": "demo",

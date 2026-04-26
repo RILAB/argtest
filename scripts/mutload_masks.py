@@ -4,12 +4,14 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import msprime
 import numpy as np
 
 from argtest_common import (
     aggregate_by_individual,
     load_ts,
     mutational_load,
+    resolve_mu_rate,
     sample_names,
 )
 
@@ -29,8 +31,11 @@ def parse_args():
     parser.add_argument(
         "--cutoff",
         type=float,
-        default=0.25,
-        help="Outlier cutoff as a fraction of each window median (default: 0.25).",
+        default=0.5,
+        help=(
+            "Outlier cutoff as a fraction of the per-individual sim-based expected "
+            "load (default: 0.5)."
+        ),
     )
     parser.add_argument(
         "--fraction",
@@ -40,6 +45,21 @@ def parse_args():
             "If provided, windows with outlier fraction > this value are written to --masked-bed "
             "and excluded from --outlier-bed."
         ),
+    )
+    parser.add_argument(
+        "--mutation-rate",
+        type=float,
+        default=None,
+        help=(
+            "Scalar mutation-rate fallback for the sim-based expected load when neither "
+            "ts.metadata nor a sibling *.mut_rate.p file provides a ratemap."
+        ),
+    )
+    parser.add_argument(
+        "--random-seed",
+        type=int,
+        default=1,
+        help="Seed for msprime.sim_mutations when computing expected load (default: 1).",
     )
     parser.add_argument(
         "--suffix-to-strip",
@@ -92,6 +112,14 @@ def build_snp_windows(ts, snp_window: int) -> np.ndarray:
     return np.concatenate((np.array([0.0]), edges, np.array([sequence_length])))
 
 
+def simulate_expected_load(ts, windows, names, mu, seed):
+    # Single-sim expected per-individual load matrix (windows x individuals).
+    sim_ts = msprime.sim_mutations(ts, rate=mu, keep=False, random_seed=seed)
+    expected = mutational_load(sim_ts, windows=windows)
+    expected, unique = aggregate_by_individual(expected, names)
+    return expected, unique
+
+
 def main():
     args = parse_args()
     args.outlier_bed.parent.mkdir(parents=True, exist_ok=True)
@@ -111,17 +139,25 @@ def main():
     names = sample_names(ts, suffix_to_strip=args.suffix_to_strip)
     load, unique_names = aggregate_by_individual(load, names)
 
-    window_medians = np.median(load, axis=1)
-    valid = window_medians > 0
-    high = (1 + args.cutoff) * window_medians
-    low = (1 - args.cutoff) * window_medians
-    outlier_mask = ((load > high[:, None]) | (load < low[:, None])) & valid[:, None]
+    mu = resolve_mu_rate(ts, args.ts, scalar_fallback=args.mutation_rate)
+    expected, expected_names = simulate_expected_load(
+        ts, windows, names, mu=mu, seed=args.random_seed
+    )
+    if expected_names != unique_names:
+        raise RuntimeError("Sim and observed individual orderings disagree")
+
+    valid = expected > 0
+    high = (1 + args.cutoff) * expected
+    low = (1 - args.cutoff) * expected
+    outlier_mask = ((load > high) | (load < low)) & valid
 
     masked_window_mask = np.zeros(load.shape[0], dtype=bool)
     masked_lines = []
     if args.fraction is not None:
+        # A window is "masked" if too many individuals look like outliers.
+        valid_window = valid.any(axis=1)
         outlier_fractions = outlier_mask.sum(axis=1) / load.shape[1]
-        masked_window_mask = valid & (outlier_fractions > args.fraction)
+        masked_window_mask = valid_window & (outlier_fractions > args.fraction)
         for w in range(load.shape[0]):
             if not masked_window_mask[w]:
                 continue
@@ -134,17 +170,19 @@ def main():
 
     outlier_lines = []
     for w in range(load.shape[0]):
-        if not valid[w] or masked_window_mask[w]:
+        if masked_window_mask[w]:
             continue
         row_mask = outlier_mask[w]
         if not row_mask.any():
             continue
-        outlier_names = [unique_names[i] for i in np.where(row_mask)[0]]
-        outlier_vals = [f"{load[w, i]:.3f}" for i in np.where(row_mask)[0]]
+        idx = np.where(row_mask)[0]
+        outlier_names = [unique_names[i] for i in idx]
+        outlier_vals = [f"{load[w, i]:.3f}" for i in idx]
+        outlier_exp = [f"{expected[w, i]:.3f}" for i in idx]
         start = int(windows[w])
         end = int(windows[w + 1])
         outlier_lines.append(
-            f"{args.chrom}\t{start}\t{end}\t{','.join(outlier_names)}\t{','.join(outlier_vals)}\t{window_medians[w]:.3f}"
+            f"{args.chrom}\t{start}\t{end}\t{','.join(outlier_names)}\t{','.join(outlier_vals)}\t{','.join(outlier_exp)}"
         )
     args.outlier_bed.write_text("\n".join(outlier_lines) + ("\n" if outlier_lines else ""))
 
@@ -155,6 +193,8 @@ def main():
         fh.write(f"outlier_bed={args.outlier_bed}\n")
         fh.write(f"masked_bed={args.masked_bed}\n")
         fh.write(f"windows={len(windows) - 1}\n")
+        fh.write(f"random_seed={args.random_seed}\n")
+        fh.write(f"cutoff={args.cutoff}\n")
         fh.write(f"outliers_written={len(outlier_lines)}\n")
         fh.write(f"masked_windows={len(masked_lines)}\n")
 

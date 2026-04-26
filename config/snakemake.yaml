@@ -58,9 +58,21 @@ low_access_cutoff_bp: 2500
 # use instead of mutload_window_size.
 mutload_snp_window: 500
 
-# Fraction above/below the per-window median load that marks a sample as an
-# outlier. E.g. 0.25 flags samples with load > 1.25× or < 0.75× the median.
+# Fraction above/below the per-individual sim-based expected load that marks a
+# sample as an outlier. E.g. 0.5 flags individuals whose observed load is
+# > 1.5× or < 0.5× the expectation from a single msprime.sim_mutations draw on
+# the input ARG.
 mutload_cutoff: 0.5
+
+# Optional scalar mutation-rate fallback used by the sim-based expectation when
+# neither ts.metadata nor a sibling *.mut_rate.p file provides a ratemap.
+# Leave unset to require an embedded/sibling ratemap.
+# mutload_mutation_rate: 1e-8
+
+# Base seed for the per-replicate sim used to compute expected load. The actual
+# per-replicate seed is derived deterministically from this base plus the
+# chrom/rep wildcards, so re-running step 3 produces identical outlier BEDs.
+mutload_random_seed: 1
 
 # If provided, windows where the outlier fraction exceeds this threshold are
 # written to the mutation-masked BED (rather than the per-sample outlier BED)

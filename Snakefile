@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import re
 from pathlib import Path
 
@@ -66,6 +67,25 @@ else:
     MUTLOAD_WINDOW_ARG = f"--snp-window {MUTLOAD_SNP_WINDOW}"
 
 MUTLOAD_FRACTION_ARG = f"--fraction {MUTLOAD_FRACTION}" if MUTLOAD_FRACTION is not None else ""
+
+MUTLOAD_MUTATION_RATE = config.get("mutload_mutation_rate", None)
+if MUTLOAD_MUTATION_RATE is not None:
+    MUTLOAD_MUTATION_RATE = float(MUTLOAD_MUTATION_RATE)
+    if MUTLOAD_MUTATION_RATE <= 0:
+        raise WorkflowError("mutload_mutation_rate must be > 0")
+MUTLOAD_MUTATION_RATE_ARG = (
+    f"--mutation-rate {MUTLOAD_MUTATION_RATE}" if MUTLOAD_MUTATION_RATE is not None else ""
+)
+
+MUTLOAD_RANDOM_SEED = int(config.get("mutload_random_seed", 1))
+
+
+def mutload_seed_for(chrom: str, rep: str) -> int:
+    # Deterministic per-replicate seed combining base seed, chrom, and rep.
+    blob = f"{MUTLOAD_RANDOM_SEED}|{chrom}|{rep}".encode()
+    h = int(hashlib.sha1(blob).hexdigest()[:8], 16)
+    # msprime accepts uint32; mod down and avoid 0 so seed is always valid.
+    return (h % (2**31 - 1)) + 1
 
 VALIDATION_MUTATION_RATE = config.get("validation_mutation_rate", None)
 if VALIDATION_MUTATION_RATE is not None:
@@ -290,6 +310,8 @@ rule step3_mutload_masks:
         cutoff=MUTLOAD_CUTOFF,
         fraction_arg=MUTLOAD_FRACTION_ARG,
         suffix_to_strip=SUFFIX_TO_STRIP,
+        mutation_rate_arg=MUTLOAD_MUTATION_RATE_ARG,
+        seed=lambda wildcards: mutload_seed_for(wildcards.chrom, wildcards.rep),
     shell:
         """
         python scripts/mutload_masks.py \
@@ -300,6 +322,8 @@ rule step3_mutload_masks:
           {params.window_arg} \
           --cutoff {params.cutoff} \
           {params.fraction_arg} \
+          --random-seed {params.seed} \
+          {params.mutation_rate_arg} \
           --suffix-to-strip "{params.suffix_to_strip}" \
           --log "{log}"
         """

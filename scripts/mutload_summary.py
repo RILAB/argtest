@@ -8,10 +8,13 @@ from pathlib import Path
 
 import numpy as np
 
+import msprime
+
 from argtest_common import (
     aggregate_by_individual,
     load_ts,
     mutational_load,
+    resolve_mu_rate,
     sample_names,
 )
 
@@ -108,8 +111,26 @@ def parse_args():
     p.add_argument(
         "--cutoff",
         type=float,
-        default=0.25,
-        help="Outlier cutoff as a fraction of the window median (default: 0.25)",
+        default=0.5,
+        help=(
+            "Outlier cutoff as a fraction of the per-individual sim-based expected "
+            "load (default: 0.5)."
+        ),
+    )
+    p.add_argument(
+        "--mutation-rate",
+        type=float,
+        default=None,
+        help=(
+            "Scalar mutation-rate fallback when neither ts.metadata nor a sibling "
+            "*.mut_rate.p file provides a ratemap."
+        ),
+    )
+    p.add_argument(
+        "--random-seed",
+        type=int,
+        default=1,
+        help="Seed for msprime.sim_mutations when computing expected load (default: 1).",
     )
     p.add_argument(
         "--out",
@@ -147,6 +168,15 @@ def build_snp_windows(ts, snp_window: int) -> np.ndarray:
         return np.array([0.0, L], dtype=float)
     edges = positions[snp_window::snp_window]
     return np.concatenate((np.array([0.0]), edges, np.array([L])))
+
+
+def simulate_expected_load(ts, ts_path, windows, names, scalar_rate, seed):
+    # Single-sim per-individual expected load matrix (windows x individuals).
+    mu = resolve_mu_rate(ts, ts_path, scalar_fallback=scalar_rate)
+    sim_ts = msprime.sim_mutations(ts, rate=mu, keep=False, random_seed=seed)
+    expected = mutational_load(sim_ts, windows=windows)
+    expected, _ = aggregate_by_individual(expected, names)
+    return expected
 
 
 class Tee:
@@ -203,12 +233,15 @@ def main():
             if windows is None:
                 body_parts.append(load_chart_html(load, unique_names, "Mutational load"))
             else:
-                window_medians = np.median(load, axis=1)
-                valid = window_medians > 0
-                high = (1 + args.cutoff) * window_medians
-                low = (1 - args.cutoff) * window_medians
-                mask = (load > high[:, None]) | (load < low[:, None])
-                mask &= valid[:, None]
+                expected = simulate_expected_load(
+                    ts, ts_path, windows, names,
+                    scalar_rate=args.mutation_rate,
+                    seed=args.random_seed,
+                )
+                valid = expected > 0
+                high = (1 + args.cutoff) * expected
+                low = (1 - args.cutoff) * expected
+                mask = ((load > high) | (load < low)) & valid
                 outlier_counts = mask.sum(axis=0).astype(int).tolist()
 
                 mean_load = load.mean(axis=0)
@@ -234,12 +267,12 @@ def main():
                 if args.window_size is not None:
                     meta_lines.append(
                         f"Window size: {int(args.window_size)} bp | "
-                        f"Outlier cutoff: {args.cutoff:.3f} of window median"
+                        f"Outlier cutoff: {args.cutoff:.3f} of sim expectation"
                     )
                 elif args.snp_window is not None:
                     meta_lines.append(
                         f"Window size: {int(args.snp_window)} variants | "
-                        f"Outlier cutoff: {args.cutoff:.3f} of window median"
+                        f"Outlier cutoff: {args.cutoff:.3f} of sim expectation"
                     )
 
             meta_html = "\n".join(

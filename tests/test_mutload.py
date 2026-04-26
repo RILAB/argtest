@@ -117,26 +117,30 @@ def test_build_snp_windows_no_mutations():
     assert windows.tolist() == [0.0, 10.0]
 
 
-def test_outlier_mask_logic():
+def test_outlier_mask_logic_against_sim_expected():
+    # Per-individual expected (from sim) matrix matches load shape; threshold is
+    # element-wise against the per-individual expectation.
     load = np.array([[12, 5, 5], [2, 2, 2]], dtype=float)
-    medians = np.median(load, axis=1)
+    expected = np.array([[5, 5, 5], [2, 2, 2]], dtype=float)
     cutoff = 0.5
-    high = (1 + cutoff) * medians
-    low = (1 - cutoff) * medians
-    mask = (load > high[:, None]) | (load < low[:, None])
+    valid = expected > 0
+    high = (1 + cutoff) * expected
+    low = (1 - cutoff) * expected
+    mask = ((load > high) | (load < low)) & valid
     assert mask[0].tolist() == [True, False, False]
     assert mask[1].tolist() == [False, False, False]
 
 
-def test_outlier_uses_window_median_not_mean():
-    load = np.array([[8, 10, 12.8]], dtype=float)
-    cutoff = 0.25
-    medians = np.median(load, axis=1)
-    median_mask = ((load > (1 + cutoff) * medians[:, None]) | (load < (1 - cutoff) * medians[:, None]))
-    means = load.mean(axis=1)
-    mean_mask = ((load > (1 + cutoff) * means[:, None]) | (load < (1 - cutoff) * means[:, None]))
-    assert median_mask[0].tolist() == [False, False, True]
-    assert mean_mask[0].tolist() == [False, False, False]
+def test_zero_expected_window_is_invalid():
+    # Windows where the sim produced zero expected load (e.g. mu=0 region) are
+    # marked invalid and never flag outliers, even when observed > 0.
+    load = np.array([[3, 0]], dtype=float)
+    expected = np.array([[0, 0]], dtype=float)
+    valid = expected > 0
+    high = (1 + 0.5) * expected
+    low = (1 - 0.5) * expected
+    mask = ((load > high) | (load < low)) & valid
+    assert mask.tolist() == [[False, False]]
 
 
 def test_load_chart_html_contains_bar_chars():
@@ -165,6 +169,31 @@ def test_summarize_lineage_outliers_groups_prefixes():
     assert rows == [("L2", 4), ("L1", 3)]
 
 
+def _ms_args(ts_path, **overrides):
+    base = {
+        "ts": str(ts_path),
+        "window_size": 5.0,
+        "snp_window": None,
+        "cutoff": 0.5,
+        "mutation_rate": 1.0,
+        "random_seed": 1,
+        "out": "out.html",
+        "suffix_to_strip": "_anchorwave",
+    }
+    base.update(overrides)
+    return type("A", (), base)()
+
+
+def _patch_constant_expected(monkeypatch, value):
+    # Force a deterministic per-individual expected so threshold outcomes are
+    # independent of msprime's RNG.
+    def _fake(ts, ts_path, windows, names, scalar_rate, seed):
+        n_ind = len({n for n in names})
+        n_win = len(windows) - 1
+        return np.full((n_win, n_ind), value, dtype=float)
+    monkeypatch.setattr(ms, "simulate_expected_load", _fake)
+
+
 def test_outputs_written(tmp_path, monkeypatch):
     ts = make_simple_ts()
     ts_path = tmp_path / "test.trees"
@@ -179,21 +208,15 @@ def test_outputs_written(tmp_path, monkeypatch):
                     item.unlink()
 
     monkeypatch.setattr(ms, "load_ts", lambda _: ts)
-    monkeypatch.setattr(ms, "parse_args", lambda: type("A", (), {
-        "ts": str(ts_path),
-        "window_size": 5.0,
-        "snp_window": None,
-        "cutoff": 0.5,
-        "out": "out.html",
-        "suffix_to_strip": "_anchorwave",
-    })())
+    _patch_constant_expected(monkeypatch, 3.0)
+    monkeypatch.setattr(ms, "parse_args", lambda: _ms_args(ts_path, out="out.html"))
     ms.main()
 
     assert (cwd / "results" / "out.html").exists()
     assert (cwd / "logs" / "out.log").exists()
     html = (cwd / "results" / "out.html").read_text()
     assert "2 of 2 windows have at least one outlier" in html
-    assert "Outlier cutoff: 0.500 of window median" in html
+    assert "Outlier cutoff: 0.500 of sim expectation" in html
     assert "<td>A</td><td>2</td>" in html
     assert "<td>B</td><td>2</td>" in html
 
@@ -205,14 +228,12 @@ def test_outputs_written_with_lineage_table(tmp_path, monkeypatch):
     cwd = Path(__file__).resolve().parents[1]
     os.chdir(cwd)
     monkeypatch.setattr(ms, "load_ts", lambda _: ts)
-    monkeypatch.setattr(ms, "parse_args", lambda: type("A", (), {
-        "ts": str(ts_path),
-        "window_size": 5.0,
-        "snp_window": None,
-        "cutoff": 0.5,
-        "out": "lineage.html",
-        "suffix_to_strip": "_anchorwave",
-    })())
+    # Expected load is constant across all 4 individuals; observed load skews
+    # toward L1_A and L1_B in window 0 (positions 1, 2, 3 → loads 2, 1, 0, 0)
+    # and toward L1_B in window 1 (position 6, 7 → only L1_B loaded). With
+    # cutoff=0.5 and expected=1, both windows flag L1 individuals.
+    _patch_constant_expected(monkeypatch, 1.0)
+    monkeypatch.setattr(ms, "parse_args", lambda: _ms_args(ts_path, out="lineage.html"))
     ms.main()
     html = (cwd / "results" / "lineage.html").read_text()
     assert "Outlier windows by lineage" in html
@@ -227,14 +248,8 @@ def test_no_remove_no_trimmed(tmp_path, monkeypatch):
     cwd = Path(__file__).resolve().parents[1]
     os.chdir(cwd)
     monkeypatch.setattr(ms, "load_ts", lambda _: ts)
-    monkeypatch.setattr(ms, "parse_args", lambda: type("A", (), {
-        "ts": str(ts_path),
-        "window_size": 5.0,
-        "snp_window": None,
-        "cutoff": 0.5,
-        "out": "out.html",
-        "suffix_to_strip": "_anchorwave",
-    })())
+    _patch_constant_expected(monkeypatch, 3.0)
+    monkeypatch.setattr(ms, "parse_args", lambda: _ms_args(ts_path, out="out.html"))
     ms.main()
     assert not (cwd / "results" / "test_trimmed.tsz").exists()
 
@@ -246,14 +261,8 @@ def test_no_mutations_outliers_empty(tmp_path, monkeypatch):
     cwd = Path(__file__).resolve().parents[1]
     os.chdir(cwd)
     monkeypatch.setattr(ms, "load_ts", lambda _: ts)
-    monkeypatch.setattr(ms, "parse_args", lambda: type("A", (), {
-        "ts": str(ts_path),
-        "window_size": 5.0,
-        "snp_window": None,
-        "cutoff": 0.5,
-        "out": "nomut.html",
-        "suffix_to_strip": "_anchorwave",
-    })())
+    _patch_constant_expected(monkeypatch, 0.0)
+    monkeypatch.setattr(ms, "parse_args", lambda: _ms_args(ts_path, out="nomut.html"))
     ms.main()
     assert (cwd / "results" / "nomut.html").exists()
 
@@ -355,14 +364,8 @@ def test_output_overwrite(tmp_path, monkeypatch):
     cwd = Path(__file__).resolve().parents[1]
     os.chdir(cwd)
     monkeypatch.setattr(ms, "load_ts", lambda _: ts)
-    monkeypatch.setattr(ms, "parse_args", lambda: type("A", (), {
-        "ts": str(ts_path),
-        "window_size": 5.0,
-        "snp_window": None,
-        "cutoff": 0.5,
-        "out": "overwrite.html",
-        "suffix_to_strip": "_anchorwave",
-    })())
+    _patch_constant_expected(monkeypatch, 3.0)
+    monkeypatch.setattr(ms, "parse_args", lambda: _ms_args(ts_path, out="overwrite.html"))
     ms.main()
     out = cwd / "results" / "overwrite.html"
     assert out.exists()
@@ -379,14 +382,11 @@ def test_outputs_written_with_snp_windows(tmp_path, monkeypatch):
     cwd = Path(__file__).resolve().parents[1]
     os.chdir(cwd)
     monkeypatch.setattr(ms, "load_ts", lambda _: ts)
-    monkeypatch.setattr(ms, "parse_args", lambda: type("A", (), {
-        "ts": str(ts_path),
-        "window_size": None,
-        "snp_window": 1,
-        "cutoff": 0.5,
-        "out": "snp_out.html",
-        "suffix_to_strip": "_anchorwave",
-    })())
+    _patch_constant_expected(monkeypatch, 3.0)
+    monkeypatch.setattr(
+        ms, "parse_args",
+        lambda: _ms_args(ts_path, window_size=None, snp_window=1, out="snp_out.html"),
+    )
     ms.main()
 
     assert (cwd / "results" / "snp_out.html").exists()
