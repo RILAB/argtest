@@ -44,7 +44,7 @@ FAI = Path(cfg_required("fai")).expanduser().resolve()
 REC_FRACTION = float(cfg_required("rec_fraction"))
 LOW_ACCESS_WINDOW_SIZE = float(cfg_required("low_access_window_size"))
 LOW_ACCESS_CUTOFF_BP = float(cfg_required("low_access_cutoff_bp"))
-MUTLOAD_CUTOFF = float(config.get("mutload_cutoff", 0.25))
+MUTLOAD_CUTOFF = float(config.get("mutload_cutoff", 0.5))
 MUTLOAD_FRACTION = config.get("mutload_fraction", None)
 if MUTLOAD_FRACTION is not None:
     MUTLOAD_FRACTION = float(MUTLOAD_FRACTION)

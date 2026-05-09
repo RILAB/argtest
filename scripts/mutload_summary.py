@@ -238,10 +238,9 @@ def main():
                     scalar_rate=args.mutation_rate,
                     seed=args.random_seed,
                 )
-                valid = expected > 0
                 high = (1 + args.cutoff) * expected
                 low = (1 - args.cutoff) * expected
-                mask = ((load > high) | (load < low)) & valid
+                mask = (load > high) | (load < low)
                 outlier_counts = mask.sum(axis=0).astype(int).tolist()
 
                 mean_load = load.mean(axis=0)

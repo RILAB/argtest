@@ -123,24 +123,22 @@ def test_outlier_mask_logic_against_sim_expected():
     load = np.array([[12, 5, 5], [2, 2, 2]], dtype=float)
     expected = np.array([[5, 5, 5], [2, 2, 2]], dtype=float)
     cutoff = 0.5
-    valid = expected > 0
     high = (1 + cutoff) * expected
     low = (1 - cutoff) * expected
-    mask = ((load > high) | (load < low)) & valid
+    mask = (load > high) | (load < low)
     assert mask[0].tolist() == [True, False, False]
     assert mask[1].tolist() == [False, False, False]
 
 
-def test_zero_expected_window_is_invalid():
-    # Windows where the sim produced zero expected load (e.g. mu=0 region) are
-    # marked invalid and never flag outliers, even when observed > 0.
+def test_zero_expected_flags_observed_positive_load():
+    # A zero simulated expectation still participates in outlier calling:
+    # observed zero is fine, but observed-positive load is high relative to zero.
     load = np.array([[3, 0]], dtype=float)
     expected = np.array([[0, 0]], dtype=float)
-    valid = expected > 0
     high = (1 + 0.5) * expected
     low = (1 - 0.5) * expected
-    mask = ((load > high) | (load < low)) & valid
-    assert mask.tolist() == [[False, False]]
+    mask = (load > high) | (load < low)
+    assert mask.tolist() == [[True, False]]
 
 
 def test_load_chart_html_contains_bar_chars():

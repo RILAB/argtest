@@ -146,18 +146,16 @@ def main():
     if expected_names != unique_names:
         raise RuntimeError("Sim and observed individual orderings disagree")
 
-    valid = expected > 0
     high = (1 + args.cutoff) * expected
     low = (1 - args.cutoff) * expected
-    outlier_mask = ((load > high) | (load < low)) & valid
+    outlier_mask = (load > high) | (load < low)
 
     masked_window_mask = np.zeros(load.shape[0], dtype=bool)
     masked_lines = []
     if args.fraction is not None:
         # A window is "masked" if too many individuals look like outliers.
-        valid_window = valid.any(axis=1)
         outlier_fractions = outlier_mask.sum(axis=1) / load.shape[1]
-        masked_window_mask = valid_window & (outlier_fractions > args.fraction)
+        masked_window_mask = outlier_fractions > args.fraction
         for w in range(load.shape[0]):
             if not masked_window_mask[w]:
                 continue

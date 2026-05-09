@@ -380,7 +380,7 @@ def resolve_mu_rate(ts: tskit.TreeSequence, ts_path: Path, scalar_fallback: floa
         return md_rate
     try:
         mu_path = infer_mu_path(ts_path)
-    except (FileNotFoundError, RuntimeError):
+    except FileNotFoundError:
         mu_path = None
     if mu_path is not None:
         with open(mu_path, "rb") as fh:
