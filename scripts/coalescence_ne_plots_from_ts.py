@@ -1,13 +1,16 @@
 #!/usr/bin/env python
 """Generate pair-coalescence and Ne plots from tree-sequence replicates.
 
-WARNING: tskit computes coalescence rates under the assumption that every
-tree spans the full sample set. On ARGs with partial trees — e.g. after
-`trim_regions.py` / `trim_samples.py` have removed intervals or individuals,
-or any tree sequence with locally reduced sample membership — the rate is
-not corrected for the per-tree effective sample count and the resulting Ne
-estimate is biased. Treat Ne output from such tree sequences with caution
-until the rate calculation is patched (see project TODO list).
+Pair-coalescence rates are computed from tskit's aggregate
+`pair_coalescence_counts` PDF, then rescaled so the survival denominator
+reflects only the pair-spans actually at risk of coalescence (i.e.
+excluding intervals where a sample is isolated and so has no MRCA with
+any other sample). Per-bin rates use the exponential-MLE hazard
+`rate = log(S[i] / S[i+1]) / dt`. Reproduces tskit's
+`pair_coalescence_rates` exactly when every tree spans every sample;
+corrects the survival inflation that biases Ne upward on ARGs with
+isolated samples (e.g. after `trim_samples.py`'s per-interval ancestry
+removal).
 """
 from __future__ import annotations
 
@@ -32,11 +35,9 @@ def parse_args():
     p = argparse.ArgumentParser(
         description=(
             "Generate pair coalescence and Ne plots from a set of tree "
-            "sequence replicates. WARNING: tskit's coalescence-rate "
-            "calculation does not correct for partial trees (trees that "
-            "cover only a subset of samples after region/sample trimming), "
-            "so Ne estimates on trimmed ARGs are biased — see the module "
-            "docstring for details."
+            "sequence replicates. Rates are computed via per-pair counts "
+            "so that isolated-sample regions (e.g. from trim_samples.py) "
+            "do not bias the survival denominator."
         ),
     )
     p.add_argument(
@@ -245,10 +246,46 @@ def finite_interval_mask(time_windows: np.ndarray) -> np.ndarray:
     return np.isfinite(time_windows[1:])
 
 
+def connected_pair_span(ts) -> float:
+    # Sum over (pair, position) of 1[pair has an MRCA in the local tree].
+    # Equivalently sum_T span_T * sum_r C(s_r, 2) where s_r is the subtree
+    # size at root r in tree T. Pairs across different roots (incl. pairs
+    # involving isolated samples) are excluded — exactly the pair-span at
+    # risk of coalescence.
+    total = 0.0
+    for tree in ts.trees():
+        span = tree.interval.right - tree.interval.left
+        c = 0
+        for r in tree.roots:
+            s = tree.num_samples(r)
+            c += s * (s - 1) // 2
+        total += c * span
+    return total
+
+
 def compute_pair_coal(ts, time_windows: np.ndarray, tail_cutoff: float):
-    pdf = ts.pair_coalescence_counts(time_windows=time_windows, pair_normalise=True)
-    rates = ts.pair_coalescence_rates(time_windows=time_windows)
+    # Standard tskit PDF normalises by n_pairs * sequence_length, which
+    # over-counts the denominator on intervals where some samples are
+    # isolated (no MRCA with any other sample in that tree). Rescale by
+    # the actual at-risk pair-span, then apply the exponential-MLE hazard
+    # `rate = log(S[i] / S[i+1]) / dt`. Reproduces tskit's
+    # `pair_coalescence_rates` exactly when every tree spans every sample.
+    pdf_std = ts.pair_coalescence_counts(time_windows=time_windows, pair_normalise=True)
+    n_pairs = ts.num_samples * (ts.num_samples - 1) // 2
+    cps = connected_pair_span(ts)
+    if cps <= 0:
+        raise RuntimeError("No coalescing pair-spans in tree sequence.")
+    pdf = pdf_std * (n_pairs * ts.sequence_length) / cps
     survival = np.append(1.0, 1.0 - np.cumsum(pdf))
+    bin_widths = np.diff(time_windows)
+    rates = np.full_like(pdf, np.nan)
+    valid = (
+        (survival[:-1] > 0)
+        & (survival[1:] > 0)
+        & np.isfinite(bin_widths)
+        & (bin_widths > 0)
+    )
+    rates[valid] = np.log(survival[:-1][valid] / survival[1:][valid]) / bin_widths[valid]
     rates[survival[:-1] <= tail_cutoff] = np.nan
     return pdf, rates
 
