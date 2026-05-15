@@ -282,10 +282,12 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
     load_vals, seq_lengths = [], []
     site_div_vals = []
     site_td_vals = []
+    site_s_vals = []
     site_afs_unfolded_vals = []
     site_afs_folded_vals = []
     sim_div_vals = [] if sim_branch else None
     sim_td_vals = [] if sim_branch else None
+    sim_s_vals = [] if sim_branch else None
     sim_afs_unfolded_vals = [] if sim_branch else None
     sim_afs_folded_vals = [] if sim_branch else None
     n_samples = None
@@ -341,6 +343,16 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
 
         site_div = ts.diversity(mode="site", windows=rep_windows)
         site_td = ts.Tajimas_D(mode="site", windows=rep_windows)
+        site_s_raw = ts.segregating_sites(
+            mode="site", windows=rep_windows, span_normalise=False
+        )
+        if rep_acc is not None:
+            with np.errstate(invalid="ignore", divide="ignore"):
+                site_s = np.where(rep_acc > 0, site_s_raw / rep_acc, np.nan)
+        else:
+            window_spans = rep_windows[1:] - rep_windows[:-1]
+            with np.errstate(invalid="ignore", divide="ignore"):
+                site_s = site_s_raw / window_spans
         if div_scale is not None:
             site_div = site_div * div_scale
             site_td = np.where(np.isnan(div_scale), np.nan, site_td)
@@ -354,6 +366,7 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
         )
         site_div_vals.append(site_div)
         site_td_vals.append(site_td)
+        site_s_vals.append(site_s)
         site_afs_unfolded_vals.append(site_afs_unfolded)
         site_afs_folded_vals.append(site_afs_folded)
 
@@ -368,14 +381,19 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
                 mode="site", windows=rep_windows, span_normalise=False
             )
             sim_td = sim_ts.Tajimas_D(mode="site", windows=rep_windows)
+            sim_s_raw = sim_ts.segregating_sites(
+                mode="site", windows=rep_windows, span_normalise=False
+            )
             if rep_acc is not None:
                 with np.errstate(invalid="ignore", divide="ignore"):
                     sim_div = np.where(rep_acc > 0, sim_div_raw / rep_acc, np.nan)
+                    sim_s = np.where(rep_acc > 0, sim_s_raw / rep_acc, np.nan)
                 sim_td = np.where(rep_acc <= 0, np.nan, sim_td)
             else:
                 window_spans = rep_windows[1:] - rep_windows[:-1]
                 with np.errstate(invalid="ignore", divide="ignore"):
                     sim_div = sim_div_raw / window_spans
+                    sim_s = sim_s_raw / window_spans
             sim_afs_unfolded = (
                 sim_ts.allele_frequency_spectrum(mode="site", polarised=True, span_normalise=False)
                 / total_accessible
@@ -386,15 +404,18 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
             )
             sim_div_vals.append(sim_div)
             sim_td_vals.append(sim_td)
+            sim_s_vals.append(sim_s)
             sim_afs_unfolded_vals.append(sim_afs_unfolded)
             sim_afs_folded_vals.append(sim_afs_folded)
 
     min_n_windows = min(len(a) for a in site_div_vals)
     site_div_vals = [a[:min_n_windows] for a in site_div_vals]
     site_td_vals = [a[:min_n_windows] for a in site_td_vals]
+    site_s_vals = [a[:min_n_windows] for a in site_s_vals]
     if sim_branch:
         sim_div_vals = [a[:min_n_windows] for a in sim_div_vals]
         sim_td_vals = [a[:min_n_windows] for a in sim_td_vals]
+        sim_s_vals = [a[:min_n_windows] for a in sim_s_vals]
     stat_windows = genome_windows(min(seq_lengths), window_size)
 
     n_files = len(ts_files)
@@ -407,6 +428,7 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
     load_vals = np.stack(load_vals, axis=-1)
     site_div_vals = np.stack(site_div_vals, axis=-1)
     site_td_vals = np.stack(site_td_vals, axis=-1)
+    site_s_vals = np.stack(site_s_vals, axis=-1)
     site_afs_unfolded_vals = np.stack(site_afs_unfolded_vals, axis=-1)
     site_afs_folded_vals = np.stack(site_afs_folded_vals, axis=-1)
     coord = stat_windows[:-1] / 2.0 + stat_windows[1:] / 2.0
@@ -426,29 +448,37 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
         "load_vals": load_vals,
         "site_div_vals": site_div_vals,
         "site_td_vals": site_td_vals,
+        "site_s_vals": site_s_vals,
         "mean_load": safe_nanmean(load_vals[:, keep_post], axis=-1),
         "q_load": safe_nanquantile(load_vals[:, keep_post], [0.025, 0.975], axis=-1),
         "mean_site_div": safe_nanmean(site_div_vals[:, keep_post], axis=-1),
         "mean_site_td": safe_nanmean(site_td_vals[:, keep_post], axis=-1),
+        "mean_site_s": safe_nanmean(site_s_vals[:, keep_post], axis=-1),
         "trace_site_div": safe_nanmean(site_div_vals, axis=0),
         "trace_site_td": safe_nanmean(site_td_vals, axis=0),
+        "trace_site_s": safe_nanmean(site_s_vals, axis=0),
         "mean_site_afs_unfolded": safe_nanmean(site_afs_unfolded_vals[:, keep_post], axis=-1),
         "mean_site_afs_folded": safe_nanmean(site_afs_folded_vals[:, keep_post], axis=-1),
     }
     if sim_branch:
         sim_div_vals = np.stack(sim_div_vals, axis=-1)
         sim_td_vals = np.stack(sim_td_vals, axis=-1)
+        sim_s_vals = np.stack(sim_s_vals, axis=-1)
         sim_afs_unfolded_vals = np.stack(sim_afs_unfolded_vals, axis=-1)
         sim_afs_folded_vals = np.stack(sim_afs_folded_vals, axis=-1)
         out.update({
             "sim_div_vals": sim_div_vals,
             "sim_td_vals": sim_td_vals,
+            "sim_s_vals": sim_s_vals,
             "mean_sim_div": safe_nanmean(sim_div_vals[:, keep_post], axis=-1),
             "q_sim_div": safe_nanquantile(sim_div_vals[:, keep_post], [0.025, 0.975], axis=-1),
             "mean_sim_td": safe_nanmean(sim_td_vals[:, keep_post], axis=-1),
             "q_sim_td": safe_nanquantile(sim_td_vals[:, keep_post], [0.025, 0.975], axis=-1),
+            "mean_sim_s": safe_nanmean(sim_s_vals[:, keep_post], axis=-1),
+            "q_sim_s": safe_nanquantile(sim_s_vals[:, keep_post], [0.025, 0.975], axis=-1),
             "trace_sim_div": safe_nanmean(sim_div_vals, axis=0),
             "trace_sim_td": safe_nanmean(sim_td_vals, axis=0),
+            "trace_sim_s": safe_nanmean(sim_s_vals, axis=0),
             "mean_sim_afs_unfolded": safe_nanmean(sim_afs_unfolded_vals[:, keep_post], axis=-1),
             "q_sim_afs_unfolded": safe_nanquantile(sim_afs_unfolded_vals[:, keep_post], [0.025, 0.975], axis=-1),
             "mean_sim_afs_folded": safe_nanmean(sim_afs_folded_vals[:, keep_post], axis=-1),
@@ -615,6 +645,73 @@ def main():
     ax.legend()
     div_trace_path = args.out_dir / f"{args.prefix}diversity-trace.png"
     plt.savefig(div_trace_path)
+    plt.clf()
+
+    # ------------------------------------------------------------------ #
+    # Segregating sites: site-vs-sim scatter (only with --sim-branch)
+    # ------------------------------------------------------------------ #
+    s_scatter_path = None
+    if args.sim_branch:
+        fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
+        ax.scatter(pri["mean_site_s"], pri["mean_sim_s"], c=PRI_SIM, s=8, label=pri_label)
+        if cmp is not None:
+            ax.scatter(cmp["mean_site_s"], cmp["mean_sim_s"], c=CMP_SIM, s=8,
+                       marker="^", label=cmp_label)
+        x = float(np.nanmean(pri["mean_site_s"]))
+        ax.axline((x, x), slope=1.0, color="black", linestyle="dashed")
+        ax.set_xlabel("Observed segregating sites / base (site)")
+        ax.set_ylabel("Simulated segregating sites / base (sim)")
+        ax.legend()
+        s_scatter_path = args.out_dir / f"{args.prefix}segsites-scatter.png"
+        plt.savefig(s_scatter_path)
+        plt.clf()
+
+    # ------------------------------------------------------------------ #
+    # Segregating sites skyline
+    # ------------------------------------------------------------------ #
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4), constrained_layout=True)
+    if args.sim_branch:
+        ax.fill_between(pri["coord"], pri["q_sim_s"][0], pri["q_sim_s"][1],
+                        color=PRI_SIM, alpha=0.1)
+        ax.scatter(pri["coord"], pri["mean_sim_s"], c=PRI_SIM, s=8,
+                   label=f"{pri_label} sim")
+    ax.scatter(pri["coord"], pri["mean_site_s"], c=PRI_SITE, s=8,
+               label=f"{pri_label} site")
+    if cmp is not None:
+        if args.sim_branch:
+            ax.fill_between(cmp["coord"], cmp["q_sim_s"][0], cmp["q_sim_s"][1],
+                            color=CMP_SIM, alpha=0.1)
+            ax.scatter(cmp["coord"], cmp["mean_sim_s"], c=CMP_SIM, s=8, marker="^",
+                       label=f"{cmp_label} sim")
+        ax.scatter(cmp["coord"], cmp["mean_site_s"], c=CMP_SITE, s=8, marker="^",
+                   label=f"{cmp_label} site")
+    ax.set_xlabel("Position on chromosome")
+    ax.set_ylabel("Segregating sites / base")
+    ax.legend(fontsize=7)
+    s_skyline_path = args.out_dir / f"{args.prefix}segsites-skyline.png"
+    plt.savefig(s_skyline_path)
+    plt.clf()
+
+    # ------------------------------------------------------------------ #
+    # Segregating sites trace
+    # ------------------------------------------------------------------ #
+    fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
+    ax.plot(pri["mcmc_iterates"], pri["trace_site_s"], "-", c=PRI_SITE,
+            label=f"{pri_label} site")
+    if args.sim_branch:
+        ax.plot(pri["mcmc_iterates"], pri["trace_sim_s"], "-", c=PRI_SIM,
+                label=f"{pri_label} sim")
+    if cmp is not None:
+        ax.plot(cmp["mcmc_iterates"], cmp["trace_site_s"], CMP_LS, c=CMP_SITE,
+                label=f"{cmp_label} site")
+        if args.sim_branch:
+            ax.plot(cmp["mcmc_iterates"], cmp["trace_sim_s"], CMP_LS, c=CMP_SIM,
+                    label=f"{cmp_label} sim")
+    ax.set_xlabel("MCMC iteration")
+    ax.set_ylabel("Genome-wide segregating sites / base")
+    ax.legend()
+    s_trace_path = args.out_dir / f"{args.prefix}segsites-trace.png"
+    plt.savefig(s_trace_path)
     plt.clf()
 
     # ------------------------------------------------------------------ #
@@ -830,6 +927,9 @@ def main():
             f"tajima_d_scatter_plot={td_scatter_path}",
             f"tajima_d_skyline_plot={td_skyline_path}",
             f"tajima_d_trace_plot={td_trace_path}",
+            f"segsites_scatter_plot={s_scatter_path}",
+            f"segsites_skyline_plot={s_skyline_path}",
+            f"segsites_trace_plot={s_trace_path}",
             f"frequency_spectrum_unfolded_plot={sfs_unfolded_path}",
             f"frequency_spectrum_folded_plot={sfs_folded_path}",
             f"frequency_spectrum_vs_sim_unfolded_plot={sim_sfs_unfolded_plot_path}",
@@ -841,9 +941,10 @@ def main():
 
     for p in [load_path, trace_path, div_skyline_path, div_trace_path,
               td_skyline_path, td_trace_path,
+              s_skyline_path, s_trace_path,
               sfs_unfolded_path, sfs_folded_path]:
         print(f"Wrote: {p}")
-    for p in [div_scatter_path, td_scatter_path,
+    for p in [div_scatter_path, td_scatter_path, s_scatter_path,
               sim_sfs_unfolded_plot_path, sim_sfs_folded_plot_path,
               sim_pi_density_path, sim_td_density_path]:
         if p is not None:
