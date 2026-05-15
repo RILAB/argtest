@@ -44,26 +44,6 @@ def load_chart_html(load_1d, names, title, outlier_mask=None):
     )
 
 
-def outlier_hist_html(counts):
-    if not counts:
-        return ""
-    max_count = max(counts)
-    bins: dict[int, int] = {}
-    for c in counts:
-        bins[c] = bins.get(c, 0) + 1
-    max_freq = max(bins.values()) if bins else 1
-    rows = []
-    for k in range(0, max_count + 1):
-        freq = bins.get(k, 0)
-        bar_len = int(round(freq / max_freq * 40)) if max_freq > 0 else 0
-        rows.append(f"{k:>4}  {'█' * bar_len:<42} {freq}")
-    inner = "\n".join(rows)
-    return (
-        "<h2>Outlier window counts per individual</h2>\n"
-        f'<pre style="line-height:1.4;font-size:12px">{inner}</pre>\n'
-    )
-
-
 def lineage_label(name: str) -> str:
     for sep in ("_", "-", "."):
         if sep in name:
@@ -73,24 +53,30 @@ def lineage_label(name: str) -> str:
     return name
 
 
-def summarize_lineage_outliers(names, outlier_counts):
-    summary = {}
-    for name, count in zip(names, outlier_counts):
+def summarize_lineage_flags(names, flagged_mask):
+    summary: dict[str, list[int]] = {}
+    for name, flagged in zip(names, flagged_mask):
         lineage = lineage_label(name)
-        summary[lineage] = summary.get(lineage, 0) + int(count)
-    return sorted(summary.items(), key=lambda item: (-item[1], item[0]))
+        bucket = summary.setdefault(lineage, [0, 0])
+        bucket[0] += 1
+        if bool(flagged):
+            bucket[1] += 1
+    return sorted(
+        ((lineage, total, flagged) for lineage, (total, flagged) in summary.items()),
+        key=lambda item: (-item[2], item[0]),
+    )
 
 
-def lineage_outlier_table_html(names, outlier_counts):
-    rows = summarize_lineage_outliers(names, outlier_counts)
+def lineage_flag_table_html(names, flagged_mask):
+    rows = summarize_lineage_flags(names, flagged_mask)
     body = "\n".join(
-        f"<tr><td>{html.escape(lineage)}</td><td>{count}</td></tr>"
-        for lineage, count in rows
+        f"<tr><td>{html.escape(lineage)}</td><td>{flagged}</td><td>{total}</td></tr>"
+        for lineage, total, flagged in rows
     )
     return (
-        "<h2>Outlier windows by lineage</h2>\n"
+        "<h2>Flagged individuals by lineage</h2>\n"
         "<table>\n"
-        "<thead><tr><th>Lineage</th><th>Outlier windows</th></tr></thead>\n"
+        "<thead><tr><th>Lineage</th><th>Flagged</th><th>Total</th></tr></thead>\n"
         f"<tbody>\n{body}\n</tbody>\n"
         "</table>\n"
     )
@@ -113,8 +99,10 @@ def parse_args():
         type=float,
         default=0.5,
         help=(
-            "Outlier cutoff as a fraction of the per-individual sim-based expected "
-            "load (default: 0.5)."
+            "Per-window per-individual outlier cutoff as a fraction of the "
+            "sim-based expected load. Drives both the per-window flag (used "
+            "to prune (window, individual) pairs) and the residual band shown "
+            "in the summary (default: 0.5)."
         ),
     )
     p.add_argument(
@@ -240,28 +228,52 @@ def main():
                 )
                 high = (1 + args.cutoff) * expected
                 low = (1 - args.cutoff) * expected
-                mask = (load > high) | (load < low)
-                outlier_counts = mask.sum(axis=0).astype(int).tolist()
+                per_window_outlier = (load > high) | (load < low)
 
-                mean_load = load.mean(axis=0)
-                any_outlier = mask.any(axis=0)
+                # Residual: sum obs and exp only over (sample, window) pairs
+                # that survive the per-window flag. With one cutoff knob the
+                # residual ratio is bounded inside the band by construction;
+                # the residual flag still triggers for floating-point or zero-
+                # expected edge cases and acts as a defensive recommendation.
+                kept = (~per_window_outlier).astype(float)
+                obs_residual = (load * kept).sum(axis=0)
+                exp_residual = (expected * kept).sum(axis=0)
+                high_total = (1 + args.cutoff) * exp_residual
+                low_total = (1 - args.cutoff) * exp_residual
+                flagged_mask = (obs_residual > high_total) | (obs_residual < low_total)
+
                 body_parts.append(
                     load_chart_html(
-                        mean_load, unique_names,
-                        "Mean mutational load per individual",
-                        outlier_mask=any_outlier,
+                        obs_residual, unique_names,
+                        "Residual mutational load per individual "
+                        "(observed total, summed only over windows kept after "
+                        "per-window pruning)",
+                        outlier_mask=flagged_mask,
                     )
                 )
 
-                outlier_window_count = int(mask.any(axis=1).sum())
-                total_window_count = int(load.shape[0])
+                pruned_pairs = int(per_window_outlier.sum())
+                total_pairs = int(load.size)
                 meta_lines.append(
-                    f"{outlier_window_count} of {total_window_count} windows "
-                    f"have at least one outlier"
+                    f"{pruned_pairs} of {total_pairs} (window, individual) pairs "
+                    f"flagged for trimming"
                 )
 
-                body_parts.append(outlier_hist_html(outlier_counts))
-                body_parts.append(lineage_outlier_table_html(unique_names, outlier_counts))
+                flagged_count = int(flagged_mask.sum())
+                total_inds = int(load.shape[1])
+                if flagged_count:
+                    meta_lines.append(
+                        f"{flagged_count} of {total_inds} individuals still "
+                        f"outside the cutoff band after pruning — consider "
+                        f"manual whole-sample removal"
+                    )
+                else:
+                    meta_lines.append(
+                        f"All {total_inds} individuals within the cutoff band "
+                        f"after pruning"
+                    )
+
+                body_parts.append(lineage_flag_table_html(unique_names, flagged_mask))
 
                 if args.window_size is not None:
                     meta_lines.append(

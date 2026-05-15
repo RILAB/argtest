@@ -156,15 +156,13 @@ def test_load_chart_html_marks_outliers_red():
     assert "#444444" in result
 
 
-def test_outlier_hist_html_shows_counts():
-    result = ms.outlier_hist_html([0, 1, 1, 2])
-    assert "█" in result
-    assert "Outlier window counts" in result
-
-
-def test_summarize_lineage_outliers_groups_prefixes():
-    rows = ms.summarize_lineage_outliers(["L1_A", "L1_B", "L2_A"], [2, 1, 4])
-    assert rows == [("L2", 4), ("L1", 3)]
+def test_summarize_lineage_flags_groups_prefixes():
+    rows = ms.summarize_lineage_flags(
+        ["L1_A", "L1_B", "L2_A"],
+        [True, False, True],
+    )
+    # Sorted by flagged count desc, then by lineage name asc.
+    assert rows == [("L1", 2, 1), ("L2", 1, 1)]
 
 
 def _ms_args(ts_path, **overrides):
@@ -213,10 +211,17 @@ def test_outputs_written(tmp_path, monkeypatch):
     assert (cwd / "results" / "out.html").exists()
     assert (cwd / "logs" / "out.log").exists()
     html = (cwd / "results" / "out.html").read_text()
-    assert "2 of 2 windows have at least one outlier" in html
+    # Two windows × two individuals = 4 (window, individual) pairs.
+    # Per-window expected = 3, band = [1.5, 4.5]. Observed per cell is 1 or 0,
+    # all below 1.5, so all 4 pairs are flagged for trimming.
+    assert "4 of 4 (window, individual) pairs flagged for trimming" in html
+    # With everything pruned, residual obs and exp are zero for each individual
+    # → residual flag never fires.
+    assert "All 2 individuals within the cutoff band after pruning" in html
     assert "Outlier cutoff: 0.500 of sim expectation" in html
-    assert "<td>A</td><td>2</td>" in html
-    assert "<td>B</td><td>2</td>" in html
+    # Lineage table shows flagged + total per lineage. No residual flags.
+    assert "<td>A</td><td>0</td><td>1</td>" in html
+    assert "<td>B</td><td>0</td><td>1</td>" in html
 
 
 def test_outputs_written_with_lineage_table(tmp_path, monkeypatch):
@@ -226,17 +231,21 @@ def test_outputs_written_with_lineage_table(tmp_path, monkeypatch):
     cwd = Path(__file__).resolve().parents[1]
     os.chdir(cwd)
     monkeypatch.setattr(ms, "load_ts", lambda _: ts)
-    # Expected load is constant across all 4 individuals; observed load skews
-    # toward L1_A and L1_B in window 0 (positions 1, 2, 3 → loads 2, 1, 0, 0)
-    # and toward L1_B in window 1 (position 6, 7 → only L1_B loaded). With
-    # cutoff=0.5 and expected=1, both windows flag L1 individuals.
-    _patch_constant_expected(monkeypatch, 1.0)
+    # Window 0 (pos 0-5): L1_A=2, L1_B=1, L2_A=1, L2_B=1.
+    # Window 1 (pos 5-10): L1_A=1, L1_B=2, L2_A=1, L2_B=1.
+    # Per-window expected = 0.75, band = [0.375, 1.125]. L1_A's 2 in W0 and
+    # L1_B's 2 in W1 are above the band → those pairs flag. After pruning,
+    # residuals lie inside the cutoff band by construction.
+    _patch_constant_expected(monkeypatch, 0.75)
     monkeypatch.setattr(ms, "parse_args", lambda: _ms_args(ts_path, out="lineage.html"))
     ms.main()
     html = (cwd / "results" / "lineage.html").read_text()
-    assert "Outlier windows by lineage" in html
-    assert "<td>L1</td><td>2</td>" in html
-    assert "<td>L2</td><td>0</td>" in html
+    assert "Flagged individuals by lineage" in html
+    assert "2 of 8 (window, individual) pairs flagged for trimming" in html
+    assert "All 4 individuals within the cutoff band after pruning" in html
+    # Residual flag never fires here → all lineage flagged counts are 0.
+    assert "<td>L1</td><td>0</td><td>2</td>" in html
+    assert "<td>L2</td><td>0</td><td>2</td>" in html
 
 
 def test_no_remove_no_trimmed(tmp_path, monkeypatch):

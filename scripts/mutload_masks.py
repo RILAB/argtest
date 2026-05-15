@@ -33,8 +33,11 @@ def parse_args():
         type=float,
         default=0.5,
         help=(
-            "Outlier cutoff as a fraction of the per-individual sim-based expected "
-            "load (default: 0.5)."
+            "Per-window per-individual outlier cutoff as a fraction of the "
+            "sim-based per-individual expected load. A (window, individual) "
+            "pair is flagged when observed load falls outside "
+            "[1-cutoff, 1+cutoff] times the per-individual expectation in that "
+            "window (default: 0.5)."
         ),
     )
     parser.add_argument(
@@ -42,8 +45,8 @@ def parse_args():
         type=float,
         default=None,
         help=(
-            "If provided, windows with outlier fraction > this value are written to --masked-bed "
-            "and excluded from --outlier-bed."
+            "If provided, windows with outlier fraction > this value are "
+            "written to --masked-bed and excluded from --outlier-bed."
         ),
     )
     parser.add_argument(
@@ -153,7 +156,6 @@ def main():
     masked_window_mask = np.zeros(load.shape[0], dtype=bool)
     masked_lines = []
     if args.fraction is not None:
-        # A window is "masked" if too many individuals look like outliers.
         outlier_fractions = outlier_mask.sum(axis=1) / load.shape[1]
         masked_window_mask = outlier_fractions > args.fraction
         for w in range(load.shape[0]):
@@ -174,13 +176,13 @@ def main():
         if not row_mask.any():
             continue
         idx = np.where(row_mask)[0]
-        outlier_names = [unique_names[i] for i in idx]
-        outlier_vals = [f"{load[w, i]:.3f}" for i in idx]
-        outlier_exp = [f"{expected[w, i]:.3f}" for i in idx]
+        names_col = ",".join(unique_names[i] for i in idx)
+        obs_col = ",".join(f"{load[w, i]:.3f}" for i in idx)
+        exp_col = ",".join(f"{expected[w, i]:.3f}" for i in idx)
         start = int(windows[w])
         end = int(windows[w + 1])
         outlier_lines.append(
-            f"{args.chrom}\t{start}\t{end}\t{','.join(outlier_names)}\t{','.join(outlier_vals)}\t{','.join(outlier_exp)}"
+            f"{args.chrom}\t{start}\t{end}\t{names_col}\t{obs_col}\t{exp_col}"
         )
     args.outlier_bed.write_text("\n".join(outlier_lines) + ("\n" if outlier_lines else ""))
 
@@ -191,9 +193,10 @@ def main():
         fh.write(f"outlier_bed={args.outlier_bed}\n")
         fh.write(f"masked_bed={args.masked_bed}\n")
         fh.write(f"windows={len(windows) - 1}\n")
+        fh.write(f"individuals={load.shape[1]}\n")
         fh.write(f"random_seed={args.random_seed}\n")
         fh.write(f"cutoff={args.cutoff}\n")
-        fh.write(f"outliers_written={len(outlier_lines)}\n")
+        fh.write(f"outlier_windows_written={len(outlier_lines)}\n")
         fh.write(f"masked_windows={len(masked_lines)}\n")
 
     print(f"Wrote outlier BED: {args.outlier_bed}")

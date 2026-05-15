@@ -270,7 +270,7 @@ def collect_retention(chroms, replicates, out_dir, chrom_lengths):
 
 
 def collect_outliers(chroms, replicates, out_dir):
-    """Per-individual: windows flagged and bp removed, aggregated across chroms per rep."""
+    """Per-individual: outlier windows and bp removed, aggregated across chroms per rep."""
     step3_dir = out_dir / "step3_mutload"
 
     # ind -> rep -> (window_count, bp_removed)

@@ -49,8 +49,9 @@ def test_mutload_masks_writes_outlier_and_empty_masked(tmp_path, monkeypatch):
     outlier = tmp_path / "outliers.bed"
     masked = tmp_path / "masked.bed"
 
-    # Force a deterministic non-zero expected so the single observed mutation
-    # falls below 0.5 * expected and gets flagged.
+    # Per-window expected = 4 for both individuals; observed (1, 0) both fall
+    # below (1-0.5)*4 = 2 in the single window, so both flag and appear as
+    # comma-joined entries on one BED row.
     import numpy as np
 
     def _fake(ts, windows, names, mu=None, seed=None):
@@ -70,14 +71,19 @@ def test_mutload_masks_writes_outlier_and_empty_masked(tmp_path, monkeypatch):
     mm.main()
 
     assert outlier.exists()
-    assert outlier.read_text().strip() != ""
+    lines = [ln for ln in outlier.read_text().splitlines() if ln.strip()]
+    # One BED row per outlier window; here both individuals share the row.
+    assert len(lines) == 1
+    parts = lines[0].split("\t")
+    # Simple TS has no individual table, so sample names come back as "node<u>".
+    assert parts[3].split(",") == ["node0", "node1"]
     assert masked.exists()
     assert masked.read_text().strip() == ""
     assert (tmp_path / "logs" / "chr1.1.mutload.log").exists()
 
 
 def test_mutload_masks_outlier_bed_columns(tmp_path, monkeypatch):
-    # Verify the BED schema: chrom, start, end, names, observed, expected.
+    # BED schema: chrom, window-start, window-end, names, observed, expected.
     import numpy as np
     ts = make_simple_ts()
     ts_path = tmp_path / "1.trees"
@@ -85,8 +91,8 @@ def test_mutload_masks_outlier_bed_columns(tmp_path, monkeypatch):
     outlier = tmp_path / "outliers.bed"
     masked = tmp_path / "masked.bed"
 
-    # Both individuals get expected=4 in the only window, so observed=1 and
-    # observed=0 are both flagged at cutoff=0.5.
+    # Per-window expected = 4 for both individuals; observed (1, 0) both fall
+    # below 0.5*4 so both flag in the single window.
     def _fake(ts, windows, names, mu=None, seed=None):
         unique = list(dict.fromkeys(names))
         return np.full((len(windows) - 1, len(unique)), 4.0), unique
@@ -106,7 +112,7 @@ def test_mutload_masks_outlier_bed_columns(tmp_path, monkeypatch):
     observed = parts[4].split(",")
     expected = parts[5].split(",")
     assert len(names) == len(observed) == len(expected)
-    # Expected col holds the per-individual sim expectation, not the median.
+    # Expected col carries the per-individual sim expectation in this window.
     assert all(float(x) == 4.0 for x in expected)
 
 

@@ -58,11 +58,25 @@ def parse_args():
     )
     p.add_argument(
         "--time-bins-file",
-        required=True,
         type=Path,
+        default=None,
         help=(
             "File of explicit time-bin edges (one per line) defining the "
-            "coalescence time grid."
+            "coalescence time grid. Mutually exclusive with --num-bins."
+        ),
+    )
+    p.add_argument(
+        "--num-bins",
+        type=int,
+        default=None,
+        help=(
+            "Choose this many equal-coalescence-event bins automatically. "
+            "Edges are derived from tskit's pair_coalescence_quantiles on each "
+            "post-burnin replicate (quantiles 0, 1/N, ..., 1) and averaged "
+            "across replicates; 0 and inf are then padded on so tskit's rate "
+            "calc accepts the grid. The two padded intervals are dropped from "
+            "plotting, leaving N plotted bins each holding ~1/N of pair "
+            "coalescence mass. Mutually exclusive with --time-bins-file."
         ),
     )
     p.add_argument(
@@ -183,6 +197,42 @@ def load_time_windows(path: Path) -> np.ndarray:
     if not np.isinf(windows[-1]):
         windows = np.append(windows, np.inf)
     return windows
+
+
+def compute_quantile_time_windows(
+    ts_files: list[Path],
+    post_burnin_indices: np.ndarray,
+    num_bins: int,
+) -> np.ndarray:
+    """Build N+1 equal-event bin edges by averaging per-replicate pair-coalescence
+    quantiles across the post-burnin replicates."""
+    if num_bins < 2:
+        raise ValueError("--num-bins must be >= 2.")
+    if len(post_burnin_indices) == 0:
+        raise RuntimeError("No post-burnin replicates available for --num-bins.")
+    quantiles = np.linspace(0.0, 1.0, num_bins + 1)
+    edge_arrays = []
+    for idx in post_burnin_indices:
+        ts = load_ts(ts_files[idx])
+        edges = np.asarray(
+            ts.pair_coalescence_quantiles(quantiles=quantiles), dtype=float
+        )
+        edge_arrays.append(edges)
+    mean_edges = np.mean(np.stack(edge_arrays, axis=0), axis=0)
+    if not np.all(np.diff(mean_edges) > 0):
+        raise RuntimeError(
+            "Averaged quantile edges are not strictly increasing — try a "
+            "smaller --num-bins or supply --time-bins-file."
+        )
+    if mean_edges[0] <= 0:
+        raise RuntimeError(
+            "Averaged minimum coalescence-time edge is non-positive; cannot "
+            "log-plot. Reduce --num-bins or supply --time-bins-file."
+        )
+    # Pad with 0 (tskit requires the grid to start at sample time) and inf
+    # (tskit requires the rates grid to end at infinity). The two padded
+    # intervals are empty in expectation and dropped by plottable_interval_mask.
+    return np.concatenate(([0.0], mean_edges, [np.inf]))
 
 
 def plottable_interval_mask(time_windows: np.ndarray) -> np.ndarray:
@@ -313,18 +363,29 @@ def main():
         raise ValueError("--sim-length must be > 0")
     if args.sim_window_size <= 0:
         raise ValueError("--sim-window-size must be > 0")
+    if (args.time_bins_file is None) == (args.num_bins is None):
+        raise ValueError(
+            "Provide exactly one of --time-bins-file or --num-bins."
+        )
+    if args.num_bins is not None and args.num_bins < 2:
+        raise ValueError("--num-bins must be >= 2.")
     ts_files = find_tree_files(args.ts_dir, args.pattern)
     args.out_dir.mkdir(parents=True, exist_ok=True)
-
-    time_windows = load_time_windows(args.time_bins_file)
-    finite_mask = finite_interval_mask(time_windows)
-    keep_mask = plottable_interval_mask(time_windows)
-    breaks = time_windows[:-1][keep_mask]
-    plot_breaks = breaks / args.time_adjust
 
     burnin = int(np.floor(len(ts_files) * args.burnin_frac))
     keep_idx = np.arange(len(ts_files))
     keep_post = keep_idx[burnin:] if burnin < len(ts_files) else keep_idx[-1:]
+
+    if args.time_bins_file is not None:
+        time_windows = load_time_windows(args.time_bins_file)
+    else:
+        time_windows = compute_quantile_time_windows(
+            ts_files, keep_post, args.num_bins
+        )
+    finite_mask = finite_interval_mask(time_windows)
+    keep_mask = plottable_interval_mask(time_windows)
+    breaks = time_windows[:-1][keep_mask]
+    plot_breaks = breaks / args.time_adjust
 
     pdf_vals_full = []
     rate_vals_full = []
@@ -435,6 +496,7 @@ def main():
                 f"burnin_frac={args.burnin_frac}",
                 f"burnin_index={burnin}",
                 f"time_bins_file={args.time_bins_file}",
+                f"num_bins={args.num_bins}",
                 f"time_windows={time_windows.tolist()}",
                 f"time_adjust={args.time_adjust}",
                 f"year_marker={args.year}",
