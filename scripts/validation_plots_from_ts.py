@@ -345,10 +345,12 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
             site_div = site_div * div_scale
             site_td = np.where(np.isnan(div_scale), np.nan, site_td)
         site_afs_unfolded = (
-            ts.allele_frequency_spectrum(mode="site", polarised=True) / total_accessible
+            ts.allele_frequency_spectrum(mode="site", polarised=True, span_normalise=False)
+            / total_accessible
         )
         site_afs_folded = (
-            ts.allele_frequency_spectrum(mode="site", polarised=False) / total_accessible
+            ts.allele_frequency_spectrum(mode="site", polarised=False, span_normalise=False)
+            / total_accessible
         )
         site_div_vals.append(site_div)
         site_td_vals.append(site_td)
@@ -375,11 +377,11 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
                 with np.errstate(invalid="ignore", divide="ignore"):
                     sim_div = sim_div_raw / window_spans
             sim_afs_unfolded = (
-                sim_ts.allele_frequency_spectrum(mode="site", polarised=True)
+                sim_ts.allele_frequency_spectrum(mode="site", polarised=True, span_normalise=False)
                 / total_accessible
             )
             sim_afs_folded = (
-                sim_ts.allele_frequency_spectrum(mode="site", polarised=False)
+                sim_ts.allele_frequency_spectrum(mode="site", polarised=False, span_normalise=False)
                 / total_accessible
             )
             sim_div_vals.append(sim_div)
