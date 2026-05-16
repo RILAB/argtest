@@ -168,7 +168,7 @@ Pipeline scripts (called by the Snakefile). Run any with `--help` for arguments,
 
 - [`hapmap_low_rec_mask.py`](scripts/hapmap_low_rec_mask.py) — per-chromosome BED of the bottom `--rec-fraction` of HapMap recombination-rate intervals.
 - [`find_low_access_regions.py`](scripts/find_low_access_regions.py) — BED of low-accessibility windows, computed from a tree sequence's inferred mutation map.
-- [`mutload_summary.py`](scripts/mutload_summary.py) — interactive HTML summary of per-individual mutational-load outliers (ASCII bar charts, outlier histogram, lineage table).
+- [`mutload_summary.py`](scripts/mutload_summary.py) — interactive HTML diagnostic for the mutload step: per-individual residual load after window-level pruning (ASCII bar chart, red highlight on individuals still outside the cutoff band, lineage table of flagged counts).
 - [`mutload_masks.py`](scripts/mutload_masks.py) — outlier and mutation-masked BED files for one tree sequence (pipeline step 3).
 - [`combine_remove_masks.py`](scripts/combine_remove_masks.py) — merge the step 1–3 BED masks into a single combined BED per chromosome.
 - [`trim_regions.py`](scripts/trim_regions.py) / [`trim_regions_single.py`](scripts/trim_regions_single.py) — apply a BED mask to a directory (or single file) of tree sequences and write trimmed outputs with compacted coordinates.
@@ -188,6 +188,8 @@ Scripts not called by the Snakemake pipeline.
 - [`coalescence_ne_plots_from_ts.py`](scripts/coalescence_ne_plots_from_ts.py) — pair-coalescence and Ne plots from TS replicates. Choose the time grid with either `--time-bins-file` (explicit edges) or `--num-bins N` (equal-coalescence-event bins derived from `pair_coalescence_quantiles` averaged over post-burnin replicates). Optional Demes-based coalescent simulations (`--sim N`) produce window-stat and SFS TSVs for observed-vs-sim density plots in `validation_plots_from_ts.py`.
 - [`compare_trees_html.py`](scripts/compare_trees_html.py) — render one tree index from each of two tree sequences side-by-side into a single HTML file.
 - [`trees_gallery_html.py`](scripts/trees_gallery_html.py) — scrollable HTML gallery of all trees from two tree sequences, useful for quick before/after inspection.
+- [`simulate_two_bottleneck_demography.py`](scripts/simulate_two_bottleneck_demography.py) — simulate replicate ARGs under a fixed two-bottleneck demography (35 ka + 9 ka bottlenecks, present-day expansion) for known-truth pipeline tests.
+- [`make_realistic_example.py`](scripts/make_realistic_example.py) — generate a realistic synthetic example dataset (ARGs from the two-bottleneck model + three injected flaws: contaminated individuals, per-window sample pruning, and a `mut_rate.p` accessibility mask) for end-to-end pipeline testing. Emits a `ground_truth.json` for scoring the pipeline's masks. See [MAKE_REALISTIC_EXAMPLE.md](MAKE_REALISTIC_EXAMPLE.md) for details, CLI options, and the ground-truth schema.
 
 > **TODO:** Running `coalescence_ne_plots_from_ts.py --sim N` before and after the pipeline (on the raw input tree sequences and on the step 5 output) and comparing the resulting Ne trajectories and simulation TSVs would be a useful formal QC step. Consider making this a standard part of the pipeline alongside `validation_plots_from_ts.py --compare`.
 
