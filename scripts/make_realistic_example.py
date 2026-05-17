@@ -455,6 +455,24 @@ def main():
             ],
         })
 
+    # Combined hapmap (one file with all chroms — what the Snakefile expects).
+    all_hapmap = args.out_dir / "all.hapmap.tsv"
+    header_written = False
+    with open(all_hapmap, "w") as fh:
+        for chrom_i in range(args.n_chrom):
+            per_chrom = (args.out_dir / f"chr{chrom_i + 1}.hapmap.tsv").read_text().splitlines()
+            if not header_written:
+                fh.write(per_chrom[0] + "\n")
+                header_written = True
+            for line in per_chrom[1:]:
+                fh.write(line + "\n")
+
+    # FAI: chromosome lengths for hapmap_low_rec_mask --fai.
+    fai_path = args.out_dir / "sim.fai"
+    with open(fai_path, "w") as fh:
+        for chrom_i in range(args.n_chrom):
+            fh.write(f"chr{chrom_i + 1}\t{int(args.seq_length)}\n")
+
     truth_path = args.out_dir / "ground_truth.json"
     truth_path.write_text(json.dumps(truth, indent=2) + "\n")
 
@@ -484,6 +502,8 @@ def main():
 
     print(f"Wrote {args.n_chrom} chroms x {args.n_reps} reps to {args.out_dir}")
     print(f"Contaminated individuals: {contam_ids}  severities: {contam_severity}")
+    print(f"Combined hapmap: {all_hapmap}")
+    print(f"FAI: {fai_path}")
     print(f"Ground truth: {truth_path}")
 
 
@@ -511,7 +531,9 @@ See ground_truth.json for the exact masked intervals, prune sets, and hotspots p
 
 - `chrN/rep_NNN.trees`  -- MCMC-like replicates (fresh ARG topology per rep)
 - `chrN.mut_rate.p`      -- msprime.RateMap (rate=0 over inaccessible intervals)
-- `chrN.hapmap.tsv`      -- recombination map (low-rec valley around midpoint)
+- `chrN.hapmap.tsv`      -- per-chrom recombination map (low-rec valley around midpoint)
+- `all.hapmap.tsv`       -- combined hapmap across all chromosomes (what the Snakefile reads)
+- `sim.fai`              -- chromosome name + length, for hapmap_low_rec_mask --fai
 - `ground_truth.json`    -- what was injected, for precision/recall scoring
 """
 

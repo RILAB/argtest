@@ -67,15 +67,34 @@ code.
     ...
   chr1.mut_rate.p      # msprime.RateMap, pickled; rate=0 over masked intervals
   chr2.mut_rate.p
-  chr1.hapmap.tsv      # standard hapmap (Chromosome, Position(bp), Rate(cM/Mb), Map(cM))
+  chr1.hapmap.tsv      # per-chrom hapmap (Chromosome, Position(bp), Rate(cM/Mb), Map(cM))
   chr2.hapmap.tsv
+  all.hapmap.tsv       # combined hapmap across all chroms (what the Snakefile reads)
+  sim.fai              # chrom name + length, for hapmap_low_rec_mask --fai
   ground_truth.json    # everything that was injected, for scoring
   README.md            # generated stub describing this specific run
 ```
 
 Filenames and the per-chromosome subdirectory layout match what the
-production pipeline's `infer_mu_path` and `find_tree_files` expect, so
-the dataset can be fed directly into the Snakemake workflow.
+production pipeline's `infer_mu_path` and `find_tree_files` expect.
+The combined `all.hapmap.tsv` and `sim.fai` are also written so the
+dataset is ready to feed straight into the Snakemake workflow without
+any post-processing.
+
+## Running the pipeline on the generated dataset
+
+```bash
+snakemake --cores 4 --configfile config/snakemake.yaml \
+  --config root_dir=<out-dir> \
+           hapmap=<out-dir>/all.hapmap.tsv \
+           fai=<out-dir>/sim.fai \
+           tree_pattern="*.trees" \
+           suffix_to_strip="" \
+           burnin=0
+```
+
+Or copy `config/snakemake.yaml` to `<out-dir>/snakemake.yaml`, edit the
+above fields once, and run `snakemake --configfile <out-dir>/snakemake.yaml`.
 
 ## CLI options
 
