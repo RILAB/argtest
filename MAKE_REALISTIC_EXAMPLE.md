@@ -164,23 +164,54 @@ replicates); masked intervals, prune intervals, and contamination
 hotspots are per-chromosome but shared across replicates of that
 chromosome. `contam_hotspots` is empty if `--contam-hotspot-frac` is 0.
 
-## Scoring the pipeline (sketch)
+## Scoring the pipeline
 
-Given a pipeline run's mask BEDs and trimmed tree sequences, you can
-score against ground truth:
+After running the Snakemake pipeline on a generated dataset, score it
+against the ground truth:
 
-- **Accessibility precision/recall** — intersect the pipeline's
-  low-accessibility BED with `masked_intervals` for that chromosome.
-- **Contamination precision/recall** — for each chromosome, take the
-  union of per-replicate mutload-flagged individual IDs (from
-  `mutload_masks.py` output) and compare to
-  `contaminated_individuals`.
-- **Pruning recovery** — for each `prune_intervals` window, check
-  whether the post-trim_samples tree sequences have the expected samples
-  isolated over that interval (`tree.parent(sample) == NULL`).
+```bash
+python scripts/score_realistic_example.py \
+  --ground-truth <out-dir>/ground_truth.json \
+  --pipeline-out <pipeline_out_dir> \
+  --report <pipeline_out_dir>/scoring_report.md
+```
 
-These would naturally live in a separate scoring script (not yet
-written).
+This emits both stdout text and a Markdown report covering:
+
+- **Accessibility precision/recall** — `step2_low_access` BEDs vs
+  `masked_intervals`.
+- **Mutload outlier ranking** — per-chrom flag counts per individual
+  from `step3_mutload/*.outliers.bed`; contaminated individuals should
+  dominate by orders of magnitude.
+- **Region-level mask vs prune intervals** — `mutation_masked.bed`
+  overlap with the injected `prune_intervals`.
+- **trim_samples recovery** — for each prune entry, count isolated
+  samples at the window midpoint in the post-trim_samples ts.
+- **Mutload per-(window, individual) FP rate** — split into total
+  spurious, prune-explained spurious, and net FP (the actual
+  statistical-noise floor of the per-window outlier test).
+
+See the [example scoring report](#example-scoring-numbers-3-chrom-8-reps-16-dip-10-mb)
+section below for representative numbers on a default-config run.
+
+## Example scoring numbers (3 chrom × 8 reps × 16 dip × 10 Mb)
+
+Default `make_realistic_example.py` config plus default
+`config/snakemake.yaml` settings:
+
+- **Accessibility**: precision 1.00, recall 0.96 — limited by the 50 kb
+  step2 window grid not tiling the exact mask boundaries.
+- **Mutload outlier individuals**: contaminated inds 1 and 12 are
+  flagged ~9000-12000 times per chrom; the next most-flagged
+  non-contaminated individual is flagged <50 times.
+- **trim_samples recovery**: 100% — every pruned (rep, window, sample)
+  is correctly isolated in the post-trim ts.
+- **Mutload FP rate**: net FP rate (excluding prune-explained spurious)
+  is **~0.17%** — about 1 in 600 flag-eligible cells is a false
+  positive from natural Poisson noise alone.
+
+Full numbers are in `argtest-realistic-example-out/scoring_report.md`
+after running the scorer.
 
 ## Notes and limitations
 
