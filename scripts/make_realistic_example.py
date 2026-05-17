@@ -63,6 +63,14 @@ def parse_args():
     p.add_argument("--contam-severity", default="2,5,10",
                    help=("Comma-separated excess-mutation multipliers cycled across "
                          "contaminated individuals (default: '2,5,10')."))
+    p.add_argument("--contam-hotspot-frac", type=float, default=0.0,
+                   help=("Fraction of each contaminated individual's extra mutations to "
+                         "concentrate in a per-(chrom, individual) hotspot region "
+                         "(mimics a paralog-mapping artifact). 0.0 = uniform across the "
+                         "whole genome (default). With 0.8, 80%% of excess mutations land "
+                         "inside the hotspot; the remaining 20%% are uniform."))
+    p.add_argument("--contam-hotspot-size", type=float, default=500_000.0,
+                   help="Width of each contamination hotspot in bp (default: 500000).")
     p.add_argument("--prune-frac-windows", type=float, default=0.5,
                    help="Fraction of windows to prune (default: 0.5).")
     p.add_argument("--prune-frac-samples", type=float, default=0.25,
@@ -226,12 +234,18 @@ def apply_prune(ts, prune_intervals):
     return tables.tree_sequence()
 
 
-def inject_contamination(ts, contam_indiv_ids, severities, rng: np.random.Generator):
+def inject_contamination(ts, contam_indiv_ids, severities, rng: np.random.Generator,
+                         hotspots=None, hotspot_frac: float = 0.0):
     # For each contaminated individual, drop extra leaf mutations onto a
     # random sample node of that individual. Baseline = mean per-individual
     # mutation count across the ts: Σ_k k * AFS[k] / n_individuals.
     # AFS comes from the tskit C path, so this is ~100× faster than the
     # equivalent Python aggregation over per-sample mutational_load.
+    #
+    # If `hotspots` is provided (dict {individual_id: (left, right)}) and
+    # `hotspot_frac > 0`, that fraction of each individual's extras lands
+    # inside its hotspot interval (paralog-mapping mimic); the rest are
+    # uniform across the genome as before.
     if not contam_indiv_ids:
         return ts
     n_indiv = ts.num_individuals
@@ -244,15 +258,29 @@ def inject_contamination(ts, contam_indiv_ids, severities, rng: np.random.Genera
     site_positions = set(float(p) for p in np.asarray(tables.sites.position))
     indiv_nodes = {int(i): [int(u) for u in ts.individual(i).nodes]
                    for i in contam_indiv_ids}
+    use_hotspot = bool(hotspots) and hotspot_frac > 0.0
     for indiv_id, sev in zip(contam_indiv_ids, severities):
         excess = max(0, sev - 1.0)
         n_extra = int(rng.poisson(excess * baseline))
         nodes = indiv_nodes[int(indiv_id)]
         if n_extra == 0 or not nodes:
             continue
-        for _ in range(n_extra):
+        hot_left = hot_right = None
+        n_hot = 0
+        if use_hotspot and int(indiv_id) in hotspots:
+            n_hot = int(rng.binomial(n_extra, hotspot_frac))
+            hot_left, hot_right = hotspots[int(indiv_id)]
+        n_uniform = n_extra - n_hot
+        for _ in range(n_hot):
+            pos = float(rng.uniform(hot_left, hot_right))
+            while pos in site_positions:
+                pos = min(pos + 1e-9, ts.sequence_length - 1e-9)
+            site_positions.add(pos)
+            u = int(nodes[rng.integers(0, len(nodes))])
+            site_id = tables.sites.add_row(position=pos, ancestral_state="0")
+            tables.mutations.add_row(site=site_id, node=u, derived_state="1")
+        for _ in range(n_uniform):
             pos = float(rng.uniform(0.0, ts.sequence_length))
-            # Jitter off any exact collisions with existing sites.
             while pos in site_positions:
                 pos = min(pos + 1e-9, ts.sequence_length - 1e-9)
             site_positions.add(pos)
@@ -337,6 +365,8 @@ def main():
             {"individual_id": int(i), "severity": float(s)}
             for i, s in zip(contam_ids, contam_severity)
         ],
+        "contam_hotspot_frac": float(args.contam_hotspot_frac),
+        "contam_hotspot_size": float(args.contam_hotspot_size),
         "chromosomes": [],
     }
 
@@ -374,6 +404,17 @@ def main():
             sample_ids, chrom_rng,
         )
 
+        # 3b) Optional contamination hotspots: one per (chrom, contaminated
+        # individual), drawn from chrom_rng so the location stays stable
+        # across MCMC-like replicates.
+        hotspots = {}
+        if args.contam_hotspot_frac > 0 and contam_ids:
+            max_start = max(0.0, args.seq_length - args.contam_hotspot_size)
+            for indiv_id in contam_ids:
+                start = float(chrom_rng.uniform(0.0, max_start)) if max_start > 0 else 0.0
+                end = float(min(args.seq_length, start + args.contam_hotspot_size))
+                hotspots[int(indiv_id)] = (start, end)
+
         # 4) MCMC-like replicates: fresh ARG topology per rep, shared noise pattern.
         for rep_i in range(args.n_reps):
             rep_seed = int(args.seed * 1_000_003 + chrom_i * 1009 + rep_i)
@@ -392,7 +433,10 @@ def main():
             # Inject contamination (rep-specific noise so the extra count varies
             # across MCMC iterates, like inference noise).
             inject_rng = np.random.default_rng(rep_seed + 2)
-            ts = inject_contamination(ts, contam_ids, contam_severity, inject_rng)
+            ts = inject_contamination(
+                ts, contam_ids, contam_severity, inject_rng,
+                hotspots=hotspots, hotspot_frac=args.contam_hotspot_frac,
+            )
             # Apply per-window pruning.
             ts = apply_prune(ts, prune_intervals)
             out_ts = chrom_dir / f"rep_{rep_i:03d}.trees"
@@ -405,12 +449,24 @@ def main():
                 {"left": float(l), "right": float(r), "drop_sample_ids": d}
                 for l, r, d in prune_intervals
             ],
+            "contam_hotspots": [
+                {"individual_id": int(iid), "left": float(l), "right": float(r)}
+                for iid, (l, r) in sorted(hotspots.items())
+            ],
         })
 
     truth_path = args.out_dir / "ground_truth.json"
     truth_path.write_text(json.dumps(truth, indent=2) + "\n")
 
     readme = args.out_dir / "README.md"
+    if args.contam_hotspot_frac > 0:
+        hotspot_line = (
+            f"   - {args.contam_hotspot_frac:.0%} of each contaminated individual's extras "
+            f"land in a per-(chrom, individual) hotspot of {int(args.contam_hotspot_size)} bp "
+            f"(positions in ground_truth.json under `contam_hotspots`); the rest are uniform."
+        )
+    else:
+        hotspot_line = "   - Extras are uniform across the genome (no hotspots)."
     readme.write_text(_README_TEMPLATE.format(
         out_dir=args.out_dir.name,
         n_chrom=args.n_chrom,
@@ -422,6 +478,7 @@ def main():
         mask_frac=args.mask_frac_genome,
         prune_windows=args.prune_frac_windows,
         prune_samples=args.prune_frac_samples,
+        hotspot_line=hotspot_line,
         seed=args.seed,
     ))
 
@@ -443,11 +500,12 @@ Synthetic example dataset generated by `scripts/make_realistic_example.py`.
 ## Injected flaws
 
 1. Contaminated individuals: {contam_ids} with severity multipliers {contam_severity}.
+{hotspot_line}
 2. Per-window sample pruning: {prune_samples:.0%} of samples pruned in {prune_windows:.0%}
    of windows (per-chrom RNG).
 3. Accessibility mask: ~{mask_frac:.0%} of genome zeroed in chrN.mut_rate.p.
 
-See ground_truth.json for the exact masked intervals and prune sets per chrom.
+See ground_truth.json for the exact masked intervals, prune sets, and hotspots per chrom.
 
 ## Layout
 

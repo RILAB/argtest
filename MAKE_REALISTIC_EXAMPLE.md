@@ -23,7 +23,7 @@ valley in the hapmap.
 
 | Flaw | Mechanism | Tests |
 |---|---|---|
-| Extraneous mutations on K individuals | Extra leaf-edge mutations sized by `(severity − 1) × mean per-individual load`; placed at random positions, assigned to a random sample node of the contaminated individual | `mutload_masks.py` outlier detection |
+| Extraneous mutations on K individuals | Extra leaf-edge mutations sized by `(severity − 1) × mean per-individual load`; placed at random positions, assigned to a random sample node of the contaminated individual. With `--contam-hotspot-frac > 0`, a fraction of each individual's extras concentrates in a per-(chrom, individual) hotspot of `--contam-hotspot-size` bp (paralog-mapping mimic); rest stay uniform | `mutload_masks.py` outlier detection — both whole-genome (uniform mode) and per-window (hotspot mode) granularity |
 | Per-window sample pruning | A fraction of windows is chosen; in each, a random subset of samples has its ancestry excised (edges removed; no `simplify`, so sample IDs stay stable). The same prune pattern is shared across MCMC-like replicates of one chromosome | `trim_samples.py` semantics, the partial-tree Ne correction in `compute_pair_coal`, and pipeline tolerance to isolated-sample regions |
 | Genome-wide accessibility mask | `chrN.mut_rate.p` is an `msprime.RateMap` with rate = 0 over a fraction of the genome (default ~3 contiguous intervals totaling 33%). `sim_mutations` honors this — no mutations land in masked regions — so downstream accessibility detection has a clean signal | `find_low_access_regions.py`, the sim-based mutload expectation in `mutload_masks.py`, and `coalescence_ne_plots_from_ts.py`'s coordinate handling |
 
@@ -90,6 +90,8 @@ the dataset can be fed directly into the Snakemake workflow.
 | `--recombination-rate` | 1e-8 | Recombination rate |
 | `--n-contaminated` | 2 | Number of contaminated individuals |
 | `--contam-severity` | `2,5,10` | Comma-separated severity multipliers, cycled across contaminated individuals |
+| `--contam-hotspot-frac` | 0.0 | Fraction of each contaminated individual's extras placed in a per-(chrom, individual) hotspot (mimics paralog-mapping artifact). 0.0 = uniform; 0.8 puts 80% of extras in the hotspot |
+| `--contam-hotspot-size` | 500000 | Width of each hotspot region in bp |
 | `--prune-frac-windows` | 0.5 | Fraction of windows to prune |
 | `--prune-frac-samples` | 0.25 | Per-window fraction of samples to prune |
 | `--prune-window-size` | 200_000 | Window size for the prune mask in bp |
@@ -118,6 +120,8 @@ two-bottleneck model documented there.
     {"individual_id": 5, "severity": 2.0},
     {"individual_id": 6, "severity": 5.0}
   ],
+  "contam_hotspot_frac": 0.0,
+  "contam_hotspot_size": 500000.0,
   "chromosomes": [
     {
       "chrom": "chr1",
@@ -125,6 +129,10 @@ two-bottleneck model documented there.
       "prune_intervals": [
         {"left": 0.0,     "right": 200000.0, "drop_sample_ids": [3, 9, 11, 15]},
         ...
+      ],
+      "contam_hotspots": [
+        {"individual_id": 5, "left": 2350000.0, "right": 2850000.0},
+        {"individual_id": 6, "left": 7100000.0, "right": 7600000.0}
       ]
     },
     ...
@@ -133,8 +141,9 @@ two-bottleneck model documented there.
 ```
 
 Contaminated individuals are global (same across all chromosomes and
-replicates); masked intervals and prune intervals are per-chromosome
-but shared across replicates of that chromosome.
+replicates); masked intervals, prune intervals, and contamination
+hotspots are per-chromosome but shared across replicates of that
+chromosome. `contam_hotspots` is empty if `--contam-hotspot-frac` is 0.
 
 ## Scoring the pipeline (sketch)
 
@@ -157,8 +166,9 @@ written).
 ## Notes and limitations
 
 - Injected mutations are placed at random positions across the whole
-  genome, **including** masked regions. This is a slight inconsistency
-  with the "sim_mutations honors mut_rate.p" property of the natural
+  genome (or within the hotspot when `--contam-hotspot-frac > 0`),
+  **including** masked regions. This is a slight inconsistency with
+  the "sim_mutations honors mut_rate.p" property of the natural
   mutations, but in practice mutload counts all carried mutations
   regardless of position, so it doesn't affect detection.
 - Pruning happens after contamination injection. A small fraction of
