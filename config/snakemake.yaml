@@ -115,6 +115,9 @@ base_name: "run"
 # --------------------------------------------------------------------------- #
 
 # Root directory for all Snakemake outputs. Tilde (~) is expanded.
+# NOTE: for cluster runs (--profile profiles/slurm) this MUST be on a shared
+# filesystem visible to the compute nodes — a node-local path like /tmp will
+# silently lose outputs (each job writes to its own node's /tmp).
 out_dir: "/tmp/argtest-snakemake-example-out"
 
 # --------------------------------------------------------------------------- #
@@ -135,3 +138,28 @@ validation_first_chrom_only: false
 # co-located with the tree sequences. If false, branch-mode statistics scaled
 # by validation_mutation_rate are used instead.
 validation_sim_branch: true
+
+# --------------------------------------------------------------------------- #
+# Cluster / SLURM execution
+# Used ONLY when you add `--profile profiles/slurm` to the snakemake command.
+# All cluster knobs live here; the profile file itself is set-and-forget.
+# A plain `snakemake --cores N` run ignores everything below.
+# --------------------------------------------------------------------------- #
+
+# SLURM account to charge jobs to.
+slurm_account: jrigrp
+
+# Default partition for the light per-(chrom,rep) rules.
+slurm_partition: low
+
+# Per-rule resource overrides. Any rule not listed uses the defaults:
+#   mem_mb: 4000, time: "01:00:00", threads: 1, partition: <slurm_partition>.
+# mem_mb is in MB; time is HH:MM:SS; `partition` overrides slurm_partition for
+# that rule (e.g. send the memory-heavy steps to a big-mem partition).
+resources:
+  step2_low_access:          {mem_mb: 8000,   time: "01:00:00"}
+  step3_mutload_masks:       {mem_mb: 12000,  time: "02:00:00"}
+  step4_trim_regions_single: {mem_mb: 8000,   time: "01:00:00"}
+  step5_trim_samples_single: {mem_mb: 8000,   time: "01:00:00"}
+  merge_replicates:          {mem_mb: 200000, time: "04:00:00", partition: high}
+  step6_validation_plots:    {mem_mb: 180000, time: "12:00:00", partition: high}
