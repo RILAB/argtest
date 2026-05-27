@@ -128,19 +128,19 @@ Edit `config/snakemake.yaml` to point at your data (at minimum set `root_dir`, `
 
 The committed [config/snakemake.yaml](config/snakemake.yaml) already points at the example dataset at [example_data/sim_2chr_5rep_clean](example_data/sim_2chr_5rep_clean) and can be used as-is for a test run. It uses `rec_fraction: 0.0` to write empty low-recombination masks and `burnin: 0` because the bundled example has 5 discovered replicates; `burnin` must always be smaller than the discovered replicate count.
 
-In sandboxed environments where `~/.cache` is read-only, set cache/temp dirs to `/tmp` when running Snakemake:
+Dry-run first to preview the jobs:
 
 ```bash
-XDG_CACHE_HOME=/tmp/argtest-xdg-cache TMPDIR=/tmp/argtest-tmp \
-python -m snakemake -n -p --configfile config/snakemake.yaml
+snakemake -n -p --configfile config/snakemake.yaml
 ```
 
-Run the workflow for real:
+Then run the workflow for real:
 
 ```bash
-XDG_CACHE_HOME=/tmp/argtest-xdg-cache TMPDIR=/tmp/argtest-tmp \
-python -m snakemake --cores 16 --rerun-incomplete --keep-going --configfile config/snakemake.yaml
+snakemake --cores 16 --rerun-incomplete --keep-going --configfile config/snakemake.yaml
 ```
+
+> **Sandboxed environments only:** if `~/.cache` is read-only (e.g. some HPC or container setups), prefix either command with `XDG_CACHE_HOME=/tmp/argtest-xdg-cache TMPDIR=/tmp/argtest-tmp` to redirect the cache and temp dirs to `/tmp`. On a normal machine where `~/.cache` is writable this is not needed.
 
 ### Output Layout
 
