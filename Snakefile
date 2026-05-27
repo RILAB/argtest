@@ -462,12 +462,12 @@ if VALIDATION_MUTATION_RATE is not None:
             mkdir -p "$cleaned_stage" "$original_stage"
 
             for f in {input.cleaned:q}; do
-              ln -s "$f" "$cleaned_stage/$(basename "$f")"
+              ln -s "$(realpath "$f")" "$cleaned_stage/$(basename "$f")"
             done
 
             original_files=({input.original:q})
             for f in "${{original_files[@]}}"; do
-              ln -s "$f" "$original_stage/$(basename "$f")"
+              ln -s "$(realpath "$f")" "$original_stage/$(basename "$f")"
             done
 
             if [ "${{#original_files[@]}}" -gt 0 ]; then
