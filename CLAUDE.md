@@ -2,14 +2,14 @@
 
 ## Pipeline overview
 
-Snakemake pipeline for analyzing tree sequences from amaranth data (16 chromosomes, 150 replicates each). Steps:
+Snakemake pipeline for analyzing tree sequences. **The input dataset is configurable — it is not always amaranth.** The dataset is selected by `root_dir` (and `base_name`) in whichever config you pass with `--configfile`. Amaranth (16 chromosomes, 150 replicates each; `config/snakemake.yaml`) is the original reference dataset; current work uses the `admix/` dataset (`config/admix.yaml`). Steps:
 1. `step1_low_rec_masks` — hapmap-based low-recombination masks (`hapmap_low_rec_mask.py`)
 2. `step2_low_access` — low-accessibility window masks (`find_low_access_regions.py`)
 3. `step3_mutload_masks` — mutation load outlier masks (`mutload_masks.py`)
 4. `step4_combine_remove_masks` / `step4_trim_regions_single` — merge masks and trim tree sequences
 5. `step5_trim_samples_single` — trim samples
 
-Input data lives in `amaranth/` (one subdir per chromosome, e.g. `amaranth/amaranth.1/`). Results go to `amaranth_results/` (path set by `out_dir` in `config/snakemake.yaml`, tilde-expanded).
+Input data lives under the configured `root_dir`: one subdirectory per chromosome, each holding one tree sequence file per replicate (e.g. `amaranth/amaranth.1/` under `amaranth/`). Results go to the directory set by `out_dir` in the active config (tilde-expanded), so it is not always `amaranth_results/`.
 
 ## Merge step memory and cluster execution
 
