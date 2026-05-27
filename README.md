@@ -60,6 +60,19 @@ The Snakemake workflow is designed for a directory layout with one subdirectory 
 
 The Snakemake workflow discovers treefiles with suffixes `.ts`, `.trees`, and `.tsz`. Replicate IDs are taken from the filename stem, so `chr1/1.tsz` is replicate `1` for chromosome `chr1`.
 
+If the treefiles live in a subdirectory of each chromosome directory rather than directly inside it — for example SINGER output where each `chrN/trees/` holds the replicates — set `tree_subdir` to that subdirectory name and discovery looks there instead:
+
+```text
+<root>/
+  chr1/
+    trees/
+      chr1.1.tsz
+      chr1.2.tsz
+      ...
+```
+
+The chromosome name still comes from the chromosome directory (`chr1`), and a leading `chrN.` prefix on the filename is stripped to get the replicate ID, so `chr1/trees/chr1.2.tsz` is replicate `2`.
+
 ### Required Inputs
 
 The Snakemake config is in [config/snakemake.yaml](config/snakemake.yaml). Edit it for your project and supply it with `--configfile`. The file has an inline comment for every option.
@@ -77,6 +90,7 @@ Required keys:
 Optional keys (all have sensible defaults):
 
 - `tree_pattern`: glob for treefiles within each chromosome directory (default: `"*"`), for example `"*.trees"` or `"*.tsz"`
+- `tree_subdir`: optional subdirectory within each chromosome directory that holds the treefiles (default: unset → files live directly in the chromosome dir); e.g. `"trees"` for SINGER-style `chrN/trees/` layouts
 - `mutload_cutoff`: outlier cutoff fraction for step 3 (default: `0.5`)
 - `mutload_mutation_rate`: optional scalar mutation-rate fallback for step 3 when no embedded or sibling mutation-rate map is available
 - `mutload_random_seed`: base seed for the per-replicate mutation simulation in step 3 (default: `1`)
@@ -208,8 +222,6 @@ Scripts not called by the Snakemake pipeline.
 - [`trees_gallery_html.py`](scripts/trees_gallery_html.py) — scrollable HTML gallery of all trees from two tree sequences, useful for quick before/after inspection.
 - [`simulate_two_bottleneck_demography.py`](scripts/simulate_two_bottleneck_demography.py) — simulate replicate ARGs under a fixed two-bottleneck demography (35 ka + 9 ka bottlenecks, present-day expansion) for known-truth pipeline tests.
 - [`make_realistic_example.py`](scripts/make_realistic_example.py) — generate a realistic synthetic example dataset (ARGs from the two-bottleneck model + three injected flaws: contaminated individuals, per-window sample pruning, and a `mut_rate.p` accessibility mask) for end-to-end pipeline testing. Emits a `ground_truth.json` for scoring the pipeline's masks. See [MAKE_REALISTIC_EXAMPLE.md](MAKE_REALISTIC_EXAMPLE.md) for details, CLI options, and the ground-truth schema.
-
-> **TODO:** Running `coalescence_ne_plots_from_ts.py --sim N` before and after the pipeline (on the raw input tree sequences and on the step 5 output) and comparing the resulting Ne trajectories and simulation TSVs would be a useful formal QC step. Consider making this a standard part of the pipeline alongside `validation_plots_from_ts.py --compare`.
 
 ## Inputs, formats, defaults & logs
 
