@@ -25,6 +25,11 @@ fai: /home/jri/src/argtest/example_data/sim_2chr_5rep_clean/sim.fai
 # to find tree sequence files. Supported suffixes: .ts, .trees, .tsz.
 tree_pattern: "*.trees"
 
+# Optional subdirectory within each chromosome dir that holds the tree files
+# (e.g. "trees" for SINGER-style layouts where chrom.N/trees/ holds the
+# replicates). Leave unset when tree files live directly in the chromosome dir.
+# tree_subdir: "trees"
+
 # --------------------------------------------------------------------------- #
 # Step 1: low-recombination masking
 # --------------------------------------------------------------------------- #

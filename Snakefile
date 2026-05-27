@@ -31,6 +31,10 @@ if not ROOT_DIR.is_dir():
     raise WorkflowError(f"root_dir must be a directory: {ROOT_DIR}")
 
 TREE_PATTERN = str(config.get("tree_pattern", "*"))
+# Optional subdirectory within each chromosome dir that holds the tree files
+# (e.g. "trees" for SINGER-style layouts). Empty/unset = files live directly in
+# the chromosome dir.
+TREE_SUBDIR = str(config.get("tree_subdir", "") or "").strip("/")
 OUT_DIR = Path(config.get("out_dir", "snakemake_out")).expanduser()
 BASE_NAME = str(config.get("base_name", ROOT_DIR.name))
 ALLOW_MISSING_REPLICATES = bool(config.get("allow_missing_replicates", False))
@@ -112,8 +116,11 @@ LOG_DIR = OUT_DIR / "logs"
 def discover_tree_files():
     chrom_to_rep = {}
     for chrom_dir in sorted([p for p in ROOT_DIR.iterdir() if p.is_dir()], key=lambda p: natural_key(p.name)):
+        search_dir = chrom_dir / TREE_SUBDIR if TREE_SUBDIR else chrom_dir
+        if not search_dir.is_dir():
+            continue
         by_rep = {}
-        for path in sorted(chrom_dir.iterdir(), key=lambda p: natural_key(p.name)):
+        for path in sorted(search_dir.iterdir(), key=lambda p: natural_key(p.name)):
             if not path.is_file():
                 continue
             if path.suffix not in VALID_SUFFIXES:
