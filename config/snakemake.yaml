@@ -114,11 +114,13 @@ base_name: "run"
 # Workflow outputs
 # --------------------------------------------------------------------------- #
 
-# Root directory for all Snakemake outputs. Tilde (~) is expanded.
+# Root directory for all Snakemake outputs. Tilde (~) is expanded; a relative
+# path resolves against the directory you run snakemake from.
 # NOTE: for cluster runs (--profile profiles/slurm) this MUST be on a shared
 # filesystem visible to the compute nodes — a node-local path like /tmp will
-# silently lose outputs (each job writes to its own node's /tmp).
-out_dir: "/tmp/argtest-snakemake-example-out"
+# silently lose outputs (each job writes to its own node's /tmp). A relative
+# path like the default below is shared as long as you run from shared storage.
+out_dir: "results"
 
 # --------------------------------------------------------------------------- #
 # Step 6: validation plots (omit validation_mutation_rate or set to null to skip)
