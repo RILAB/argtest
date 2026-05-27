@@ -101,13 +101,19 @@ def _strip_prefix(chrom):
     return chrom.split(".", 1)[1] if "." in chrom else chrom
 
 
-def _resolve_fai_chrom(chrom, fai):
-    """Try the chrom name, then common FAI naming variants."""
-    if chrom in fai:
+def _resolve_chrom(chrom, available):
+    """Resolve a pipeline chrom name against available names (a dict or set).
+
+    Tries the full name, the suffix after the first dot, then common 'chr'-
+    prefixed variants of that suffix. Returns the matching key or None. Used for
+    both the hapmap and the FAI so a 'chr'-prefixed map (e.g. 'chr1') still
+    matches pipeline chrom names like 'combined.1'.
+    """
+    if chrom in available:
         return chrom
     bare = _strip_prefix(chrom)
     for candidate in (bare, f"chr_{bare}", f"chr{bare}"):
-        if candidate in fai:
+        if candidate in available:
             return candidate
     return None
 
@@ -120,15 +126,15 @@ def main():
     fai = load_fai(args.fai)
 
     if args.chrom is not None:
-        hapmap_key = args.chrom if args.chrom in hapmap else _strip_prefix(args.chrom)
-        if hapmap_key not in hapmap:
+        hapmap_key = _resolve_chrom(args.chrom, hapmap)
+        if hapmap_key is None:
             raise KeyError(f"Chromosome {args.chrom!r} not found in {args.hapmap}")
         hapmap = {args.chrom: hapmap[hapmap_key]}
 
     total_written = 0
     per_chrom = {}
     for chrom, rows in sorted(hapmap.items()):
-        fai_chrom = _resolve_fai_chrom(chrom, fai)
+        fai_chrom = _resolve_chrom(chrom, fai)
         if fai_chrom is None:
             raise KeyError(f"Chromosome {chrom!r} not found in {args.fai}")
         intervals = build_intervals(rows, fai[fai_chrom])
