@@ -31,6 +31,12 @@ cluster-generic-submit-cmd: >-
   --error=logs/slurm/{rule}-%j.err
   --parsable
 
+# Without a status command, the executor "waits for output file to appear"
+# and hangs forever when SLURM kills a job before it writes output
+# (TIMEOUT, OUT_OF_MEMORY, NODE_FAIL, etc.). This helper maps the SLURM
+# job state to success / running / failed so the controller can advance.
+cluster-generic-status-cmd: profiles/slurm/status-sacct.sh
+
 # Fallbacks for any rule that does not set these (mirrors the Snakefile defaults).
 # List form with Python-expression values, matching Snakemake's --default-resources
 # CLI syntax (string values must be quoted).
