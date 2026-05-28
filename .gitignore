@@ -15,3 +15,10 @@ results/
 amaranth/
 amaranth_firstry/
 amaranth_results/
+
+# Realistic example dataset — large generated artifacts are not tracked.
+# Regenerate with scripts/make_realistic_example.py (seed pinned in
+# argtest-realistic-example/ground_truth.json) and rerun the Snakefile.
+argtest-realistic-example/chr*/
+argtest-realistic-example-out/*
+!argtest-realistic-example-out/scoring_report.md

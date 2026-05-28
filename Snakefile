@@ -36,6 +36,54 @@ TREE_PATTERN = str(config.get("tree_pattern", "*"))
 # the chromosome dir.
 TREE_SUBDIR = str(config.get("tree_subdir", "") or "").strip("/")
 OUT_DIR = Path(config.get("out_dir", "snakemake_out")).expanduser()
+
+# --- Cluster resources (single-config pattern; see the "resources" config block) ---
+# Per-rule mem/time/threads/partition all live in the user's --configfile. Rules
+# not listed under "resources:" fall back to these defaults. Used by the SLURM
+# profile (profiles/slurm). The `threads` value also affects local scheduling
+# with `--cores`; the SLURM-only fields are inert for local runs.
+DEFAULT_MEM_MB = 4000
+DEFAULT_THREADS = 1
+DEFAULT_TIME = "01:00:00"
+_RESOURCES = config.get("resources", {}) or {}
+SLURM_PARTITION = str(config.get("slurm_partition", "low"))
+RESOURCE_RULES = {
+    "step1_low_rec_masks",
+    "step2_low_access",
+    "step3_mutload_masks",
+    "step4_combine_remove_masks",
+    "step4_trim_regions_single",
+    "step5_trim_samples_single",
+    "merge_replicates",
+    "step6_validation_plots",
+    "step7_summary",
+}
+RESOURCE_KEYS = {"mem_mb", "time", "threads", "partition"}
+
+if not isinstance(_RESOURCES, dict):
+    raise WorkflowError("resources must be a mapping of rule names to resource settings")
+for rule_name, rule_resources in _RESOURCES.items():
+    if rule_name not in RESOURCE_RULES:
+        raise WorkflowError(
+            f"Unknown resources entry '{rule_name}'. Expected one of: "
+            f"{', '.join(sorted(RESOURCE_RULES))}"
+        )
+    if not isinstance(rule_resources, dict):
+        raise WorkflowError(f"resources.{rule_name} must be a mapping")
+    unknown_keys = sorted(set(rule_resources) - RESOURCE_KEYS)
+    if unknown_keys:
+        raise WorkflowError(
+            f"Unknown resources.{rule_name} key(s): {', '.join(unknown_keys)}. "
+            f"Expected only: {', '.join(sorted(RESOURCE_KEYS))}"
+        )
+
+def _res(rule_name, key, default):
+    return (_RESOURCES.get(rule_name, {}) or {}).get(key, default)
+
+def res_mem_mb(rule_name):    return int(_res(rule_name, "mem_mb", DEFAULT_MEM_MB))
+def res_time(rule_name):      return str(_res(rule_name, "time", DEFAULT_TIME))
+def res_threads(rule_name):   return int(_res(rule_name, "threads", DEFAULT_THREADS))
+def res_partition(rule_name): return str(_res(rule_name, "partition", SLURM_PARTITION))
 BASE_NAME = str(config.get("base_name", ROOT_DIR.name))
 ALLOW_MISSING_REPLICATES = bool(config.get("allow_missing_replicates", False))
 BURNIN = int(config.get("burnin", 0))
@@ -261,6 +309,11 @@ rule step1_low_rec_masks:
         fai=str(FAI),
     output:
         str(STEP1_DIR / "{chrom}.low_rec.mask.bed")
+    threads: res_threads("step1_low_rec_masks")
+    resources:
+        mem_mb=res_mem_mb("step1_low_rec_masks"),
+        time=res_time("step1_low_rec_masks"),
+        slurm_partition=res_partition("step1_low_rec_masks"),
     log:
         str(LOG_DIR / "step1" / "{chrom}.log")
     params:
@@ -288,6 +341,11 @@ rule step2_low_access:
         first_ts_for_chrom
     output:
         str(STEP2_DIR / "{chrom}" / "{chrom}.low_access.bed")
+    threads: res_threads("step2_low_access")
+    resources:
+        mem_mb=res_mem_mb("step2_low_access"),
+        time=res_time("step2_low_access"),
+        slurm_partition=res_partition("step2_low_access"),
     log:
         str(LOG_DIR / "step2" / "{chrom}.log")
     params:
@@ -310,6 +368,11 @@ rule step3_mutload_masks:
     output:
         outlier=str(STEP3_DIR / "{chrom}" / "{rep}.outliers.bed"),
         masked=str(STEP3_DIR / "{chrom}" / "{rep}.mutation_masked.bed"),
+    threads: res_threads("step3_mutload_masks")
+    resources:
+        mem_mb=res_mem_mb("step3_mutload_masks"),
+        time=res_time("step3_mutload_masks"),
+        slurm_partition=res_partition("step3_mutload_masks"),
     log:
         str(LOG_DIR / "step3" / "{chrom}" / "{rep}.log")
     params:
@@ -343,6 +406,11 @@ rule step4_combine_remove_masks:
         masked=str(STEP3_DIR / "{chrom}" / "{rep}.mutation_masked.bed"),
     output:
         str(STEP4_MASK_DIR / "{chrom}" / "{rep}.remove_regions.bed")
+    threads: res_threads("step4_combine_remove_masks")
+    resources:
+        mem_mb=res_mem_mb("step4_combine_remove_masks"),
+        time=res_time("step4_combine_remove_masks"),
+        slurm_partition=res_partition("step4_combine_remove_masks"),
     log:
         str(LOG_DIR / "step4_masks" / "{chrom}" / "{rep}.log")
     shell:
@@ -361,6 +429,11 @@ rule step4_trim_regions_single:
         mask_bed=str(STEP4_MASK_DIR / "{chrom}" / "{rep}.remove_regions.bed"),
     output:
         str(STEP4_TRIM_DIR / "{chrom}" / "{rep}.{ext}")
+    threads: res_threads("step4_trim_regions_single")
+    resources:
+        mem_mb=res_mem_mb("step4_trim_regions_single"),
+        time=res_time("step4_trim_regions_single"),
+        slurm_partition=res_partition("step4_trim_regions_single"),
     wildcard_constraints:
         rep="|".join(re.escape(r) for r in REPLICATES),
         ext="|".join(re.escape(s.lstrip(".")) for s in VALID_SUFFIXES),
@@ -382,6 +455,11 @@ rule step5_trim_samples_single:
         outlier=str(STEP3_DIR / "{chrom}" / "{rep}.outliers.bed"),
     output:
         str(STEP5_DIR / "{chrom}" / "{rep}.{ext}")
+    threads: res_threads("step5_trim_samples_single")
+    resources:
+        mem_mb=res_mem_mb("step5_trim_samples_single"),
+        time=res_time("step5_trim_samples_single"),
+        slurm_partition=res_partition("step5_trim_samples_single"),
     wildcard_constraints:
         rep="|".join(re.escape(r) for r in REPLICATES),
         ext="|".join(re.escape(s.lstrip(".")) for s in VALID_SUFFIXES),
@@ -405,6 +483,11 @@ rule merge_replicates:
         step5_inputs_for_rep
     output:
         str(MERGED_DIR / f"{BASE_NAME}.combined.{{rep}}.{{ext}}")
+    threads: res_threads("merge_replicates")
+    resources:
+        mem_mb=res_mem_mb("merge_replicates"),
+        time=res_time("merge_replicates"),
+        slurm_partition=res_partition("merge_replicates"),
     wildcard_constraints:
         rep="|".join(re.escape(r) for r in REPLICATES),
         ext="|".join(re.escape(s.lstrip(".")) for s in VALID_SUFFIXES),
@@ -451,6 +534,11 @@ if VALIDATION_MUTATION_RATE is not None:
             original=step6_original_inputs_for_chrom,
         output:
             str(STEP6_DIR / "{chrom}" / "done.txt")
+        threads: res_threads("step6_validation_plots")
+        resources:
+            mem_mb=res_mem_mb("step6_validation_plots"),
+            time=res_time("step6_validation_plots"),
+            slurm_partition=res_partition("step6_validation_plots"),
         log:
             str(LOG_DIR / "step6" / "{chrom}.log")
         params:
@@ -521,6 +609,11 @@ rule step7_summary:
         targets=MERGED_TARGETS + STEP6_TARGETS,
     output:
         SUMMARY_TARGET
+    threads: res_threads("step7_summary")
+    resources:
+        mem_mb=res_mem_mb("step7_summary"),
+        time=res_time("step7_summary"),
+        slurm_partition=res_partition("step7_summary"),
     log:
         str(LOG_DIR / "step7_summary.log")
     params:

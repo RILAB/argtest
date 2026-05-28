@@ -60,6 +60,19 @@ The Snakemake workflow is designed for a directory layout with one subdirectory 
 
 The Snakemake workflow discovers treefiles with suffixes `.ts`, `.trees`, and `.tsz`. Replicate IDs are taken from the filename stem, so `chr1/1.tsz` is replicate `1` for chromosome `chr1`.
 
+If the treefiles live in a subdirectory of each chromosome directory rather than directly inside it — for example SINGER output where each `chrN/trees/` holds the replicates — set `tree_subdir` to that subdirectory name and discovery looks there instead:
+
+```text
+<root>/
+  chr1/
+    trees/
+      chr1.1.tsz
+      chr1.2.tsz
+      ...
+```
+
+The chromosome name still comes from the chromosome directory (`chr1`), and a leading `chrN.` prefix on the filename is stripped to get the replicate ID, so `chr1/trees/chr1.2.tsz` is replicate `2`.
+
 ### Required Inputs
 
 The Snakemake config is in [config/snakemake.yaml](config/snakemake.yaml). Edit it for your project and supply it with `--configfile`. The file has an inline comment for every option.
@@ -77,6 +90,7 @@ Required keys:
 Optional keys (all have sensible defaults):
 
 - `tree_pattern`: glob for treefiles within each chromosome directory (default: `"*"`), for example `"*.trees"` or `"*.tsz"`
+- `tree_subdir`: optional subdirectory within each chromosome directory that holds the treefiles (default: unset → files live directly in the chromosome dir); e.g. `"trees"` for SINGER-style `chrN/trees/` layouts
 - `mutload_cutoff`: outlier cutoff fraction for step 3 (default: `0.5`)
 - `mutload_mutation_rate`: optional scalar mutation-rate fallback for step 3 when no embedded or sibling mutation-rate map is available
 - `mutload_random_seed`: base seed for the per-replicate mutation simulation in step 3 (default: `1`)
@@ -142,6 +156,26 @@ snakemake --cores 16 --rerun-incomplete --keep-going --configfile config/snakema
 
 > **Sandboxed environments only:** if `~/.cache` is read-only (e.g. some HPC or container setups), prefix either command with `XDG_CACHE_HOME=/tmp/argtest-xdg-cache TMPDIR=/tmp/argtest-tmp` to redirect the cache and temp dirs to `/tmp`. On a normal machine where `~/.cache` is writable this is not needed.
 
+#### Walk-through using the realistic example dataset
+
+For a larger, deliberately-flawed dataset with a ground-truth scorecard, see [argtest-realistic-example/](argtest-realistic-example/) (inputs side) and [argtest-realistic-example-out/scoring_report.md](argtest-realistic-example-out/scoring_report.md) (precision/recall of the pipeline's masks against the injected flaws). The `.trees` files and full pipeline output are **not** committed — regenerate the inputs with [`scripts/make_realistic_example.py`](scripts/make_realistic_example.py) (seed pinned in `ground_truth.json`) and then run the pipeline with `argtest-realistic-example/snakemake.yaml` as the configfile. See [MAKE_REALISTIC_EXAMPLE.md](MAKE_REALISTIC_EXAMPLE.md) for the generator's CLI and the ground-truth schema.
+
+#### Running on a SLURM cluster
+
+Add `--profile profiles/slurm` to submit each job to SLURM instead of running locally:
+
+```bash
+snakemake --profile profiles/slurm --configfile config/snakemake.yaml
+```
+
+This fans the ~per-(chromosome, replicate) jobs out across the cluster, sending light steps to one partition and the memory-heavy `merge_replicates` / `step6_validation_plots` steps to a big-mem partition. **All cluster knobs live in your configfile** — `slurm_account`, `slurm_partition`, and the per-rule `resources:` block (mem/time/threads/partition). The profile file itself ([profiles/slurm/config.yaml](profiles/slurm/config.yaml)) is set-and-forget; you do not edit it.
+
+Notes:
+- **`out_dir` must be on a shared filesystem** (not node-local `/tmp`) — each job runs on a different node, so a `/tmp` output path silently loses results.
+- The snakemake process here is just a controller (it submits jobs and polls), but it runs for the whole pipeline — launch it inside `tmux`/`screen` or a small `srun` so it survives disconnects.
+- Per-job SLURM logs are written to `logs/slurm/`.
+- Plain `snakemake --cores N …` (above) still runs everything locally; SLURM-only settings such as account, partition, memory, and walltime are ignored, while per-rule `threads` still affects local scheduling.
+
 ### Output Layout
 
 By default, Snakemake writes outputs beneath `out_dir` with subdirectories for each stage:
@@ -192,8 +226,6 @@ Scripts not called by the Snakemake pipeline.
 - [`trees_gallery_html.py`](scripts/trees_gallery_html.py) — scrollable HTML gallery of all trees from two tree sequences, useful for quick before/after inspection.
 - [`simulate_two_bottleneck_demography.py`](scripts/simulate_two_bottleneck_demography.py) — simulate replicate ARGs under a fixed two-bottleneck demography (35 ka + 9 ka bottlenecks, present-day expansion) for known-truth pipeline tests.
 - [`make_realistic_example.py`](scripts/make_realistic_example.py) — generate a realistic synthetic example dataset (ARGs from the two-bottleneck model + three injected flaws: contaminated individuals, per-window sample pruning, and a `mut_rate.p` accessibility mask) for end-to-end pipeline testing. Emits a `ground_truth.json` for scoring the pipeline's masks. See [MAKE_REALISTIC_EXAMPLE.md](MAKE_REALISTIC_EXAMPLE.md) for details, CLI options, and the ground-truth schema.
-
-> **TODO:** Running `coalescence_ne_plots_from_ts.py --sim N` before and after the pipeline (on the raw input tree sequences and on the step 5 output) and comparing the resulting Ne trajectories and simulation TSVs would be a useful formal QC step. Consider making this a standard part of the pipeline alongside `validation_plots_from_ts.py --compare`.
 
 ## Inputs, formats, defaults & logs
 

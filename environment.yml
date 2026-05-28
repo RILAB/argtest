@@ -9,4 +9,5 @@ dependencies:
   - tszip
   - msprime
   - Snakemake=9.16.2
+  - snakemake-executor-plugin-cluster-generic
   - pytest
