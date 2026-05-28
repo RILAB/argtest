@@ -156,6 +156,10 @@ snakemake --cores 16 --rerun-incomplete --keep-going --configfile config/snakema
 
 > **Sandboxed environments only:** if `~/.cache` is read-only (e.g. some HPC or container setups), prefix either command with `XDG_CACHE_HOME=/tmp/argtest-xdg-cache TMPDIR=/tmp/argtest-tmp` to redirect the cache and temp dirs to `/tmp`. On a normal machine where `~/.cache` is writable this is not needed.
 
+#### Walk-through using the realistic example dataset
+
+For a larger, deliberately-flawed dataset with a ground-truth scorecard, see [argtest-realistic-example/](argtest-realistic-example/) (inputs side) and [argtest-realistic-example-out/scoring_report.md](argtest-realistic-example-out/scoring_report.md) (precision/recall of the pipeline's masks against the injected flaws). The `.trees` files and full pipeline output are **not** committed — regenerate the inputs with [`scripts/make_realistic_example.py`](scripts/make_realistic_example.py) (seed pinned in `ground_truth.json`) and then run the pipeline with `argtest-realistic-example/snakemake.yaml` as the configfile. See [MAKE_REALISTIC_EXAMPLE.md](MAKE_REALISTIC_EXAMPLE.md) for the generator's CLI and the ground-truth schema.
+
 #### Running on a SLURM cluster
 
 Add `--profile profiles/slurm` to submit each job to SLURM instead of running locally:
