@@ -37,7 +37,7 @@ cluster-generic-submit-cmd: >-
 default-resources:
   - slurm_partition='low'
   - mem_mb=4000
-  - time='04:00:00'
+  - time='01:00:00'
 
 # Max number of jobs submitted to the queue at once. Override on the CLI with -j.
 jobs: 100

@@ -164,13 +164,13 @@ Add `--profile profiles/slurm` to submit each job to SLURM instead of running lo
 snakemake --profile profiles/slurm --configfile config/snakemake.yaml
 ```
 
-This fans the ~per-(chromosome, replicate) jobs out across the cluster, sending light steps to one partition and the memory-heavy `merge_replicates` / `step6_validation_plots` steps to a big-mem partition. **All cluster knobs live in your configfile** — `slurm_account`, `slurm_partition`, and the per-rule `resources:` block (mem/time/partition). The profile file itself ([profiles/slurm/config.yaml](profiles/slurm/config.yaml)) is set-and-forget; you do not edit it.
+This fans the ~per-(chromosome, replicate) jobs out across the cluster, sending light steps to one partition and the memory-heavy `merge_replicates` / `step6_validation_plots` steps to a big-mem partition. **All cluster knobs live in your configfile** — `slurm_account`, `slurm_partition`, and the per-rule `resources:` block (mem/time/threads/partition). The profile file itself ([profiles/slurm/config.yaml](profiles/slurm/config.yaml)) is set-and-forget; you do not edit it.
 
 Notes:
 - **`out_dir` must be on a shared filesystem** (not node-local `/tmp`) — each job runs on a different node, so a `/tmp` output path silently loses results.
 - The snakemake process here is just a controller (it submits jobs and polls), but it runs for the whole pipeline — launch it inside `tmux`/`screen` or a small `srun` so it survives disconnects.
 - Per-job SLURM logs are written to `logs/slurm/`.
-- Plain `snakemake --cores N …` (above) still runs everything locally and ignores the cluster settings.
+- Plain `snakemake --cores N …` (above) still runs everything locally; SLURM-only settings such as account, partition, memory, and walltime are ignored, while per-rule `threads` still affects local scheduling.
 
 ### Output Layout
 

@@ -40,12 +40,42 @@ OUT_DIR = Path(config.get("out_dir", "snakemake_out")).expanduser()
 # --- Cluster resources (single-config pattern; see the "resources" config block) ---
 # Per-rule mem/time/threads/partition all live in the user's --configfile. Rules
 # not listed under "resources:" fall back to these defaults. Used by the SLURM
-# profile (profiles/slurm) but inert for local `--cores` runs.
+# profile (profiles/slurm). The `threads` value also affects local scheduling
+# with `--cores`; the SLURM-only fields are inert for local runs.
 DEFAULT_MEM_MB = 4000
 DEFAULT_THREADS = 1
 DEFAULT_TIME = "01:00:00"
 _RESOURCES = config.get("resources", {}) or {}
 SLURM_PARTITION = str(config.get("slurm_partition", "low"))
+RESOURCE_RULES = {
+    "step1_low_rec_masks",
+    "step2_low_access",
+    "step3_mutload_masks",
+    "step4_combine_remove_masks",
+    "step4_trim_regions_single",
+    "step5_trim_samples_single",
+    "merge_replicates",
+    "step6_validation_plots",
+    "step7_summary",
+}
+RESOURCE_KEYS = {"mem_mb", "time", "threads", "partition"}
+
+if not isinstance(_RESOURCES, dict):
+    raise WorkflowError("resources must be a mapping of rule names to resource settings")
+for rule_name, rule_resources in _RESOURCES.items():
+    if rule_name not in RESOURCE_RULES:
+        raise WorkflowError(
+            f"Unknown resources entry '{rule_name}'. Expected one of: "
+            f"{', '.join(sorted(RESOURCE_RULES))}"
+        )
+    if not isinstance(rule_resources, dict):
+        raise WorkflowError(f"resources.{rule_name} must be a mapping")
+    unknown_keys = sorted(set(rule_resources) - RESOURCE_KEYS)
+    if unknown_keys:
+        raise WorkflowError(
+            f"Unknown resources.{rule_name} key(s): {', '.join(unknown_keys)}. "
+            f"Expected only: {', '.join(sorted(RESOURCE_KEYS))}"
+        )
 
 def _res(rule_name, key, default):
     return (_RESOURCES.get(rule_name, {}) or {}).get(key, default)
