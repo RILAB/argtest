@@ -11,6 +11,7 @@ from argtest_common import (
     dump_ts,
     load_remove_intervals,
     load_ts,
+    merge_intervals,
     name_to_nodes_map,
     validate_trimmed_ts,
 )
@@ -34,8 +35,8 @@ def parse_individuals(values):
     return [v.strip() for v in values.split(",") if v.strip()]
 
 
-def merge_intervals(base, extra):
-    # Merge per-individual intervals, keeping them sorted.
+def merge_full_length(base, extra):
+    # Merge per-individual full-length removals into the BED-derived intervals.
     merged = {k: {"starts": list(v["starts"]), "ends": list(v["ends"])} for k, v in base.items()}
     for name, spans in extra.items():
         entry = merged.setdefault(name, {"starts": [], "ends": []})
@@ -86,41 +87,144 @@ def parse_args():
     return p.parse_args()
 
 
-def remove_ancestry(ts, samples, left, right):
-    """
-    Removes the ancestry for `samples` over `[left, right)`, by:
-    1. Split all edges intersecting "left" and "right"
-    2. Remove singleton edges above nodes for which we don't want ancestry over [left, right]
-    3. Throw into simplify, which will remove this ancestry
-    4. Squash edges to "join" previously split edges
-    """
+def _intersect_edges_with_keep(left, right, parent, keep_left, keep_right):
+    """Intersect a set of (disjoint) edges of one child with the child's
+    ``keep`` intervals, carrying the parent through.
 
-    def split_edges_at(tables, position):
-        for i, edge in enumerate(tables.edges):
-            if edge.left < position < edge.right:
-                tables.edges[i] = edge.replace(right=position)
-                tables.edges.append(edge.replace(left=position))
+    ``keep_left``/``keep_right`` are the complement of the child's removal
+    intervals: sorted, disjoint, half-open ``[keep_left, keep_right)``. Returns
+    the surviving edge fragments as ``(left, right, parent)`` arrays. Fully
+    vectorized: each edge contributes the (contiguous) run of keep intervals it
+    overlaps, clipped to the edge span.
+    """
+    if keep_left.size == 0 or left.size == 0:
+        empty = np.empty(0, dtype=np.float64)
+        return empty, empty, np.empty(0, dtype=parent.dtype)
+
+    # Keep interval i overlaps edge j iff keep_right[i] > left[j] and
+    # keep_left[i] < right[j]. Because keep intervals are sorted and disjoint,
+    # the overlapping i for a given edge form the contiguous range [lo, hi).
+    lo = np.searchsorted(keep_right, left, side="right")
+    hi = np.searchsorted(keep_left, right, side="left")
+    counts = np.maximum(hi - lo, 0)
+    total = int(counts.sum())
+    if total == 0:
+        empty = np.empty(0, dtype=np.float64)
+        return empty, empty, np.empty(0, dtype=parent.dtype)
+
+    edge_idx = np.repeat(np.arange(left.size), counts)
+    # Offset of each fragment within its edge's run of keep intervals (0,1,...).
+    within = np.arange(total) - np.repeat(np.cumsum(counts) - counts, counts)
+    keep_idx = lo[edge_idx] + within
+
+    frag_left = np.maximum(left[edge_idx], keep_left[keep_idx])
+    frag_right = np.minimum(right[edge_idx], keep_right[keep_idx])
+    frag_parent = parent[edge_idx]
+    return frag_left, frag_right, frag_parent
+
+
+def trim_samples_single_pass(ts, remove_intervals, suffix_to_strip=""):
+    """Remove the ancestry of each named individual over its intervals, in a
+    single pass.
+
+    Equivalent to dropping, for every sample node, all parent (leaf) edges that
+    fall within the union of that individual's removal intervals, then a single
+    ``simplify``. Because each per-interval removal is idempotent and
+    order-independent, this matches the previous per-interval loop (which
+    simplified once per interval) but does O(edges) numpy work plus one
+    simplify, instead of one full simplify per interval.
+
+    Returns ``(trimmed_ts, summary)`` where summary has names_removed,
+    intervals_applied and sample_nodes_removed counts.
+    """
+    name_to_nodes = name_to_nodes_map(ts, suffix_to_strip=suffix_to_strip)
+    seq_len = float(ts.sequence_length)
+
+    # Map each target node -> its removal intervals (collected across names),
+    # mirroring the old code's `samples = name_to_nodes[name]` targeting.
+    node_intervals: dict[int, list] = {}
+    names_removed = set()
+    intervals_applied = 0
+    sample_nodes_removed = 0
+    for name, spans in remove_intervals.items():
+        nodes = name_to_nodes.get(name, [])
+        if not nodes:
+            continue
+        names_removed.add(name)
+        sample_nodes_removed += len(nodes)
+        intervals_applied += len(spans["starts"])
+        pairs = list(zip(spans["starts"], spans["ends"]))
+        for node in nodes:
+            node_intervals.setdefault(int(node), []).extend(pairs)
 
     tables = ts.dump_tables()
-    # Split edges so we can drop the target interval exactly.
-    split_edges_at(tables, left)
-    split_edges_at(tables, right)
-    drop_edges = np.logical_and.reduce(
-        [
-            np.isin(tables.edges.child, samples),
-            tables.edges.left >= left,
-            tables.edges.right <= right,
-        ]
-    )
-    tables.edges.keep_rows(~drop_edges)
+
+    if node_intervals:
+        edges = tables.edges
+        e_left = edges.left
+        e_right = edges.right
+        e_parent = edges.parent
+        e_child = edges.child
+
+        target_children = np.fromiter(node_intervals.keys(), dtype=e_child.dtype)
+        is_target = np.isin(e_child, target_children)
+
+        # Non-target edges (child not being trimmed) pass through untouched.
+        out_left = [e_left[~is_target]]
+        out_right = [e_right[~is_target]]
+        out_parent = [e_parent[~is_target]]
+        out_child = [e_child[~is_target]]
+
+        for node, pairs in node_intervals.items():
+            sel = np.flatnonzero(e_child == node)
+            if sel.size == 0:
+                continue
+            merged = merge_intervals(pairs)  # sorted, disjoint [start, end]
+            if not merged:
+                # No removal spans for this node -> keep all its edges verbatim.
+                out_left.append(e_left[sel])
+                out_right.append(e_right[sel])
+                out_parent.append(e_parent[sel])
+                out_child.append(e_child[sel])
+                continue
+            rem = np.asarray(merged, dtype=np.float64)
+            rem_starts = rem[:, 0]
+            rem_ends = rem[:, 1]
+            # keep = complement of removal within [0, seq_len)
+            keep_left = np.concatenate(([0.0], rem_ends))
+            keep_right = np.concatenate((rem_starts, [seq_len]))
+            nonempty = keep_left < keep_right
+            keep_left = keep_left[nonempty]
+            keep_right = keep_right[nonempty]
+
+            f_left, f_right, f_parent = _intersect_edges_with_keep(
+                e_left[sel], e_right[sel], e_parent[sel], keep_left, keep_right
+            )
+            out_left.append(f_left)
+            out_right.append(f_right)
+            out_parent.append(f_parent)
+            out_child.append(np.full(f_left.size, node, dtype=e_child.dtype))
+
+        edges.set_columns(
+            left=np.concatenate(out_left),
+            right=np.concatenate(out_right),
+            parent=np.concatenate(out_parent).astype(e_parent.dtype),
+            child=np.concatenate(out_child).astype(e_child.dtype),
+        )
+
+    # One canonical pass, mirroring the old per-interval tail.
     tables.sort()
-    tables.edges.drop_metadata()
-    # Simplify drops the removed ancestry and may renumber nodes.
     tables.simplify()
     tables.edges.squash()
     tables.build_index()
     tables.compute_mutation_parents()
-    return tables.tree_sequence()
+
+    summary = {
+        "names_removed": names_removed,
+        "intervals_applied": intervals_applied,
+        "sample_nodes_removed": sample_nodes_removed,
+    }
+    return tables.tree_sequence(), summary
 
 
 def main():
@@ -141,28 +245,14 @@ def main():
             name: {"starts": [0.0], "ends": [float(ts.sequence_length)]}
             for name in individuals
         }
-        remove_intervals = merge_intervals(remove_intervals, full)
+        remove_intervals = merge_full_length(remove_intervals, full)
 
     if not args.remove and not args.individuals:
         raise SystemExit("ERROR: provide --individuals and/or --remove")
 
-
-    # Track what we removed for a brief summary.
-    trimmed_ts = ts
-    names_removed = set()
-    intervals_applied = 0
-    sample_nodes_removed = 0
-    for name, intervals in remove_intervals.items():
-        # Rebuild the name->nodes map after each simplify.
-        name_to_nodes = name_to_nodes_map(trimmed_ts, suffix_to_strip=args.suffix_to_strip)
-        samples = name_to_nodes.get(name, [])
-        if not samples:
-            continue
-        names_removed.add(name)
-        sample_nodes_removed += len(samples)
-        intervals_applied += len(intervals["starts"])
-        for left, right in zip(intervals["starts"], intervals["ends"]):
-            trimmed_ts = remove_ancestry(trimmed_ts, samples, left, right)
+    trimmed_ts, summary = trim_samples_single_pass(
+        ts, remove_intervals, suffix_to_strip=args.suffix_to_strip
+    )
     validate_trimmed_ts(trimmed_ts)
 
     if args.out:
@@ -174,18 +264,20 @@ def main():
     dump_ts(trimmed_ts, out_path)
 
     # Summary to stdout/stderr and optional log
-    summary = (
-        f"Trimmed: individuals_specified={len(parse_individuals(args.individuals) if args.individuals else [])} "
-        f"names_removed={len(names_removed)} intervals_applied={intervals_applied} sample_nodes_removed={sample_nodes_removed} -> out={out_path}"
+    summary_line = (
+        f"Trimmed: individuals_specified={len(individuals)} "
+        f"names_removed={len(summary['names_removed'])} "
+        f"intervals_applied={summary['intervals_applied']} "
+        f"sample_nodes_removed={summary['sample_nodes_removed']} -> out={out_path}"
     )
-    print(summary)
-    print(summary, file=sys.stderr)
+    print(summary_line)
+    print(summary_line, file=sys.stderr)
     log_path = args.log or (out_path.parent / "logs" / f"{ts_path.stem}_trim_samples.log")
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, "w") as fh:
             fh.write("# trim_samples summary\n")
-            fh.write(summary + "\n")
+            fh.write(summary_line + "\n")
     except Exception:
         print(f"WARNING: failed to write log to {log_path}", file=sys.stderr)
 
