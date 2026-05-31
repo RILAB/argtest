@@ -46,9 +46,38 @@ default-resources:
   - time='01:00:00'
 
 # Max number of jobs submitted to the queue at once. Override on the CLI with -j.
-jobs: 100
+#
+# Keep this modest. The cluster-generic executor spawns ONE status-polling
+# thread per in-flight job, and each poll forks the status command. On a head
+# node with a per-user cgroup PID cap (e.g. user.slice pids.max=512 counting
+# threads, not just processes), a high value here produces a fork storm that
+# trips "fork: Resource temporarily unavailable" and also breaks the ILP/cbc
+# scheduler's own fork. This pipeline is memory-bound at the merge step
+# (96-128 GB/job), so the cap only matters for the light step1-5 jobs.
+#
+# 250 assumes the controller runs OFF the head node (see
+# profiles/slurm/run-controller.sbatch) so its per-job polling threads don't
+# count against the head node's per-user 512-task cap. It's deliberately NOT
+# uncapped: cluster-generic polls one `sacct` per job per cycle, so thousands
+# of in-flight jobs would flood the shared slurmdbd. Override with `-j N`.
+jobs: 250
+
+# Use the greedy scheduler instead of the PuLP/CBC ILP solver. CBC forks an
+# external binary to solve the schedule; near the cgroup PID cap that fork
+# fails and Snakemake falls back to greedy with a scary warning. Selecting
+# greedy explicitly avoids the failed fork and the noise. Greedy is fine here.
+scheduler: greedy
 
 # Cluster runs need a little slack for shared-filesystem latency on outputs.
 latency-wait: 60
+
+# Fail fast: keep Snakemake's default behavior of halting on the first genuine
+# failure (no keep-going). The big risk in this pipeline — the merge-step OOM —
+# is SYSTEMATIC (if one replicate OOMs, they all will), so stopping at the
+# first failure surfaces it immediately instead of churning the queue. Note
+# this is NOT what bit us before: preemption on `low` is handled by the status
+# command mapping PREEMPTED -> running (the partition requeues), so a preempted
+# job no longer looks like a failure. Add `-k` / `--restart-times N` on the CLI
+# ad hoc when you're deliberately harvesting partial results.
 restart-times: 0
 printshellcmds: true

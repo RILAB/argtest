@@ -18,8 +18,20 @@ jobid="$1"
 # Prefer sacct: it sees both running and terminal states for jobs in the
 # accounting DB. Fall back to squeue while sacct is briefly empty for a
 # just-submitted job.
-state=$(sacct -j "$jobid" --format=State --noheader --parsable2 2>/dev/null \
-        | head -n 1 | awk '{print $1}')
+#
+# Keep forks to a minimum: this script runs once per in-flight job on every
+# poll, and on a head node with a per-user cgroup PID cap a fork-heavy poll
+# (sacct | head | awk + squeue) trips "fork: Resource temporarily
+# unavailable". We do the first-line/first-field parse with bash builtins
+# (read + parameter expansion) so the only fork is the sacct call itself, and
+# we only fork squeue when sacct came back empty.
+state=""
+while IFS='|' read -r first _; do
+    state="$first"
+    break
+done < <(sacct -j "$jobid" --format=State --noheader --parsable2 2>/dev/null)
+state="${state%% *}"
+
 if [ -z "$state" ]; then
     state=$(squeue -h -j "$jobid" -o '%T' 2>/dev/null || true)
 fi
@@ -28,10 +40,17 @@ case "$state" in
     COMPLETED)
         echo success
         ;;
-    PENDING|RUNNING|COMPLETING|CONFIGURING|REQUEUED|RESIZING|SUSPENDED)
+    # PREEMPTED is "running" here, NOT failed: the `low` partition is
+    # PreemptMode=REQUEUE (and the cluster default is JobRequeue=1), so a
+    # preempted job is automatically requeued and runs again to completion.
+    # If we reported it as failed, Snakemake would give up on a job SLURM is
+    # about to finish — and without --keep-going that halts the whole DAG.
+    # (On a CANCEL-mode partition this mapping would be wrong; revisit if the
+    # submit partition changes.)
+    PENDING|RUNNING|COMPLETING|CONFIGURING|REQUEUED|RESIZING|SUSPENDED|PREEMPTED)
         echo running
         ;;
-    BOOT_FAIL|CANCELLED|CANCELLED+|DEADLINE|FAILED|NODE_FAIL|OUT_OF_MEMORY|PREEMPTED|TIMEOUT)
+    BOOT_FAIL|CANCELLED|CANCELLED+|DEADLINE|FAILED|NODE_FAIL|OUT_OF_MEMORY|TIMEOUT)
         echo failed
         ;;
     *)
