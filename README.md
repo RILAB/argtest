@@ -15,6 +15,7 @@ Ross-Ibarra, J. 2026. ARGtest: tools for QC and validation of ancestral recombin
 - [Auxiliary scripts](#auxiliary-scripts)
 - [Inputs, formats, defaults & logs](#inputs-formats-defaults--logs)
 - [Repository notes](#repository-notes)
+- [Changelog](CHANGELOG.md)
 
 See [NOTES.md](NOTES.md) for the shared module layout and `trim_samples.py` sample-ID matching rules. Run any script with `--help` for its full argument list.
 
@@ -244,6 +245,8 @@ Scripts not called by the Snakemake pipeline.
 
 - Generated `logs/` and `results/` are git-ignored.
 - `.DS_Store` is git-ignored.
+- Per-release changes are tracked in [CHANGELOG.md](CHANGELOG.md), keyed to the
+  `v1.x` git tags.
 
 ## Acknowledgements
 
