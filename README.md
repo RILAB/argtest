@@ -26,6 +26,16 @@ conda env create -f environment.yml
 conda activate argtest
 ```
 
+**Which version to use:** work from the most recent tagged release rather than an
+arbitrary commit on `main`. To check out the latest tag:
+
+```bash
+git fetch --tags
+git checkout "$(git tag -l 'v*' | sort -V | tail -1)"
+```
+
+See [CHANGELOG.md](CHANGELOG.md) for a per-version breakdown of changes.
+
 Core dependencies are in `environment.yml` (`numpy`, `matplotlib`, `tskit`, `tszip`, `msprime`, `snakemake`, `pytest`).
 
 ## Suggested Workflow
