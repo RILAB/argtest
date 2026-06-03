@@ -3,6 +3,31 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
+## [v1.4] — 2026-06-03 — per-sample expected load + trim_samples scaling
+
+### Added
+- Validation report now plots a per-sample simulated expected mutational load
+  (with a 95% interval) under `--sim-branch`, replacing the single flat
+  genome-wide expected line so each sample is compared to its own
+  genealogy-based expectation.
+- SLURM status command (`profiles/slurm/status-sacct.sh`) wired into the
+  cluster-generic profile so the controller detects jobs SLURM kills before any
+  output is written (TIMEOUT/OUT_OF_MEMORY/NODE_FAIL) instead of polling forever.
+
+### Changed
+- Rewrite step5 `trim_samples` as a single vectorized simplify pass instead of
+  one `simplify()` per removal interval per individual, making it tractable on
+  large ARGs (the admix ARG previously never finished a single step5 job).
+  Output verified equivalent (genealogy + genotypes) by a 12-check regression
+  test.
+- README: document that mutation-load outlier detection is per individual
+  (sample nodes pooled), which equals per sample for haploid data.
+
+### Fixed
+- Empty `base_name` now falls back to the `root_dir` name instead of producing
+  merge output names that mismatched the Snakefile targets and aborted
+  `merge_replicates` with a `MissingOutputException`.
+
 ## [v1.3] — 2026-05-27 — SLURM cluster execution + realistic example dataset
 
 ### Added
@@ -69,6 +94,7 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
 - `TSK_ERR_BAD_MUTATION_PARENT` in `remove_ancestry`.
 - Normalize mutload by tree-covered accessible bp; metadata schema bugs.
 
+[v1.4]: https://github.com/RILAB/argtest/releases/tag/v1.4
 [v1.3]: https://github.com/RILAB/argtest/releases/tag/v1.3
 [v1.2]: https://github.com/RILAB/argtest/releases/tag/v1.2
 [v1.1]: https://github.com/RILAB/argtest/releases/tag/v1.1
