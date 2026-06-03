@@ -280,6 +280,7 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
     _sim_rate = mu_ratemap if mu_ratemap is not None else mutation_rate
 
     load_vals, seq_lengths = [], []
+    sim_load_vals = [] if sim_branch else None
     site_div_vals = []
     site_td_vals = []
     site_s_vals = []
@@ -377,6 +378,9 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
             sim_ts = msprime.sim_mutations(
                 ts, rate=_sim_rate, keep=False, random_seed=1 + int(rep_id) * 1000
             )
+            # Per-sample expected load from this simulation draw (matches the
+            # observed per-sample load normalization above).
+            sim_load_vals.append(mutational_load(sim_ts) / total_accessible)
             sim_div_raw = sim_ts.diversity(
                 mode="site", windows=rep_windows, span_normalise=False
             )
@@ -461,12 +465,16 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
         "mean_site_afs_folded": safe_nanmean(site_afs_folded_vals[:, keep_post], axis=-1),
     }
     if sim_branch:
+        sim_load_vals = np.stack(sim_load_vals, axis=-1)
         sim_div_vals = np.stack(sim_div_vals, axis=-1)
         sim_td_vals = np.stack(sim_td_vals, axis=-1)
         sim_s_vals = np.stack(sim_s_vals, axis=-1)
         sim_afs_unfolded_vals = np.stack(sim_afs_unfolded_vals, axis=-1)
         sim_afs_folded_vals = np.stack(sim_afs_folded_vals, axis=-1)
         out.update({
+            "sim_load_vals": sim_load_vals,
+            "mean_sim_load": safe_nanmean(sim_load_vals[:, keep_post], axis=-1),
+            "q_sim_load": safe_nanquantile(sim_load_vals[:, keep_post], [0.025, 0.975], axis=-1),
             "sim_div_vals": sim_div_vals,
             "sim_td_vals": sim_td_vals,
             "sim_s_vals": sim_s_vals,
@@ -539,13 +547,28 @@ def main():
     n_width = max(pri["mean_load"].size, cmp["mean_load"].size if cmp else 0)
     fig, ax = plt.subplots(1, 1, figsize=(max(5, 0.1 * n_width), 4), constrained_layout=True)
     samples = np.arange(pri["mean_load"].size)
-    ax.axhline(y=float(np.nanmean(pri["mean_load"])), color=PRI_SIM, linestyle="dashed")
+    # Expected load: with --sim-branch, plot the per-sample simulated expectation
+    # (mutations dropped on each ARG) so each sample is compared to its own
+    # genealogy-based expectation; otherwise fall back to a flat genome-wide mean.
+    if "mean_sim_load" in pri:
+        ax.plot(samples, pri["mean_sim_load"], "_", color=PRI_SIM, markersize=8,
+                markeredgewidth=1.5, label=f"{pri_label} expected (sim)")
+        ax.vlines(samples, pri["q_sim_load"][0], pri["q_sim_load"][1], color=PRI_SIM,
+                  alpha=0.5, linewidth=3)
+    else:
+        ax.axhline(y=float(np.nanmean(pri["mean_load"])), color=PRI_SIM, linestyle="dashed")
     ax.plot(samples, pri["mean_load"], "o", color=PRI_SITE, markersize=2, label=pri_label)
     ax.vlines(samples, pri["q_load"][0], pri["q_load"][1], color=PRI_SITE)
     if cmp is not None:
         c_samples = np.arange(cmp["mean_load"].size)
-        ax.axhline(y=float(np.nanmean(cmp["mean_load"])), color=CMP_SIM, linestyle="dashed",
-                   alpha=0.7)
+        if "mean_sim_load" in cmp:
+            ax.plot(c_samples, cmp["mean_sim_load"], "_", color=CMP_SIM, markersize=8,
+                    markeredgewidth=1.5, alpha=0.7, label=f"{cmp_label} expected (sim)")
+            ax.vlines(c_samples, cmp["q_sim_load"][0], cmp["q_sim_load"][1], color=CMP_SIM,
+                      alpha=0.4, linewidth=3)
+        else:
+            ax.axhline(y=float(np.nanmean(cmp["mean_load"])), color=CMP_SIM, linestyle="dashed",
+                       alpha=0.7)
         ax.plot(c_samples, cmp["mean_load"], "o", color=CMP_SIM, markersize=2, label=cmp_label)
         ax.vlines(c_samples, cmp["q_load"][0], cmp["q_load"][1], color=CMP_SIM, alpha=0.6)
     ax.set_xlabel("Sample ID")
