@@ -84,7 +84,12 @@ def res_mem_mb(rule_name):    return int(_res(rule_name, "mem_mb", DEFAULT_MEM_M
 def res_time(rule_name):      return str(_res(rule_name, "time", DEFAULT_TIME))
 def res_threads(rule_name):   return int(_res(rule_name, "threads", DEFAULT_THREADS))
 def res_partition(rule_name): return str(_res(rule_name, "partition", SLURM_PARTITION))
-BASE_NAME = str(config.get("base_name", ROOT_DIR.name))
+# Treat an empty/whitespace base_name the same as an absent key: fall back to
+# the root_dir name. Resolving the concrete name here (and passing it to
+# merge_treefiles_by_replicate.py) keeps the Snakefile targets and the merge
+# script's output names in lockstep — an empty string would otherwise make the
+# script fall back to its own (different) default and the names would mismatch.
+BASE_NAME = str(config.get("base_name") or "").strip() or ROOT_DIR.name
 ALLOW_MISSING_REPLICATES = bool(config.get("allow_missing_replicates", False))
 BURNIN = int(config.get("burnin", 0))
 if BURNIN < 0:
