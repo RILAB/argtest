@@ -10,6 +10,36 @@ trees retain only a small subset of samples. Per-window statistics such as
 mutational load, diversity, Tajima's D, SFS, and coalescence summaries can be
 badly biased or unstable in those low-sample intervals.
 
+## Decisions (locked 2026-06-26)
+
+These supersede the exploratory options below where they conflict (notably the
+"start with mask mode" recommendation):
+
+- **Placement: new pipeline step after step 5** (Option B). A new script run
+  between `trim_samples.py` (step 5) and `merge_treefiles_by_replicate.py`.
+- **Mode: drop via `ts.delete_intervals(...)`** (not mask, and not coordinate-
+  compacting `trim()`). `delete_intervals` removes the low-sample intervals'
+  content but **preserves sequence coordinates** (the dropped spans become empty
+  gaps), so there is no coordinate-compaction / provenance headache. This makes
+  the "excise vs mask" question moot: we excise content but keep coordinates.
+- **Unit: sample nodes (haploids), not individuals.** `min_samples` = minimum
+  number of non-isolated sample *nodes* present in a local tree. On the current
+  haploid `admix` data this equals individuals (1 node/individual). An optional
+  `--min-samples-unit individuals` mode is deferred — do not build it now (it
+  also entangles with the still-undecided per-individual semantics in todo #6).
+- **`kept_intervals` coupling (required):** after dropping, intersect the
+  existing `kept_intervals` metadata with the complement of the dropped spans,
+  or downstream accessibility is overestimated (see `project_kept_intervals`
+  memory and the `validation_plots_from_ts.py` accessibility path).
+- **Difficulty: easy.** The building blocks already exist — non-isolated
+  sample-per-tree counting is already done in `score_realistic_example.py`
+  (~line 370), interval merging via `argtest_common.merge_intervals`, and the
+  `keep/delete_intervals` + `kept_intervals` pattern in
+  `trim_regions_single.py:38-40`. Core transform is ~20-40 lines plus Snakefile
+  rule + a `min_samples` config knob + tests.
+
+**Deferred:** agreed 2026-06-26 to save this refactor for another day.
+
 ## Core Behavior
 
 For each local tree, compute the number of retained samples represented in that
@@ -214,15 +244,19 @@ Add tests for:
 
 ## Open Questions
 
-- Should the first implementation support both `mask` and `excise`, or only
-  `mask`?
+- ~~Should the first implementation support both `mask` and `excise`, or only
+  `mask`?~~ **Resolved 2026-06-26:** neither — drop via `delete_intervals`
+  (excise content, preserve coordinates). See Decisions above.
 - Should low-sample intervals be combined with existing remove masks, or kept as
-  a separate diagnostic mask?
-- Should `--min-samples` mean haploid sample nodes or diploid individuals?
+  a separate diagnostic mask? *(still open — likely also emit a diagnostic BED
+  alongside the dropped-interval `delete_intervals`.)*
+- ~~Should `--min-samples` mean haploid sample nodes or diploid individuals?~~
+  **Resolved 2026-06-26: sample nodes.** Individual mode deferred.
 - Should windows be dropped when any overlapping tree is below threshold, or
-  weighted by the fraction of the window that passes?
+  weighted by the fraction of the window that passes? *(still open — note the
+  filter drops at tree-interval granularity, so window stats inherit gaps.)*
 - Should the filter use absolute `N` only, or also support a fraction such as
-  `--min-sample-fraction 0.8`?
+  `--min-sample-fraction 0.8`? *(still open.)*
 
 ## Difficulty
 
