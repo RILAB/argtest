@@ -7,18 +7,15 @@
 # --------------------------------------------------------------------------- #
 
 # Root directory containing one subdirectory per chromosome, each holding one
-# tree sequence file per replicate (e.g. chr1/rep_000.trees, chr1/rep_001.trees,
-# ...). Paths are relative to the directory you run snakemake from (the repo
-# root). The bundled realistic example has enough sites per chromosome that the
-# 500-SNP mutload window below splits each chromosome into many windows.
-root_dir: argtest-realistic-example
+# tree sequence file per replicate (e.g. chr1/1.trees, chr1/2.trees, ...).
+root_dir: /home/jri/src/argtest/eur_thaliana
 
 # HapMap-format recombination map used to identify low-recombination regions
 # in step 1. Format: msprime.RateMap.read_hapmap compatible TSV.
-hapmap: argtest-realistic-example/all.hapmap.tsv
+hapmap: /home/jri/src/argtest/eur_thaliana/thaliana.hapmap
 
 # FASTA index (.fai) supplying chromosome lengths used in step 1.
-fai: argtest-realistic-example/sim.fai
+fai: /home/jri/src/argtest/eur_thaliana/reference_sites.fa.fai
 
 # --------------------------------------------------------------------------- #
 # Tree file discovery
@@ -26,12 +23,12 @@ fai: argtest-realistic-example/sim.fai
 
 # Glob pattern matched against filenames inside each chromosome subdirectory
 # to find tree sequence files. Supported suffixes: .ts, .trees, .tsz.
-tree_pattern: "*.trees"
+tree_pattern: "*.tsz"
 
-# Optional subdirectory within each chromosome dir that holds the tree files
-# (e.g. "trees" for SINGER-style layouts where chrom.N/trees/ holds the
-# replicates). Leave unset when tree files live directly in the chromosome dir.
-# tree_subdir: "trees"
+# Subdirectory within each chromosome dir that holds the tree files. The
+# eur_thaliana data is SINGER output, so the .tsz replicates live in
+# combined.ChrN/trees/ (e.g. combined.Chr1/trees/combined.Chr1.0.tsz).
+tree_subdir: "trees"
 
 # --------------------------------------------------------------------------- #
 # Step 1: low-recombination masking
@@ -40,9 +37,8 @@ tree_pattern: "*.trees"
 # Fraction of recombination-rate intervals (ranked by Rate(cM/Mb), lowest
 # first) to include in the low-recombination mask, per chromosome.
 # E.g. 0.1 masks the bottom 10 % of intervals. Use 0.0 to write empty
-# low-recombination masks. The realistic example has a low-rec centromere
-# valley, so 0.05 surfaces a non-empty step-1 mask.
-rec_fraction: 0.05
+# low-recombination masks, which keeps the bundled example data unchanged.
+rec_fraction: 0.0
 
 # --------------------------------------------------------------------------- #
 # Step 2: low-accessibility masking
@@ -79,7 +75,7 @@ mutload_cutoff: 0.5
 # a ratemap. Set this once instead of the two per-step keys. For ARGs from
 # non-SINGER software (which usually carry no embedded ratemap and no .mut_rate.p),
 # this scalar is the intended way to supply a rate.
-# mutation_rate: 3e-8
+# mutation_rate: 1e-8
 
 # Per-step override of `mutation_rate` for the step-3 mutational-load sim only.
 # Leave unset to inherit `mutation_rate`. NOTE: a flat scalar removes the local
@@ -90,7 +86,7 @@ mutload_cutoff: 0.5
 # Base seed for the per-replicate sim used to compute expected load. The actual
 # per-replicate seed is derived deterministically from this base plus the
 # chrom/rep wildcards, so re-running step 3 produces identical outlier BEDs.
-mutload_random_seed: 1
+mutload_random_seed: 8675309
 
 # If provided, windows where the outlier fraction exceeds this threshold are
 # written to the mutation-masked BED (rather than the per-sample outlier BED)
@@ -99,7 +95,7 @@ mutload_fraction: 0.2
 
 # Suffix stripped from sample names before matching individual IDs in steps 3
 # and 5. Set to "" if sample names need no stripping.
-suffix_to_strip: ""
+suffix_to_strip: "_anchorwave"
 
 # --------------------------------------------------------------------------- #
 # Concatenation behavior (step 6 merging)
@@ -112,12 +108,12 @@ allow_missing_replicates: false
 
 # Number of leading discovered replicates to discard before concatenation.
 # WARNING: burnin is applied after tree discovery and must be smaller than the
-# number of discovered replicates/samples. The bundled example has 5 replicates,
-# so burnin must be 0-4; use 0 here so the example runs as-is.
-burnin: 0
+# number of discovered replicates/samples. The eur_thaliana data has 50
+# replicates per chromosome, so discard the first half (the SINGER MCMC warm-up).
+burnin: 25
 
 # Prefix used for merged output filenames: <base_name>.combined.<replicate>.<suffix>.
-base_name: "run"
+base_name: "eur_thaliana"
 
 # Suffix for merged output files. Uncomment and set to force a specific suffix
 # (.ts, .trees, or .tsz); default is to inherit the suffix of the first input.
@@ -127,13 +123,8 @@ base_name: "run"
 # Workflow outputs
 # --------------------------------------------------------------------------- #
 
-# Root directory for all Snakemake outputs. Tilde (~) is expanded; a relative
-# path resolves against the directory you run snakemake from.
-# NOTE: for cluster runs (--profile profiles/slurm) this MUST be on a shared
-# filesystem visible to the compute nodes — a node-local path like /tmp will
-# silently lose outputs (each job writes to its own node's /tmp). A relative
-# path like the default below is shared as long as you run from shared storage.
-out_dir: "argtest-realistic-example-out"
+# Root directory for all Snakemake outputs. Tilde (~) is expanded.
+out_dir: "~/src/argtest/thaliana_tested/"
 
 # --------------------------------------------------------------------------- #
 # Step 6: validation plots (omit validation_mutation_rate or set to null to skip)
@@ -143,14 +134,14 @@ out_dir: "argtest-realistic-example-out"
 # comparison to site-mode diversity in validation plots, and as the scalar
 # fallback for validation_sim_branch below. Defaults to the shared `mutation_rate`
 # if unset; set here only to override it for step 6. Set to null to skip step 6.
-validation_mutation_rate: 3e-8 #  base mutation rate used to build the realistic example
+validation_mutation_rate: 1e-8 #  mutation rate used in SINGER simulations
 
 # If true, run validation plots only for the first chromosome (faster for
 # quick QC checks). Set false to run for all chromosomes.
-validation_first_chrom_only: true
+validation_first_chrom_only: false
 
-# If true, simulate mutations on each ARG replicate with msprime at the inferred
-# mutation rate and compute site-mode statistics from those simulations
+# If true, simulate mutations on each posterior ARG replicate with msprime at the
+# inferred mutation rate and compute site-mode statistics from those simulations
 # (posterior predictive check). Uses an embedded ratemap or a co-located
 # *.mut_rate.p file when available, otherwise falls back to the uniform
 # validation_mutation_rate. If false, branch-mode statistics scaled by
@@ -175,9 +166,9 @@ slurm_partition: low
 # mem_mb is in MB; time is HH:MM:SS; `partition` overrides slurm_partition for
 # that rule (e.g. send the memory-heavy steps to a big-mem partition).
 resources:
-  step2_low_access:          {mem_mb: 8000,   time: "04:00:00"}
-  step3_mutload_masks:       {mem_mb: 12000,  time: "08:00:00"}
-  step4_trim_regions_single: {mem_mb: 8000,   time: "04:00:00"}
-  step5_trim_samples_single: {mem_mb: 8000,   time: "04:00:00"}
-  merge_replicates:          {mem_mb: 200000, time: "16:00:00", partition: high}
-  step6_validation_plots:    {mem_mb: 180000, time: "48:00:00", partition: high}
+  step2_low_access:          {mem_mb: 8000,   time: "24:00:00"}
+  step3_mutload_masks:       {mem_mb: 12000,  time: "24:00:00"}
+  step4_trim_regions_single: {mem_mb: 8000,   time: "24:00:00"}
+  step5_trim_samples_single: {mem_mb: 16000,  time: "48:00:00"}
+  merge_replicates:          {mem_mb: 64000,  time: "128:00:00"}
+  step6_validation_plots:    {mem_mb: 64000,  time: "128:00:00"}

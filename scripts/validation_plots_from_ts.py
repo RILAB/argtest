@@ -217,6 +217,28 @@ def safe_nanquantile(a: np.ndarray, q, axis=None):
         return np.nanquantile(a, q, axis=axis)
 
 
+def safe_log_yscale(ax, *arrays, context: str = "plot") -> None:
+    """Apply a log y-scale only if some plotted value is positive and finite.
+
+    matplotlib raises "Data cannot be log-scaled because all values are <= 0"
+    at savefig time when every value is zero/NaN (e.g. a site-frequency
+    spectrum from tree sequences that carry no mutations). In that case leave
+    the axis linear and warn instead of crashing the whole pipeline.
+    """
+    has_positive = any(
+        np.any(np.isfinite(a) & (np.asarray(a, dtype=float) > 0))
+        for a in arrays
+        if a is not None and np.size(a) > 0
+    )
+    if has_positive:
+        ax.set_yscale("log")
+    else:
+        warnings.warn(
+            f"{context}: no positive values to plot (empty site spectrum?); "
+            "leaving y-axis linear instead of log-scaled."
+        )
+
+
 def load_sim_window_stats(path: Path) -> tuple[np.ndarray, np.ndarray]:
     if not path.exists():
         raise FileNotFoundError(f"Simulation TSV not found: {path}")
@@ -836,7 +858,13 @@ def main():
                        label=f"{cmp_label} site")
         ax.set_xlabel(_xlabel)
         ax.set_ylabel("# of variants / base")
-        ax.set_yscale("log")
+        _log_series = [pri[_site_key][1:]]
+        if args.sim_branch:
+            _log_series.append(pri[_sim_key][1:])
+        if cmp is not None:
+            _log_series.append(cmp[_site_key][1:])
+        safe_log_yscale(ax, *_log_series,
+                        context=f"frequency-spectrum-{_suffix}")
         ax.legend(fontsize=7)
         _plot_path = args.out_dir / f"{args.prefix}frequency-spectrum-{_suffix}.png"
         plt.savefig(_plot_path)
@@ -908,7 +936,8 @@ def main():
                        label=f"observed — {pri_label}", s=8)
             ax.set_xlabel(_xlabel)
             ax.set_ylabel("# of variants / base")
-            ax.set_yscale("log")
+            safe_log_yscale(ax, sim_mean_sfs[1:n], pri[_obs_key][1:n],
+                            context=f"frequency-spectrum-vs-sim-{_suffix}")
             ax.legend()
             _plot_path = args.out_dir / f"{args.prefix}frequency-spectrum-vs-sim-{_suffix}.png"
             plt.savefig(_plot_path)

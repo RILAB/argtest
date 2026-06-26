@@ -2,6 +2,17 @@
 
 Supplementary details that aren't needed for day-to-day use of the pipeline or scripts. See [README.md](README.md) for install, workflow, and the Snakemake pipeline. Run any script with `--help` for its flags.
 
+## Sandboxed environments (read-only `~/.cache`)
+
+Some HPC or container setups mount `~/.cache` read-only. There, prefix the Snakemake command (dry-run or real run) with cache and temp-dir redirects to `/tmp`:
+
+```bash
+XDG_CACHE_HOME=/tmp/argtest-xdg-cache TMPDIR=/tmp/argtest-tmp \
+    snakemake --cores 16 --configfile config/snakemake.yaml
+```
+
+On a normal machine where `~/.cache` is writable this is not needed.
+
 ## Shared module
 
 `scripts/argtest_common.py` contains shared tree-sequence helpers used by multiple scripts:

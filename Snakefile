@@ -125,7 +125,19 @@ else:
 
 MUTLOAD_FRACTION_ARG = f"--fraction {MUTLOAD_FRACTION}" if MUTLOAD_FRACTION is not None else ""
 
-MUTLOAD_MUTATION_RATE = config.get("mutload_mutation_rate", None)
+# Shared organism-wide mutation rate (per bp per generation). Serves as the
+# default for both the mutload sim-based expectation (step 3) and the validation
+# plots (step 6). Either step may override it with its own key below; an explicit
+# null on a per-step key disables that step's scalar (validation: null skips step
+# 6 entirely). Only used as a fallback — an embedded ts.metadata ratemap or a
+# sibling *.mut_rate.p file always takes precedence (see resolve_mu_rate).
+MUTATION_RATE = config.get("mutation_rate", None)
+if MUTATION_RATE is not None:
+    MUTATION_RATE = float(MUTATION_RATE)
+    if MUTATION_RATE <= 0:
+        raise WorkflowError("mutation_rate must be > 0")
+
+MUTLOAD_MUTATION_RATE = config.get("mutload_mutation_rate", MUTATION_RATE)
 if MUTLOAD_MUTATION_RATE is not None:
     MUTLOAD_MUTATION_RATE = float(MUTLOAD_MUTATION_RATE)
     if MUTLOAD_MUTATION_RATE <= 0:
@@ -144,9 +156,11 @@ def mutload_seed_for(chrom: str, rep: str) -> int:
     # msprime accepts uint32; mod down and avoid 0 so seed is always valid.
     return (h % (2**31 - 1)) + 1
 
-VALIDATION_MUTATION_RATE = config.get("validation_mutation_rate", None)
+VALIDATION_MUTATION_RATE = config.get("validation_mutation_rate", MUTATION_RATE)
 if VALIDATION_MUTATION_RATE is not None:
     VALIDATION_MUTATION_RATE = float(VALIDATION_MUTATION_RATE)
+    if VALIDATION_MUTATION_RATE <= 0:
+        raise WorkflowError("validation_mutation_rate must be > 0")
 VALIDATION_FIRST_CHROM_ONLY = bool(config.get("validation_first_chrom_only", True))
 VALIDATION_SIM_BRANCH = bool(config.get("validation_sim_branch", False))
 

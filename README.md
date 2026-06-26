@@ -9,6 +9,7 @@ Ross-Ibarra, J. 2026. ARGtest: tools for QC and validation of ancestral recombin
 ## Contents
 
 - [Install](#install)
+- [Quick start](#quick-start)
 - [Suggested Workflow](#suggested-workflow)
 - [Snakemake Pipeline](#snakemake-pipeline)
 - [Scripts](#scripts)
@@ -37,6 +38,29 @@ git checkout "$(git tag -l 'v*' | sort -V | tail -1)"
 See [CHANGELOG.md](CHANGELOG.md) for a per-version breakdown of changes.
 
 Core dependencies are in `environment.yml` (`numpy`, `matplotlib`, `tskit`, `tszip`, `msprime`, `snakemake`, `pytest`).
+
+## Quick start
+
+New here? Run the whole pipeline end-to-end on the bundled example dataset:
+
+```bash
+# 1. Create and activate the environment
+conda env create -f environment.yml && conda activate argtest
+
+# 2. Generate the example tree sequences. These are not committed; they
+#    regenerate deterministically from the seed pinned in ground_truth.json
+#    (a few minutes of simulation).
+python scripts/make_realistic_example.py --out-dir argtest-realistic-example \
+    --n-chrom 3 --n-reps 8 --n-samples 16 --seq-length 10000000
+
+# 3. Run the pipeline. The committed config/snakemake.yaml already points at
+#    the example dataset above.
+snakemake --cores 16 --configfile config/snakemake.yaml
+```
+
+Results land in `argtest-realistic-example-out/`. For a dry-run preview, a
+step-by-step explanation, and cluster execution, see
+[How To Run](#how-to-run) below.
 
 ## Suggested Workflow
 
@@ -91,7 +115,7 @@ The Snakemake config is in [config/snakemake.yaml](config/snakemake.yaml). Edit 
 Required keys:
 
 - `root_dir`: path to the chromosome-subdirectory root
-- `hapmap`: HapMap recombination map used for step 1
+- `hapmap`: single HapMap recombination map covering **all** chromosomes (one combined file, not one per chromosome — rows are grouped by the `Chromosome` column), used for step 1
 - `fai`: FASTA index used for chromosome lengths
 - `rec_fraction`: fraction of recombination-rate intervals (ranked by `Rate(cM/Mb)`, lowest first) to include in the low-recombination mask; e.g. `0.1` masks the bottom 10 % of intervals, while `0.0` writes empty low-recombination masks
 - `low_access_window_size`: window size in bp for step 2
@@ -103,7 +127,8 @@ Optional keys (all have sensible defaults):
 - `tree_pattern`: glob for treefiles within each chromosome directory (default: `"*"`), for example `"*.trees"` or `"*.tsz"`
 - `tree_subdir`: optional subdirectory within each chromosome directory that holds the treefiles (default: unset → files live directly in the chromosome dir); e.g. `"trees"` for SINGER-style `chrN/trees/` layouts
 - `mutload_cutoff`: outlier cutoff fraction for step 3 (default: `0.5`)
-- `mutload_mutation_rate`: optional scalar mutation-rate fallback for step 3 when no embedded or sibling mutation-rate map is available
+- `mutation_rate`: shared scalar mutation rate (per bp per generation) used as the fallback for **both** step 3 and step 6 when no embedded or sibling ratemap is available; set this once instead of the two per-step keys below
+- `mutload_mutation_rate`: per-step override of `mutation_rate` for step 3 only (defaults to `mutation_rate` if unset)
 - `mutload_random_seed`: base seed for the per-replicate mutation simulation in step 3 (default: `1`)
 - `mutload_fraction`: fraction threshold for writing mutation-masked BED rows in step 3
 - `suffix_to_strip`: suffix removed from sample IDs before matching in step 3 and step 5 (default: `"_anchorwave"`)
@@ -112,11 +137,11 @@ Optional keys (all have sensible defaults):
 - `base_name`: prefix used for merged outputs (default: name of `root_dir`)
 - `merged_out_suffix`: force a specific output suffix for merged files (`.ts`, `.trees`, `.tsz`); default is to inherit the suffix of the first input
 - `out_dir`: output root for Snakemake products (default: `snakemake_out`; tilde is expanded)
-- `validation_mutation_rate`: mutation rate used by step 6 validation plots; omit or set to `null` to skip step 6
+- `validation_mutation_rate`: per-step override of `mutation_rate` for step 6 validation plots (defaults to `mutation_rate` if unset); omit/leave both unset or set to `null` to skip step 6
 - `validation_first_chrom_only`: run step 6 only on the first chromosome (default: `true`)
 - `validation_sim_branch`: simulate site mutations on each ARG replicate with msprime for a posterior-predictive check instead of scaling branch statistics (default: `false`)
 
-Mutation-rate maps are inferred from the treefile location using the same logic as the scripts, so the usual `*.mut_rate.p` files should be available near each chromosome directory.
+**Where the mutation rate comes from.** Steps 3 and 6 resolve a per-bp mutation rate in this order: (1) a ratemap embedded in the tree-sequence metadata, (2) a sibling `*.mut_rate.p` file near the treefile, (3) the scalar `mutation_rate` (or its per-step override). SINGER output normally provides (1) or (2), so a `*.mut_rate.p` file is *not* required if a ratemap is embedded. **For ARGs produced by non-SINGER software** — which typically carry no embedded ratemap and ship no `*.mut_rate.p` — just set the scalar `mutation_rate` and the pipeline runs without any ratemap file. One caveat: step 3's outlier test is designed to correct for *local* mutation-rate variation, so a flat scalar reduces it to a uniform-rate expectation (no spatial correction); prefer an embedded or sibling ratemap for step 3 when you have one. Step 6's diversity scaling is unaffected by this and works fine with a scalar.
 
 ### Workflow Steps
 
@@ -149,9 +174,18 @@ conda activate argtest
 
 Edit `config/snakemake.yaml` to point at your data (at minimum set `root_dir`, `hapmap`, and `fai`), then run.
 
-#### Walk-through using bundled example data
+#### Walk-through using the example dataset
 
-The committed [config/snakemake.yaml](config/snakemake.yaml) already points at the example dataset at [example_data/sim_2chr_5rep_clean](example_data/sim_2chr_5rep_clean) and can be used as-is for a test run. It uses `rec_fraction: 0.0` to write empty low-recombination masks and `burnin: 0` because the bundled example has 5 discovered replicates; `burnin` must always be smaller than the discovered replicate count.
+The committed [config/snakemake.yaml](config/snakemake.yaml) points at the realistic example dataset under [argtest-realistic-example/](argtest-realistic-example/) — a deliberately-flawed dataset (contaminated individuals, per-window sample pruning, and an accessibility mask) with a ground-truth scorecard at [argtest-realistic-example-out/scoring_report.md](argtest-realistic-example-out/scoring_report.md) (precision/recall of the pipeline's masks against the injected flaws).
+
+The `.trees` inputs are **not** committed (they regenerate deterministically), so generate them first with [`scripts/make_realistic_example.py`](scripts/make_realistic_example.py) (seed pinned in `ground_truth.json`); see [MAKE_REALISTIC_EXAMPLE.md](MAKE_REALISTIC_EXAMPLE.md) for the generator's CLI and the ground-truth schema:
+
+```bash
+python scripts/make_realistic_example.py --out-dir argtest-realistic-example \
+    --n-chrom 3 --n-reps 8 --n-samples 16 --seq-length 10000000
+```
+
+(These non-default flags reproduce the committed dataset — 3 chromosomes × 8 replicates × 16 diploids × 10 Mb — that `config/snakemake.yaml` expects; the seed and rates match `ground_truth.json`.)
 
 Dry-run first to preview the jobs:
 
@@ -165,11 +199,9 @@ Then run the workflow for real:
 snakemake --cores 16 --rerun-incomplete --keep-going --configfile config/snakemake.yaml
 ```
 
-> **Sandboxed environments only:** if `~/.cache` is read-only (e.g. some HPC or container setups), prefix either command with `XDG_CACHE_HOME=/tmp/argtest-xdg-cache TMPDIR=/tmp/argtest-tmp` to redirect the cache and temp dirs to `/tmp`. On a normal machine where `~/.cache` is writable this is not needed.
+This is fine for the small example dataset. **For real datasets, prefer the [SLURM route](#running-on-a-slurm-cluster) below.** The `merge_replicates` step loads all chromosomes of a replicate into memory at once and can need ~50–128 GB each; with plain `--cores N`, Snakemake may launch several merges concurrently and OOM the machine. If you must run locally, cap memory with `--resources mem_mb=<node_RAM_in_mb>` so the merges serialize to fit.
 
-#### Walk-through using the realistic example dataset
-
-For a larger, deliberately-flawed dataset with a ground-truth scorecard, see [argtest-realistic-example/](argtest-realistic-example/) (inputs side) and [argtest-realistic-example-out/scoring_report.md](argtest-realistic-example-out/scoring_report.md) (precision/recall of the pipeline's masks against the injected flaws). The `.trees` files and full pipeline output are **not** committed — regenerate the inputs with [`scripts/make_realistic_example.py`](scripts/make_realistic_example.py) (seed pinned in `ground_truth.json`) and then run the pipeline with `argtest-realistic-example/snakemake.yaml` as the configfile. See [MAKE_REALISTIC_EXAMPLE.md](MAKE_REALISTIC_EXAMPLE.md) for the generator's CLI and the ground-truth schema.
+> **Sandboxed / read-only `~/.cache` environments** (some HPC or container setups) may need cache and temp-dir redirects — see [Sandboxed environments](NOTES.md#sandboxed-environments-read-only-cache) in NOTES.md.
 
 #### Running on a SLURM cluster
 
@@ -179,9 +211,10 @@ Add `--profile profiles/slurm` to submit each job to SLURM instead of running lo
 snakemake --profile profiles/slurm --configfile config/snakemake.yaml
 ```
 
-This fans the ~per-(chromosome, replicate) jobs out across the cluster, sending light steps to one partition and the memory-heavy `merge_replicates` / `step6_validation_plots` steps to a big-mem partition. **All cluster knobs live in your configfile** — `slurm_account`, `slurm_partition`, and the per-rule `resources:` block (mem/time/threads/partition). The profile file itself ([profiles/slurm/config.yaml](profiles/slurm/config.yaml)) is set-and-forget; you do not edit it.
+This is the recommended way to run real datasets: besides parallelism, it fans the ~per-(chromosome, replicate) jobs out across the cluster, sending light steps to one partition and the memory-heavy `merge_replicates` / `step6_validation_plots` steps to a big-mem partition — so each merge gets its own right-sized node and avoids the local-run OOM noted above. **All cluster knobs live in your configfile** — `slurm_account`, `slurm_partition`, and the per-rule `resources:` block (mem/time/threads/partition). The profile file itself ([profiles/slurm/config.yaml](profiles/slurm/config.yaml)) is set-and-forget; you do not edit it.
 
 Notes:
+- **Partition names are cluster-specific.** The shipped config uses `"low"` and `"high"`, which are particular to our cluster; change `slurm_partition` (and any per-rule `partition` in the `resources:` block) in your configfile to match the partitions on your own cluster.
 - **`out_dir` must be on a shared filesystem** (not node-local `/tmp`) — each job runs on a different node, so a `/tmp` output path silently loses results.
 - The snakemake process here is just a controller (it submits jobs and polls), but it runs for the whole pipeline — launch it inside `tmux`/`screen` or a small `srun` so it survives disconnects.
 - Per-job SLURM logs are written to `logs/slurm/`.
