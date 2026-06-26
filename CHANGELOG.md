@@ -3,6 +3,34 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
+## [v1.5] — 2026-06-26 — VCF export + shared mutation-rate config
+
+### Added
+- Optional VCF export (`emit_vcf`, `vcf_reps`): one `.vcf.gz` per
+  (chromosome, replicate) from the trimmed tree sequences via
+  `scripts/export_vcf.py` — variable sites only, ploidy-aware genotypes
+  (haploid coded as a single allele `0`/`1`, diploid as `0|1`), and samples
+  pruned by `trim_samples` written as missing (`.`) via `isolated_as_missing`.
+- Shared `mutation_rate` config key used as the default for both the step-3
+  mutload sim and step-6 validation, with per-step overrides
+  (`mutload_mutation_rate`, `validation_mutation_rate`).
+
+### Changed
+- Consolidated to a single documented `config/snakemake.yaml` template;
+  removed dataset-specific `admix.yaml`/`thaliana.yaml`.
+- Removed the superseded `sim_2chr` example data (the realistic example is the
+  default).
+- Documented file naming / chromosome-label matching (hapmap `Chromosome` and
+  `.fai` lookup, `*.mut_rate.p` discovery), and clarified that `rec_fraction`
+  masks a fraction of recombination-rate intervals, not base pairs.
+
+### Fixed
+- Validation plots no longer crash on an empty/all-zero site spectrum (the
+  y-axis falls back to linear with a warning instead of failing at savefig).
+- Corrected the false "`validation_sim_branch` requires a `*.mut_rate.p` file"
+  note (it falls back to the scalar rate) and the stale "5 replicates" burn-in
+  comment (the bundled example has 8).
+
 ## [v1.4] — 2026-06-03 — per-sample expected load + trim_samples scaling
 
 ### Added
