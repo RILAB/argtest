@@ -176,6 +176,32 @@ VCF_REPS_REQUESTED = (
     [str(r) for r in _VCF_REPS_CFG] if _VCF_REPS_CFG else None
 )  # None/empty -> every post-burnin replicate
 
+# Optional user-supplied sample trimming applied in step 5, IN ADDITION to the
+# step-3 mutload outliers. Both apply identically to every (chrom, rep):
+#   trim_individuals — IDs removed genome-wide (string or list, joined with ",")
+#   trim_remove_bed  — one or more BED files of per-individual intervals
+#                      (col 4 = comma-separated sample IDs; path or list of paths)
+# Sample-ID matching follows the same rules as the step-3 outlier BED, including
+# suffix_to_strip. Leave unset to trim only the mutload outliers.
+_TRIM_IND_CFG = config.get("trim_individuals", None)
+if isinstance(_TRIM_IND_CFG, (list, tuple)):
+    _TRIM_IND_CFG = ",".join(str(i) for i in _TRIM_IND_CFG)
+TRIM_INDIVIDUALS = str(_TRIM_IND_CFG).strip() if _TRIM_IND_CFG is not None else ""
+TRIM_INDIVIDUALS_ARG = f"--individuals {TRIM_INDIVIDUALS}" if TRIM_INDIVIDUALS else ""
+
+_TRIM_BED_CFG = config.get("trim_remove_bed", None)
+if _TRIM_BED_CFG is None:
+    _TRIM_BED_CFG = []
+elif not isinstance(_TRIM_BED_CFG, (list, tuple)):
+    _TRIM_BED_CFG = [_TRIM_BED_CFG]
+TRIM_REMOVE_BEDS = [
+    str(Path(str(p)).expanduser().resolve()) for p in _TRIM_BED_CFG if str(p).strip()
+]
+for _bed in TRIM_REMOVE_BEDS:
+    if not Path(_bed).exists():
+        raise WorkflowError(f"trim_remove_bed file not found: {_bed}")
+TRIM_REMOVE_ARG = " ".join(f'--remove "{b}"' for b in TRIM_REMOVE_BEDS)
+
 STEP1_DIR = OUT_DIR / "step1_low_rec"
 STEP2_DIR = OUT_DIR / "step2_low_access"
 STEP3_DIR = OUT_DIR / "step3_mutload"
@@ -500,6 +526,7 @@ rule step5_trim_samples_single:
     input:
         ts=str(STEP4_TRIM_DIR / "{chrom}" / "{rep}.{ext}"),
         outlier=str(STEP3_DIR / "{chrom}" / "{rep}.outliers.bed"),
+        extra_beds=TRIM_REMOVE_BEDS,
     output:
         str(STEP5_DIR / "{chrom}" / "{rep}.{ext}")
     threads: res_threads("step5_trim_samples_single")
@@ -514,11 +541,15 @@ rule step5_trim_samples_single:
         str(LOG_DIR / "step5" / "{chrom}" / "{rep}.{ext}.log")
     params:
         suffix_to_strip=SUFFIX_TO_STRIP,
+        extra_remove=TRIM_REMOVE_ARG,
+        individuals_arg=TRIM_INDIVIDUALS_ARG,
     shell:
         """
         python scripts/trim_samples.py \
           "{input.ts}" \
           --remove "{input.outlier}" \
+          {params.extra_remove} \
+          {params.individuals_arg} \
           --out "{output}" \
           --suffix-to-strip "{params.suffix_to_strip}" \
           --log "{log}"
