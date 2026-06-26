@@ -42,6 +42,9 @@ tree_pattern: "*.trees"
 # E.g. 0.1 masks the bottom 10 % of intervals. Use 0.0 to write empty
 # low-recombination masks. The realistic example has a low-rec centromere
 # valley, so 0.05 surfaces a non-empty step-1 mask.
+# NOTE: this is a fraction of the NUMBER OF INTERVALS between map markers,
+# not of base pairs. Low-rec intervals tend to be long, so masking the
+# bottom 5 % of intervals can remove well over 5 % of the genome by bp.
 rec_fraction: 0.05
 
 # --------------------------------------------------------------------------- #
@@ -110,10 +113,14 @@ suffix_to_strip: ""
 # all chromosomes to be present for every replicate.
 allow_missing_replicates: false
 
-# Number of leading discovered replicates to discard before concatenation.
-# WARNING: burnin is applied after tree discovery and must be smaller than the
-# number of discovered replicates/samples. The bundled example has 5 replicates,
-# so burnin must be 0-4; use 0 here so the example runs as-is.
+# Number of leading discovered replicates to discard before concatenation
+# ("burn-in"). For SINGER input the replicates are correlated posterior MCMC
+# samples of the ARG, so dropping the first few discards the chain's warm-up;
+# for independently-simulated inputs (like the bundled example) they are just
+# independent draws and burn-in is optional. Applied after tree discovery and
+# must be smaller than the number of discovered replicates. The bundled
+# realistic example has 8 replicates, so burnin must be 0-7; use 0 here so the
+# example runs as-is.
 burnin: 0
 
 # Prefix used for merged output filenames: <base_name>.combined.<replicate>.<suffix>.
@@ -156,6 +163,23 @@ validation_first_chrom_only: true
 # validation_mutation_rate. If false, branch-mode statistics scaled by
 # validation_mutation_rate are used instead.
 validation_sim_branch: true
+
+# --------------------------------------------------------------------------- #
+# Optional: VCF export from the filtered tree sequences
+# --------------------------------------------------------------------------- #
+
+# If true, emit one bgzip-less `.vcf.gz` per (chromosome, replicate) under
+# <out_dir>/vcf/, built from the trimmed step-5 tree sequences (correct
+# per-chromosome coordinates). Variable sites only (no invariant sites).
+# Samples pruned from a tree by trim_samples appear as missing (.) at sites in
+# those intervals. Haploid individuals are coded as a single allele (0/1);
+# diploid as 0/1-style. The replicate set follows `burnin` above (leading
+# replicates are already dropped). Disabled by default.
+emit_vcf: false
+
+# Restrict VCF output to specific replicate IDs (a subset of the post-burnin
+# replicates). Leave unset/null to emit every post-burnin replicate.
+# vcf_reps: ["4", "7"]
 
 # --------------------------------------------------------------------------- #
 # Cluster / SLURM execution

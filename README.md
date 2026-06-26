@@ -66,7 +66,7 @@ step-by-step explanation, and cluster execution, see
 
 One reasonable post-processing workflow for ARG tree sequences in this repo is:
 
-1. **Find low rec regions** Because regions of low recombination are more affected by linked selection, for analyses assuming the neutrality of the ARG it may be a good idea to remove low recombination regions ahead of time. Find windows in the genetic map in the bottom `X` percentile of `cM/Mb` using [scripts/hapmap_low_rec_mask.py](scripts/hapmap_low_rec_mask.py). This turns a HapMap-style recombination map plus a `.fai` into per-chromosome BED masks for very low-recombination regions. If your ARG was created with [singer-snakemake](https://github.com/nspope/singer-snakemake/tree/main) and the `paircoal-reweight: true` flag, depending on your intereste you might not need to run this this step (set `rec_fraction` to 0). 
+1. **Find low rec regions** Because regions of low recombination are more affected by linked selection, for analyses assuming the neutrality of the ARG it may be a good idea to remove low recombination regions ahead of time. Find windows in the genetic map in the bottom `X` percentile of `cM/Mb` using [scripts/hapmap_low_rec_mask.py](scripts/hapmap_low_rec_mask.py). This turns a HapMap-style recombination map plus a `.fai` into per-chromosome BED masks for very low-recombination regions. The `rec_fraction` cutoff ranks the intervals *between map markers* by recombination rate and masks the lowest fraction of those **intervals** — not the lowest fraction of base pairs. Because low-recombination intervals tend to be long, masking e.g. the bottom 5 % of intervals can remove substantially more than 5 % of the genome by bp. If your ARG was created with [singer-snakemake](https://github.com/nspope/singer-snakemake/tree/main) and the `paircoal-reweight: true` flag, depending on your intereste you might not need to run this this step (set `rec_fraction` to 0). 
 2. **Find regions of poor alignment** Find windows of `size` kb where more than `X`% of bp are masked using [scripts/find_low_access_regions.py](scripts/find_low_access_regions.py). This inspects the inferred mutation map for a tree sequence and writes low-accessibility windows to a BED file.
 3. **Find aberrant mutational load** All samples in a tree should have similar derived-mutation loads after accounting for local mutation-rate variation. In windows of `number` SNPs or fixed bp size, simulate mutations once on the input ARG to get a per-window per-individual expected load. [scripts/mutload_masks.py](scripts/mutload_masks.py) flags any (window, individual) pair whose observed load differs from its simulated expectation by more than `X`%, writing one BED row per outlier window with the affected individuals comma-joined in column 4 for [scripts/trim_samples.py](scripts/trim_samples.py) to prune those samples from just those windows. The comparison is per individual: a sample's per-window load is summed across all of that individual's sample nodes before the test, so for haploid data (one sample node per individual, e.g. the `admix` dataset) the comparison is effectively per sample, while for diploid/polyploid data the haploid copies are pooled into a single per-individual test. This is what the Snakemake workflow calls. [scripts/mutload_summary.py](scripts/mutload_summary.py) provides an HTML diagnostic that prunes the same (window, individual) pairs, plots each individual's residual observed load as an ASCII bar chart, and highlights in red anyone still outside the cutoff band after pruning as a candidate for manual whole-sample removal. A zero simulated expectation in a window flags any observed-positive load as a high-load outlier.
 4. **Remove affected regions** For each chromosome, combine the BED files from steps 1-3 (<chr>.low_rec.mask.bed, low_access.ws<window>.accbp<cutoff>.bed, and <ts_stem>_mutation_masked.bed), then remove those genomic regions from a directory of tree sequences with [scripts/trim_regions.py](scripts/trim_regions.py). This script applies a supplied BED mask and writes trimmed tree sequences.
@@ -117,7 +117,7 @@ Required keys:
 - `root_dir`: path to the chromosome-subdirectory root
 - `hapmap`: single HapMap recombination map covering **all** chromosomes (one combined file, not one per chromosome — rows are grouped by the `Chromosome` column), used for step 1
 - `fai`: FASTA index used for chromosome lengths
-- `rec_fraction`: fraction of recombination-rate intervals (ranked by `Rate(cM/Mb)`, lowest first) to include in the low-recombination mask; e.g. `0.1` masks the bottom 10 % of intervals, while `0.0` writes empty low-recombination masks
+- `rec_fraction`: fraction of recombination-rate **intervals** (ranked by `Rate(cM/Mb)`, lowest first) to include in the low-recombination mask; e.g. `0.1` masks the bottom 10 % of intervals, while `0.0` writes empty low-recombination masks. Note this is a fraction of the *number of intervals between map markers*, not of base pairs — because the lowest-recombination intervals tend to be the longest, masking the bottom 5 % of intervals can remove well over 5 % of the genome by bp
 - `low_access_window_size`: window size in bp for step 2
 - `low_access_cutoff_bp`: minimum accessible bp per window for step 2
 - exactly one of `mutload_window_size` or `mutload_snp_window` for step 3
@@ -140,6 +140,8 @@ Optional keys (all have sensible defaults):
 - `validation_mutation_rate`: per-step override of `mutation_rate` for step 6 validation plots (defaults to `mutation_rate` if unset); omit/leave both unset or set to `null` to skip step 6
 - `validation_first_chrom_only`: run step 6 only on the first chromosome (default: `true`)
 - `validation_sim_branch`: simulate site mutations on each ARG replicate with msprime for a posterior-predictive check instead of scaling branch statistics (default: `false`)
+- `emit_vcf`: if `true`, export one `.vcf.gz` per (chromosome, replicate) from the trimmed step-5 tree sequences into `<out_dir>/vcf/` (default: `false`); see [VCF export](#vcf-export) below
+- `vcf_reps`: restrict VCF output to specific replicate IDs (a subset of the post-`burnin` replicates); leave unset/null to emit every post-`burnin` replicate
 
 **Where the mutation rate comes from.** Steps 3 and 6 resolve a per-bp mutation rate in this order: (1) a ratemap embedded in the tree-sequence metadata, (2) a sibling `*.mut_rate.p` file near the treefile, (3) the scalar `mutation_rate` (or its per-step override). SINGER output normally provides (1) or (2), so a `*.mut_rate.p` file is *not* required if a ratemap is embedded. **For ARGs produced by non-SINGER software** — which typically carry no embedded ratemap and ship no `*.mut_rate.p` — just set the scalar `mutation_rate` and the pipeline runs without any ratemap file. One caveat: step 3's outlier test is designed to correct for *local* mutation-rate variation, so a flat scalar reduces it to a uniform-rate expectation (no spatial correction); prefer an embedded or sibling ratemap for step 3 when you have one. Step 6's diversity scaling is unaffected by this and works fine with a scalar.
 
@@ -166,6 +168,7 @@ The Snakemake workflow runs the same logical steps as the manual workflow:
 5. Trim the affected samples from each trimmed treefile
 6. Concatenate chromosomes for each replicate into one combined tree sequence; ratemaps are merged across chromosomes and carried forward
 7. (optional) Run validation plots on original and cleaned tree sequences and generate a self-contained HTML pipeline summary
+8. (optional) Export a per-(chromosome, replicate) VCF from the trimmed tree sequences (`emit_vcf`); see [VCF export](#vcf-export) below
 
 The final merged outputs are named:
 
@@ -174,6 +177,15 @@ The final merged outputs are named:
 ```
 
 and are written under the configured `out_dir` in a `combined/` directory.
+
+### VCF export
+
+Set `emit_vcf: true` to write one bgzip-less `.vcf.gz` per `(chromosome, replicate)` under `<out_dir>/vcf/<chrom>/<rep>.vcf.gz`, produced by [`scripts/export_vcf.py`](scripts/export_vcf.py) from the trimmed step-5 tree sequences (so coordinates are real per-chromosome positions, not the concatenated coordinates of the merged ARG). Notes:
+
+- **Variable sites only** — the records are the sites carried on the ARG; the pipeline does not synthesize invariant/monomorphic positions.
+- **Pruned samples are missing, not dropped.** Because `trim_samples` leaves a pruned sample *isolated* over its intervals, that sample is written as a missing genotype (`.`) at any site inside those intervals (via tskit's `isolated_as_missing`), while remaining present elsewhere. The sample/site is never globally removed.
+- **Ploidy-aware genotypes** — a haploid individual (one sample node, e.g. the `admix` data) is coded as a single allele `0`/`1`; a diploid individual as `0|1`-style. ARG genotypes are phased (`|`).
+- **One VCF per replicate** — each replicate is a distinct ARG with its own topology, sites, and per-replicate trimming, so VCFs differ across replicates. The replicate set follows the pipeline `burnin` (leading replicates already dropped); restrict further with `vcf_reps`. To get one genome-wide VCF per replicate, `bcftools concat` the per-chromosome files.
 
 ### How To Run
 
@@ -246,6 +258,7 @@ By default, Snakemake writes outputs beneath `out_dir` with subdirectories for e
   step5_trimmed_samples/
   combined/
   step6_validation/    # step 6 validation plots (original and cleaned), if configured
+  vcf/                 # per-(chromosome, replicate) VCFs, if emit_vcf: true
   pipeline_summary.html
   logs/
 ```
@@ -265,6 +278,7 @@ Pipeline scripts (called by the Snakefile). Run any with `--help` for arguments,
 - [`trim_samples.py`](scripts/trim_samples.py) — remove individuals genome-wide (`--individuals`) or over BED intervals (`--remove`). See [NOTES.md](NOTES.md) for the exact sample-ID matching rules.
 - [`validation_plots_from_ts.py`](scripts/validation_plots_from_ts.py) — SINGER-style QC plots (mutational load, diversity, Tajima's D, folded/unfolded SFS) across TS replicates; optional observed-vs-simulated overlays.
 - [`merge_treefiles_by_replicate.py`](scripts/merge_treefiles_by_replicate.py) — concatenate chromosome-specific tree-sequence files by replicate; embedded mutation-rate ratemaps are merged and carried forward.
+- [`export_vcf.py`](scripts/export_vcf.py) — export a `.vcf`/`.vcf.gz` from a (filtered) tree sequence: variable sites only, ploidy-aware genotypes, and samples pruned by `trim_samples` written as missing (`.`) via `isolated_as_missing`. Driven by `emit_vcf` (pipeline step 8); see [VCF export](#vcf-export).
 - [`pipeline_summary.py`](scripts/pipeline_summary.py) — self-contained HTML report of genome retention, per-individual outlier counts, and embedded validation plots.
 
 ### ⚠️ Warning: summary statistics after sample pruning

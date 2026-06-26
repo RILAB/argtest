@@ -169,6 +169,13 @@ if MERGED_OUT_SUFFIX is not None and MERGED_OUT_SUFFIX not in VALID_SUFFIXES:
     raise WorkflowError(f"merged_out_suffix must be one of {sorted(VALID_SUFFIXES)}")
 MERGE_SUFFIX_ARG = f"--out-suffix {MERGED_OUT_SUFFIX}" if MERGED_OUT_SUFFIX else ""
 
+# Optional VCF export from the filtered per-(chrom, rep) tree sequences (step 5).
+EMIT_VCF = bool(config.get("emit_vcf", False))
+_VCF_REPS_CFG = config.get("vcf_reps", None)
+VCF_REPS_REQUESTED = (
+    [str(r) for r in _VCF_REPS_CFG] if _VCF_REPS_CFG else None
+)  # None/empty -> every post-burnin replicate
+
 STEP1_DIR = OUT_DIR / "step1_low_rec"
 STEP2_DIR = OUT_DIR / "step2_low_access"
 STEP3_DIR = OUT_DIR / "step3_mutload"
@@ -177,6 +184,7 @@ STEP4_TRIM_DIR = OUT_DIR / "step4_trimmed_regions"
 STEP5_DIR = OUT_DIR / "step5_trimmed_samples"
 MERGED_DIR = OUT_DIR / "combined"
 STEP6_DIR = OUT_DIR / "step6_validation"
+VCF_DIR = OUT_DIR / "vcf"
 LOG_DIR = OUT_DIR / "logs"
 
 
@@ -283,6 +291,26 @@ STEP6_TARGETS = (
     if VALIDATION_MUTATION_RATE is not None
     else []
 )
+
+if EMIT_VCF:
+    if VCF_REPS_REQUESTED is None:
+        VCF_REPS = list(REPLICATES)
+    else:
+        _unknown = [r for r in VCF_REPS_REQUESTED if r not in set(REPLICATES)]
+        if _unknown:
+            raise WorkflowError(
+                f"vcf_reps lists replicates not in the post-burnin set {REPLICATES}: {_unknown}"
+            )
+        VCF_REPS = VCF_REPS_REQUESTED
+    _vcf_rep_set = set(VCF_REPS)
+    VCF_TARGETS = [
+        str(VCF_DIR / chrom / f"{rep}.vcf.gz")
+        for (chrom, rep) in PAIRS
+        if rep in _vcf_rep_set
+    ]
+else:
+    VCF_TARGETS = []
+
 SUMMARY_TARGET = str(OUT_DIR / "pipeline_summary.html")
 
 
@@ -319,7 +347,7 @@ def ts_input_for_pair_ext(wildcards):
 
 rule all:
     input:
-        MERGED_TARGETS + STEP6_TARGETS + [SUMMARY_TARGET]
+        MERGED_TARGETS + STEP6_TARGETS + VCF_TARGETS + [SUMMARY_TARGET]
 
 
 rule step1_low_rec_masks:
@@ -528,6 +556,38 @@ rule merge_replicates:
           --replicate "{wildcards.rep}" \
           >> "{log}" 2>&1
         """
+
+
+def vcf_input_ts(wildcards):
+    return str(STEP5_DIR / wildcards.chrom / f"{wildcards.rep}.{PAIR_EXT[(wildcards.chrom, wildcards.rep)]}")
+
+
+if EMIT_VCF:
+    rule export_vcf:
+        input:
+            vcf_input_ts
+        output:
+            str(VCF_DIR / "{chrom}" / "{rep}.vcf.gz")
+        threads: res_threads("export_vcf")
+        resources:
+            mem_mb=res_mem_mb("export_vcf"),
+            time=res_time("export_vcf"),
+            slurm_partition=res_partition("export_vcf"),
+        wildcard_constraints:
+            rep="|".join(re.escape(r) for r in REPLICATES),
+        log:
+            str(LOG_DIR / "vcf" / "{chrom}" / "{rep}.log")
+        params:
+            suffix_to_strip=SUFFIX_TO_STRIP,
+        shell:
+            """
+            python scripts/export_vcf.py \
+              --ts "{input}" \
+              --out "{output}" \
+              --chrom "{wildcards.chrom}" \
+              --suffix-to-strip "{params.suffix_to_strip}" \
+              --log "{log}"
+            """
 
 
 def step6_inputs_for_chrom(wildcards):
