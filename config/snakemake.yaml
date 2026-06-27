@@ -155,13 +155,15 @@ base_name: "run"
 out_dir: "argtest-realistic-example-out"
 
 # --------------------------------------------------------------------------- #
-# Step 6: validation plots (omit validation_mutation_rate or set to null to skip)
+# Step 6: validation plots
 # --------------------------------------------------------------------------- #
 
 # Mutation rate (per bp per generation) used to scale branch-mode diversity for
 # comparison to site-mode diversity in validation plots, and as the scalar
 # fallback for validation_sim_branch below. Defaults to the shared `mutation_rate`
-# if unset; set here only to override it for step 6. Set to null to skip step 6.
+# if unset; set here only to override it for step 6. Set to null to omit the
+# scalar fallback. Step 6 is skipped only when this is null/unset AND
+# validation_sim_branch is false.
 validation_mutation_rate: 3e-8 #  base mutation rate used to build the realistic example
 
 # If true, run validation plots only for the first chromosome (faster for
@@ -172,8 +174,9 @@ validation_first_chrom_only: true
 # mutation rate and compute site-mode statistics from those simulations
 # (posterior predictive check). Uses an embedded ratemap or a co-located
 # *.mut_rate.p file when available, otherwise falls back to the uniform
-# validation_mutation_rate. If false, branch-mode statistics scaled by
-# validation_mutation_rate are used instead.
+# validation_mutation_rate. This can run without validation_mutation_rate when
+# every validated tree sequence has an embedded/sibling ratemap. If false,
+# branch-mode statistics scaled by validation_mutation_rate are used instead.
 validation_sim_branch: true
 
 # --------------------------------------------------------------------------- #

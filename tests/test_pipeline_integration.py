@@ -215,6 +215,19 @@ def test_snakemake_dry_run(tmp_path):
 
 
 @pytest.mark.skipif(not SNK_AVAILABLE, reason=SNK_SKIP_REASON)
+def test_snakemake_ratemap_only_validation_sim_branch_dry_run(tmp_path):
+    dataset = build_dataset(tmp_path)
+    with open(dataset["config"], "a") as fh:
+        fh.write("validation_sim_branch: True\n")
+        fh.write("validation_first_chrom_only: True\n")
+
+    result = run_snakemake(REPO_ROOT, dataset["config"], "-n", "-p")
+
+    assert "step6_validation_plots" in result.stdout
+    assert "step6_validation/chr1/done.txt" in result.stdout
+
+
+@pytest.mark.skipif(not SNK_AVAILABLE, reason=SNK_SKIP_REASON)
 def test_snakemake_real_run(tmp_path):
     dataset = build_dataset(tmp_path)
     result = run_snakemake(REPO_ROOT, dataset["config"], "--cores", "1", "--rerun-incomplete")

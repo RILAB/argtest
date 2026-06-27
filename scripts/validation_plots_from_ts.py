@@ -99,10 +99,11 @@ def parse_args():
     p.add_argument(
         "--mutation-rate",
         type=float,
-        required=True,
+        default=None,
         help=(
             "Fallback uniform mutation rate for --sim-branch when no *.mut_rate.p "
-            "ratemap is discoverable. Unused when --sim-branch is not set."
+            "ratemap is discoverable. Optional when --sim-branch can use a ratemap; "
+            "unused when --sim-branch is not set."
         ),
     )
     p.add_argument(
@@ -530,6 +531,11 @@ def main():
             raise RuntimeError("msprime is required for --sim-branch mode")
         mu_ratemap = _try_mu_ratemap(ts_files)
         if mu_ratemap is None:
+            if args.mutation_rate is None:
+                raise RuntimeError(
+                    "--sim-branch requires either an embedded/sibling mutation-rate "
+                    "ratemap or --mutation-rate as a scalar fallback."
+                )
             warnings.warn(
                 "--sim-branch requested but no *.mut_rate.p file found; "
                 "simulating with uniform rate (--mutation-rate)."
@@ -547,6 +553,12 @@ def main():
     if args.compare is not None:
         cmp_files = find_tree_files(args.compare, args.pattern)
         cmp_mu_ratemap = _try_mu_ratemap(cmp_files) if args.sim_branch else None
+        if args.sim_branch and cmp_mu_ratemap is None and args.mutation_rate is None:
+            raise RuntimeError(
+                "--sim-branch with --compare requires the comparison directory to "
+                "have an embedded/sibling mutation-rate ratemap, or --mutation-rate "
+                "as a scalar fallback."
+            )
         cmp = collect_stats(
             cmp_files, args.window_size, args.burnin_frac, args.mutation_rate,
             mcmc_thin=args.mcmc_thin,

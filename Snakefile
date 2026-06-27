@@ -55,6 +55,7 @@ RESOURCE_RULES = {
     "step4_trim_regions_single",
     "step5_trim_samples_single",
     "merge_replicates",
+    "export_vcf",
     "step6_validation_plots",
     "step7_summary",
 }
@@ -127,10 +128,9 @@ MUTLOAD_FRACTION_ARG = f"--fraction {MUTLOAD_FRACTION}" if MUTLOAD_FRACTION is n
 
 # Shared organism-wide mutation rate (per bp per generation). Serves as the
 # default for both the mutload sim-based expectation (step 3) and the validation
-# plots (step 6). Either step may override it with its own key below; an explicit
-# null on a per-step key disables that step's scalar (validation: null skips step
-# 6 entirely). Only used as a fallback — an embedded ts.metadata ratemap or a
-# sibling *.mut_rate.p file always takes precedence (see resolve_mu_rate).
+# plots (step 6). Either step may override it with its own key below. Only used
+# as a fallback — an embedded ts.metadata ratemap or a sibling *.mut_rate.p file
+# always takes precedence (see resolve_mu_rate).
 MUTATION_RATE = config.get("mutation_rate", None)
 if MUTATION_RATE is not None:
     MUTATION_RATE = float(MUTATION_RATE)
@@ -163,6 +163,12 @@ if VALIDATION_MUTATION_RATE is not None:
         raise WorkflowError("validation_mutation_rate must be > 0")
 VALIDATION_FIRST_CHROM_ONLY = bool(config.get("validation_first_chrom_only", True))
 VALIDATION_SIM_BRANCH = bool(config.get("validation_sim_branch", False))
+RUN_VALIDATION = VALIDATION_MUTATION_RATE is not None or VALIDATION_SIM_BRANCH
+VALIDATION_MUTATION_RATE_ARG = (
+    f"--mutation-rate {VALIDATION_MUTATION_RATE}"
+    if VALIDATION_MUTATION_RATE is not None
+    else ""
+)
 
 MERGED_OUT_SUFFIX = config.get("merged_out_suffix", None)
 if MERGED_OUT_SUFFIX is not None and MERGED_OUT_SUFFIX not in VALID_SUFFIXES:
@@ -314,7 +320,7 @@ if not MERGED_TARGETS:
 VALIDATION_CHROMS = [CHROMS[0]] if VALIDATION_FIRST_CHROM_ONLY else CHROMS
 STEP6_TARGETS = (
     [str(STEP6_DIR / chrom / "done.txt") for chrom in VALIDATION_CHROMS]
-    if VALIDATION_MUTATION_RATE is not None
+    if RUN_VALIDATION
     else []
 )
 
@@ -637,7 +643,7 @@ def step6_original_inputs_for_chrom(wildcards):
     ]
 
 
-if VALIDATION_MUTATION_RATE is not None:
+if RUN_VALIDATION:
     rule step6_validation_plots:
         input:
             cleaned=step6_inputs_for_chrom,
@@ -654,7 +660,7 @@ if VALIDATION_MUTATION_RATE is not None:
         params:
             cleaned_out=lambda wildcards: str(STEP6_DIR / wildcards.chrom / "cleaned"),
             original_out=lambda wildcards: str(STEP6_DIR / wildcards.chrom / "original"),
-            mutation_rate=VALIDATION_MUTATION_RATE,
+            mutation_rate_arg=VALIDATION_MUTATION_RATE_ARG,
             sim_branch_flag="--sim-branch" if VALIDATION_SIM_BRANCH else "",
         shell:
             """
@@ -697,7 +703,7 @@ PY
               --ts-dir "$cleaned_stage" \
               --pattern "*" \
               --burnin-frac 0 \
-              --mutation-rate {params.mutation_rate} \
+              {params.mutation_rate_arg} \
               --out-dir "{params.cleaned_out}" \
               {params.sim_branch_flag} \
               >> "{log}" 2>&1
@@ -705,7 +711,7 @@ PY
               --ts-dir "$original_stage" \
               --pattern "*" \
               --burnin-frac 0 \
-              --mutation-rate {params.mutation_rate} \
+              {params.mutation_rate_arg} \
               --out-dir "{params.original_out}" \
               {params.sim_branch_flag} \
               >> "{log}" 2>&1
