@@ -122,8 +122,7 @@ Optional keys (all have sensible defaults):
 - `tree_pattern`: glob for treefiles within each chromosome directory (default: `"*"`), for example `"*.trees"` or `"*.tsz"`
 - `tree_subdir`: optional subdirectory within each chromosome directory that holds the treefiles (default: unset → files live directly in the chromosome dir); e.g. `"trees"` for SINGER-style `chrN/trees/` layouts
 - `mutload_cutoff`: outlier cutoff fraction for step 3 (default: `0.5`)
-- `mutation_rate`: shared scalar mutation rate (per bp per generation) used as the fallback for **both** step 3 and step 6 when no embedded or sibling ratemap is available; set this once instead of the two per-step keys below
-- `mutload_mutation_rate`: per-step override of `mutation_rate` for step 3 only (defaults to `mutation_rate` if unset)
+- `mutation_rate`: single scalar mutation rate (per bp per generation), the shared fallback for **both** step 3 and step 6 when no embedded or sibling ratemap is available
 - `mutload_random_seed`: base seed for the per-replicate mutation simulation in step 3 (default: `1`)
 - `mutload_fraction`: fraction threshold for writing mutation-masked BED rows in step 3
 - `suffix_to_strip`: suffix removed from sample IDs before matching in step 3 and step 5 (default: `"_anchorwave"`)
@@ -134,13 +133,13 @@ Optional keys (all have sensible defaults):
 - `base_name`: prefix used for merged outputs (default: name of `root_dir`)
 - `merged_out_suffix`: force a specific output suffix for merged files (`.ts`, `.trees`, `.tsz`); default is to inherit the suffix of the first input
 - `out_dir`: output root for Snakemake products (default: `snakemake_out`; tilde is expanded)
-- `validation_mutation_rate`: per-step override of `mutation_rate` for step 6 validation plots (defaults to `mutation_rate` if unset); omit/leave both unset or set to `null` to omit the scalar fallback. Step 6 is skipped only when this is null/unset and `validation_sim_branch` is `false`
+- `run_validation`: master switch for step 6 (default: `true`); set `false` to skip the validation plots while keeping `mutation_rate` set for step 3. Step 6 also auto-skips when no rate source is available (neither `mutation_rate` nor `validation_sim_branch`)
 - `validation_first_chrom_only`: run step 6 only on the first chromosome (default: `true`)
-- `validation_sim_branch`: simulate site mutations on each ARG replicate with msprime for a posterior-predictive check instead of scaling branch statistics (default: `false`); can run without a scalar `validation_mutation_rate` when every validated tree sequence has an embedded/sibling ratemap
+- `validation_sim_branch`: simulate site mutations on each ARG replicate with msprime for a posterior-predictive check instead of scaling branch statistics (default: `false`); can run without a scalar `mutation_rate` when every validated tree sequence has an embedded/sibling ratemap
 - `emit_vcf`: if `true`, export one `.vcf.gz` per (chromosome, replicate) from the trimmed step-5 tree sequences into `<out_dir>/vcf/` (default: `false`); see [VCF export](#vcf-export) below
 - `vcf_reps`: restrict VCF output to specific replicate IDs (a subset of the post-`burnin` replicates); leave unset/null to emit every post-`burnin` replicate
 
-**Where the mutation rate comes from.** Steps 3 and 6 resolve a per-bp mutation rate in this order: (1) a ratemap embedded in the tree-sequence metadata, (2) a sibling `*.mut_rate.p` file near the treefile, (3) the scalar `mutation_rate` (or its per-step override). SINGER output normally provides (1) or (2), so a `*.mut_rate.p` file is *not* required if a ratemap is embedded. **For ARGs produced by non-SINGER software** — which typically carry no embedded ratemap and ship no `*.mut_rate.p` — just set the scalar `mutation_rate` and the pipeline runs without any ratemap file. One caveat: step 3's outlier test is designed to correct for *local* mutation-rate variation, so a flat scalar reduces it to a uniform-rate expectation (no spatial correction); prefer an embedded or sibling ratemap for step 3 when you have one. Step 6 can run in `validation_sim_branch` mode with ratemaps alone; otherwise it needs a scalar rate for simulation or branch scaling.
+**Where the mutation rate comes from.** Steps 3 and 6 resolve a per-bp mutation rate in this order: (1) a ratemap embedded in the tree-sequence metadata, (2) a sibling `*.mut_rate.p` file near the treefile, (3) the scalar `mutation_rate`. SINGER output normally provides (1) or (2), so a `*.mut_rate.p` file is *not* required if a ratemap is embedded. **For ARGs produced by non-SINGER software** — which typically carry no embedded ratemap and ship no `*.mut_rate.p` — just set the scalar `mutation_rate` and the pipeline runs without any ratemap file. One caveat: step 3's outlier test is designed to correct for *local* mutation-rate variation, so a flat scalar reduces it to a uniform-rate expectation (no spatial correction); prefer an embedded or sibling ratemap for step 3 when you have one. Step 6 can run in `validation_sim_branch` mode with ratemaps alone; otherwise it needs a scalar rate for simulation or branch scaling.
 
 ### File naming and what must match
 

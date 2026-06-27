@@ -76,19 +76,15 @@ mutload_snp_window: 500
 # the input ARG.
 mutload_cutoff: 0.5
 
-# Organism-wide scalar mutation rate (per bp per generation), used as the shared
-# fallback for BOTH the mutational-load sim (step 3) and the validation plots
+# Single organism-wide scalar mutation rate (per bp per generation), shared as
+# the fallback for BOTH the mutational-load sim (step 3) and the validation plots
 # (step 6) whenever neither ts.metadata nor a sibling *.mut_rate.p file provides
-# a ratemap. Set this once instead of the two per-step keys. For ARGs from
-# non-SINGER software (which usually carry no embedded ratemap and no .mut_rate.p),
-# this scalar is the intended way to supply a rate.
-# mutation_rate: 3e-8
-
-# Per-step override of `mutation_rate` for the step-3 mutational-load sim only.
-# Leave unset to inherit `mutation_rate`. NOTE: a flat scalar removes the local
-# rate-variation correction the load test is designed around — prefer an
-# embedded/sibling ratemap for step 3 when one is available.
-# mutload_mutation_rate: 1e-8
+# a ratemap. For ARGs from non-SINGER software (which usually carry no embedded
+# ratemap and no .mut_rate.p), this scalar is the intended way to supply a rate.
+# NOTE: for step 3 a flat scalar removes the local rate-variation correction the
+# load test is designed around — prefer an embedded/sibling ratemap for step 3
+# when one is available.
+mutation_rate: 3e-8
 
 # Base seed for the per-replicate sim used to compute expected load. The actual
 # per-replicate seed is derived deterministically from this base plus the
@@ -158,13 +154,11 @@ out_dir: "argtest-realistic-example-out"
 # Step 6: validation plots
 # --------------------------------------------------------------------------- #
 
-# Mutation rate (per bp per generation) used to scale branch-mode diversity for
-# comparison to site-mode diversity in validation plots, and as the scalar
-# fallback for validation_sim_branch below. Defaults to the shared `mutation_rate`
-# if unset; set here only to override it for step 6. Set to null to omit the
-# scalar fallback. Step 6 is skipped only when this is null/unset AND
-# validation_sim_branch is false.
-validation_mutation_rate: 3e-8 #  base mutation rate used to build the realistic example
+# Master switch for step 6. When true (default) the validation plots run as long
+# as a rate source is available — the shared `mutation_rate` above, or
+# validation_sim_branch with an embedded/sibling ratemap. Set false to skip
+# step 6 while keeping `mutation_rate` set for step 3.
+run_validation: true
 
 # If true, run validation plots only for the first chromosome (faster for
 # quick QC checks). Set false to run for all chromosomes.
@@ -173,10 +167,10 @@ validation_first_chrom_only: true
 # If true, simulate mutations on each ARG replicate with msprime at the inferred
 # mutation rate and compute site-mode statistics from those simulations
 # (posterior predictive check). Uses an embedded ratemap or a co-located
-# *.mut_rate.p file when available, otherwise falls back to the uniform
-# validation_mutation_rate. This can run without validation_mutation_rate when
-# every validated tree sequence has an embedded/sibling ratemap. If false,
-# branch-mode statistics scaled by validation_mutation_rate are used instead.
+# *.mut_rate.p file when available, otherwise falls back to the shared scalar
+# `mutation_rate`. This can run without `mutation_rate` when every validated tree
+# sequence has an embedded/sibling ratemap. If false, branch-mode statistics
+# scaled by `mutation_rate` are used instead.
 validation_sim_branch: true
 
 # --------------------------------------------------------------------------- #

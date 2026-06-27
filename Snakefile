@@ -126,24 +126,17 @@ else:
 
 MUTLOAD_FRACTION_ARG = f"--fraction {MUTLOAD_FRACTION}" if MUTLOAD_FRACTION is not None else ""
 
-# Shared organism-wide mutation rate (per bp per generation). Serves as the
-# default for both the mutload sim-based expectation (step 3) and the validation
-# plots (step 6). Either step may override it with its own key below. Only used
-# as a fallback — an embedded ts.metadata ratemap or a sibling *.mut_rate.p file
-# always takes precedence (see resolve_mu_rate).
+# Single organism-wide scalar mutation rate (per bp per generation), shared by
+# both the mutload sim-based expectation (step 3) and the validation plots
+# (step 6). Only used as a fallback — an embedded ts.metadata ratemap or a
+# sibling *.mut_rate.p file always takes precedence (see resolve_mu_rate).
 MUTATION_RATE = config.get("mutation_rate", None)
 if MUTATION_RATE is not None:
     MUTATION_RATE = float(MUTATION_RATE)
     if MUTATION_RATE <= 0:
         raise WorkflowError("mutation_rate must be > 0")
-
-MUTLOAD_MUTATION_RATE = config.get("mutload_mutation_rate", MUTATION_RATE)
-if MUTLOAD_MUTATION_RATE is not None:
-    MUTLOAD_MUTATION_RATE = float(MUTLOAD_MUTATION_RATE)
-    if MUTLOAD_MUTATION_RATE <= 0:
-        raise WorkflowError("mutload_mutation_rate must be > 0")
-MUTLOAD_MUTATION_RATE_ARG = (
-    f"--mutation-rate {MUTLOAD_MUTATION_RATE}" if MUTLOAD_MUTATION_RATE is not None else ""
+MUTATION_RATE_ARG = (
+    f"--mutation-rate {MUTATION_RATE}" if MUTATION_RATE is not None else ""
 )
 
 MUTLOAD_RANDOM_SEED = int(config.get("mutload_random_seed", 1))
@@ -156,18 +149,14 @@ def mutload_seed_for(chrom: str, rep: str) -> int:
     # msprime accepts uint32; mod down and avoid 0 so seed is always valid.
     return (h % (2**31 - 1)) + 1
 
-VALIDATION_MUTATION_RATE = config.get("validation_mutation_rate", MUTATION_RATE)
-if VALIDATION_MUTATION_RATE is not None:
-    VALIDATION_MUTATION_RATE = float(VALIDATION_MUTATION_RATE)
-    if VALIDATION_MUTATION_RATE <= 0:
-        raise WorkflowError("validation_mutation_rate must be > 0")
 VALIDATION_FIRST_CHROM_ONLY = bool(config.get("validation_first_chrom_only", True))
 VALIDATION_SIM_BRANCH = bool(config.get("validation_sim_branch", False))
-RUN_VALIDATION = VALIDATION_MUTATION_RATE is not None or VALIDATION_SIM_BRANCH
-VALIDATION_MUTATION_RATE_ARG = (
-    f"--mutation-rate {VALIDATION_MUTATION_RATE}"
-    if VALIDATION_MUTATION_RATE is not None
-    else ""
+# Step 6 runs when explicitly enabled (run_validation, default true) AND a rate
+# source is available — the scalar mutation_rate, or sim-branch mode (which can
+# instead use an embedded/sibling ratemap). Set run_validation: false to skip
+# step 6 while keeping mutation_rate set for step 3.
+RUN_VALIDATION = bool(config.get("run_validation", True)) and (
+    MUTATION_RATE is not None or VALIDATION_SIM_BRANCH
 )
 
 MERGED_OUT_SUFFIX = config.get("merged_out_suffix", None)
@@ -459,7 +448,7 @@ rule step3_mutload_masks:
         cutoff=MUTLOAD_CUTOFF,
         fraction_arg=MUTLOAD_FRACTION_ARG,
         suffix_to_strip=SUFFIX_TO_STRIP,
-        mutation_rate_arg=MUTLOAD_MUTATION_RATE_ARG,
+        mutation_rate_arg=MUTATION_RATE_ARG,
         seed=lambda wildcards: mutload_seed_for(wildcards.chrom, wildcards.rep),
     shell:
         """
@@ -660,7 +649,7 @@ if RUN_VALIDATION:
         params:
             cleaned_out=lambda wildcards: str(STEP6_DIR / wildcards.chrom / "cleaned"),
             original_out=lambda wildcards: str(STEP6_DIR / wildcards.chrom / "original"),
-            mutation_rate_arg=VALIDATION_MUTATION_RATE_ARG,
+            mutation_rate_arg=MUTATION_RATE_ARG,
             sim_branch_flag="--sim-branch" if VALIDATION_SIM_BRANCH else "",
         shell:
             """
@@ -740,7 +729,7 @@ rule step7_summary:
         low_access_window=int(LOW_ACCESS_WINDOW_SIZE),
         low_access_cutoff=int(LOW_ACCESS_CUTOFF_BP),
         mutload_cutoff=MUTLOAD_CUTOFF,
-        mutation_rate=VALIDATION_MUTATION_RATE if VALIDATION_MUTATION_RATE is not None else "null",
+        mutation_rate=MUTATION_RATE if MUTATION_RATE is not None else "null",
         sim_branch="true" if VALIDATION_SIM_BRANCH else "false",
     shell:
         """
