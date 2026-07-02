@@ -3,6 +3,29 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
+## [v1.6] — 2026-07-01 — minimum-retained-samples filter
+
+### Added
+- Optional minimum-retained-samples filter (`min_samples`): a new step 5b
+  (`scripts/filter_min_samples.py`), run between `trim_samples` and the merge,
+  that drops local-tree intervals retaining fewer than `min_samples`
+  non-isolated sample nodes. Dropping uses `delete_intervals`, so sequence
+  coordinates are preserved (removed spans become empty gaps, no compaction),
+  and the `kept_intervals` metadata is intersected with the surviving spans so
+  downstream accessibility is not overestimated. Each (chromosome, replicate)
+  also gets a diagnostic BED of the dropped intervals. When set, the merge, VCF
+  export, and validation steps consume the filtered tree sequences. Unset/null
+  by default, so existing configs are unaffected. Retained-sample counts are
+  computed with a vectorized edge-endpoint coverage sweep rather than a
+  per-tree, per-sample loop.
+
+### Fixed
+- `scripts/coalescence_ne_plots_from_ts.py` now raises an informative error when
+  the empirical pair-coalescence CDF has too few independent deep coalescence
+  events to define the requested equal-mass `--num-bins` (naming the cause and
+  directing the user to `--time-bins-file`), instead of the opaque "quantile
+  edges are not strictly increasing".
+
 ## [v1.5] — 2026-06-26 — VCF export + shared mutation-rate config
 
 ### Added
