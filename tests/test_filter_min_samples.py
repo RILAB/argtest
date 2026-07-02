@@ -223,5 +223,11 @@ def test_min_samples_enabled_inserts_step(tmp_path):
     assert "step5b_filter_min_samples" in result.stdout
     # Merge/step6 must now consume the step-5b output directory.
     assert "step5b_min_samples" in result.stdout
-    assert "--ts-dir" in result.stdout
-    assert str(dataset["out_dir"] / "step5b_min_samples") in result.stdout
+    # The merge script finds inputs by globbing --ts-dir (not Snakemake's
+    # input: list), so pin the exact argument: it must point at the filtered
+    # step-5b dir, never the raw step-5 dir. (`step5b_min_samples` also appears
+    # elsewhere in the dry-run output, so a plain substring check is too weak.)
+    step5b_dir = str(dataset["out_dir"] / "step5b_min_samples")
+    step5_dir = str(dataset["out_dir"] / "step5_trimmed_samples")
+    assert f'--ts-dir "{step5b_dir}"' in result.stdout
+    assert f'--ts-dir "{step5_dir}"' not in result.stdout

@@ -164,6 +164,11 @@ run_validation: true
 # quick QC checks). Set false to run for all chromosomes.
 validation_first_chrom_only: true
 
+# Window size in bp for step-6 diversity, Tajima's D, and segregating-sites
+# validation plots. Larger windows run faster and use less memory on large ARGs
+# but give coarser genome-wide QC curves.
+validation_window_size: 100000
+
 # If true, simulate mutations on each ARG replicate with msprime at the inferred
 # mutation rate and compute site-mode statistics from those simulations
 # (posterior predictive check). Uses an embedded ratemap or a co-located

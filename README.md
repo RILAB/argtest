@@ -136,6 +136,7 @@ Optional keys (all have sensible defaults):
 - `out_dir`: output root for Snakemake products (default: `snakemake_out`; tilde is expanded)
 - `run_validation`: master switch for step 6 (default: `true`); set `false` to skip the validation plots while keeping `mutation_rate` set for step 3. Step 6 also auto-skips when no rate source is available (neither `mutation_rate` nor `validation_sim_branch`)
 - `validation_first_chrom_only`: run step 6 only on the first chromosome (default: `true`)
+- `validation_window_size`: window size in bp for step-6 diversity, Tajima's D, and segregating-sites validation plots (default: `100000`); larger windows run faster and use less memory on large ARGs but give coarser QC curves
 - `validation_sim_branch`: simulate site mutations on each ARG replicate with msprime for a posterior-predictive check instead of scaling branch statistics (default: `false`); can run without a scalar `mutation_rate` when every validated tree sequence has an embedded/sibling ratemap
 - `emit_vcf`: if `true`, export one `.vcf.gz` per (chromosome, replicate) from the filtered per-chromosome tree sequences into `<out_dir>/vcf/` (default: `false`); see [VCF export](#vcf-export) below
 - `vcf_reps`: restrict VCF output to specific replicate IDs (a subset of the post-`burnin` replicates); leave unset/null to emit every post-`burnin` replicate

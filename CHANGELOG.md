@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
-## [v1.6] — 2026-07-01 — minimum-retained-samples filter
+## [v1.6] — 2026-07-01 — minimum-retained-samples filter + configurable validation window
 
 ### Added
 - Optional minimum-retained-samples filter (`min_samples`): a new step 5b
@@ -18,6 +18,11 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
   by default, so existing configs are unaffected. Retained-sample counts are
   computed with a vectorized edge-endpoint coverage sweep rather than a
   per-tree, per-sample loop.
+- `validation_window_size` config key: window size in bp for the step-6
+  diversity, Tajima's D, and segregating-sites validation plots (default:
+  `100000`). Larger windows run faster and use less memory on large ARGs at the
+  cost of coarser QC curves. The standalone `validation_plots_from_ts.py`
+  default was aligned to 100000 to match (previously 50000).
 
 ### Fixed
 - `scripts/coalescence_ne_plots_from_ts.py` now raises an informative error when

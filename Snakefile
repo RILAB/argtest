@@ -152,6 +152,9 @@ def mutload_seed_for(chrom: str, rep: str) -> int:
 
 VALIDATION_FIRST_CHROM_ONLY = bool(config.get("validation_first_chrom_only", True))
 VALIDATION_SIM_BRANCH = bool(config.get("validation_sim_branch", False))
+VALIDATION_WINDOW_SIZE = config.get("validation_window_size", 100000)
+if float(VALIDATION_WINDOW_SIZE) <= 0:
+    raise WorkflowError("validation_window_size must be > 0")
 # Step 6 runs when explicitly enabled (run_validation, default true) AND a rate
 # source is available — the scalar mutation_rate, or sim-branch mode (which can
 # instead use an embedded/sibling ratemap). Set run_validation: false to skip
@@ -699,6 +702,7 @@ if RUN_VALIDATION:
             cleaned_out=lambda wildcards: str(STEP6_DIR / wildcards.chrom / "cleaned"),
             original_out=lambda wildcards: str(STEP6_DIR / wildcards.chrom / "original"),
             mutation_rate_arg=MUTATION_RATE_ARG,
+            window_size=str(VALIDATION_WINDOW_SIZE),
             sim_branch_flag="--sim-branch" if VALIDATION_SIM_BRANCH else "",
         shell:
             """
@@ -741,6 +745,7 @@ PY
               --ts-dir "$cleaned_stage" \
               --pattern "*" \
               --burnin-frac 0 \
+              --window-size {params.window_size} \
               {params.mutation_rate_arg} \
               --out-dir "{params.cleaned_out}" \
               {params.sim_branch_flag} \
@@ -749,6 +754,7 @@ PY
               --ts-dir "$original_stage" \
               --pattern "*" \
               --burnin-frac 0 \
+              --window-size {params.window_size} \
               {params.mutation_rate_arg} \
               --out-dir "{params.original_out}" \
               {params.sim_branch_flag} \

@@ -93,8 +93,11 @@ def parse_args():
     p.add_argument(
         "--window-size",
         type=float,
-        default=5.0e4,
-        help="Window size (bp) for diversity/Tajima's D validation plots (default: 50000).",
+        default=1.0e5,
+        help=(
+            "Window size (bp) for the diversity, Tajima's D, and "
+            "segregating-sites validation plots (default: 100000)."
+        ),
     )
     p.add_argument(
         "--mutation-rate",

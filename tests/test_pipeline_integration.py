@@ -235,6 +235,7 @@ def test_snakemake_ratemap_only_validation_sim_branch_dry_run(tmp_path):
 
     assert "step6_validation_plots" in result.stdout
     assert "step6_validation/chr1/done.txt" in result.stdout
+    assert "--window-size 100000" in result.stdout
 
 
 @pytest.mark.skipif(not SNK_AVAILABLE, reason=SNK_SKIP_REASON)
