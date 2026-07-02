@@ -54,6 +54,7 @@ RESOURCE_RULES = {
     "step4_combine_remove_masks",
     "step4_trim_regions_single",
     "step5_trim_samples_single",
+    "step5b_filter_min_samples",
     "merge_replicates",
     "export_vcf",
     "step6_validation_plots",
@@ -197,12 +198,29 @@ for _bed in TRIM_REMOVE_BEDS:
         raise WorkflowError(f"trim_remove_bed file not found: {_bed}")
 TRIM_REMOVE_ARG = " ".join(f'--remove "{b}"' for b in TRIM_REMOVE_BEDS)
 
+# Optional minimum-retained-samples filter (step 5b), run BETWEEN step 5 and
+# the merge. When min_samples is set to an integer, intervals whose local trees
+# retain fewer than that many non-isolated sample nodes are dropped via
+# delete_intervals (coordinates preserved). Unset/null (the default) skips the
+# step entirely, so downstream rules consume the raw step-5 output unchanged.
+MIN_SAMPLES = config.get("min_samples", None)
+if MIN_SAMPLES is not None:
+    MIN_SAMPLES = int(MIN_SAMPLES)
+    if MIN_SAMPLES < 0:
+        raise WorkflowError("min_samples must be >= 0")
+FILTER_MIN_SAMPLES = MIN_SAMPLES is not None
+
 STEP1_DIR = OUT_DIR / "step1_low_rec"
 STEP2_DIR = OUT_DIR / "step2_low_access"
 STEP3_DIR = OUT_DIR / "step3_mutload"
 STEP4_MASK_DIR = OUT_DIR / "step4_masks"
 STEP4_TRIM_DIR = OUT_DIR / "step4_trimmed_regions"
 STEP5_DIR = OUT_DIR / "step5_trimmed_samples"
+STEP5B_DIR = OUT_DIR / "step5b_min_samples"
+# Directory that downstream consumers (merge, step6, export_vcf) read filtered
+# per-(chrom, rep) tree sequences from: the step-5b output when the filter is
+# enabled, otherwise the raw step-5 output.
+FILTERED_TS_DIR = STEP5B_DIR if FILTER_MIN_SAMPLES else STEP5_DIR
 MERGED_DIR = OUT_DIR / "combined"
 STEP6_DIR = OUT_DIR / "step6_validation"
 VCF_DIR = OUT_DIR / "vcf"
@@ -341,7 +359,7 @@ def tree_inputs_for_chrom(wildcards):
 
 def step5_inputs_for_rep(wildcards):
     return [
-        str(STEP5_DIR / chrom / f"{wildcards.rep}.{PAIR_EXT[(chrom, wildcards.rep)]}")
+        str(FILTERED_TS_DIR / chrom / f"{wildcards.rep}.{PAIR_EXT[(chrom, wildcards.rep)]}")
         for chrom in CHROMS
         if (chrom, wildcards.rep) in TS_LOOKUP
     ]
@@ -551,6 +569,37 @@ rule step5_trim_samples_single:
         """
 
 
+if FILTER_MIN_SAMPLES:
+    rule step5b_filter_min_samples:
+        input:
+            ts=str(STEP5_DIR / "{chrom}" / "{rep}.{ext}"),
+        output:
+            ts=str(STEP5B_DIR / "{chrom}" / "{rep}.{ext}"),
+            mask=str(STEP5B_DIR / "{chrom}" / "{rep}.{ext}.low_sample.bed"),
+        threads: res_threads("step5b_filter_min_samples")
+        resources:
+            mem_mb=res_mem_mb("step5b_filter_min_samples"),
+            time=res_time("step5b_filter_min_samples"),
+            slurm_partition=res_partition("step5b_filter_min_samples"),
+        wildcard_constraints:
+            rep="|".join(re.escape(r) for r in REPLICATES),
+            ext="|".join(re.escape(s.lstrip(".")) for s in VALID_SUFFIXES),
+        log:
+            str(LOG_DIR / "step5b" / "{chrom}" / "{rep}.{ext}.log")
+        params:
+            min_samples=MIN_SAMPLES,
+        shell:
+            """
+            python scripts/filter_min_samples.py \
+              --ts "{input.ts}" \
+              --min-samples {params.min_samples} \
+              --chrom {wildcards.chrom} \
+              --out "{output.ts}" \
+              --out-mask "{output.mask}" \
+              --log "{log}"
+            """
+
+
 rule merge_replicates:
     input:
         step5_inputs_for_rep
@@ -585,7 +634,7 @@ rule merge_replicates:
 
 
 def vcf_input_ts(wildcards):
-    return str(STEP5_DIR / wildcards.chrom / f"{wildcards.rep}.{PAIR_EXT[(wildcards.chrom, wildcards.rep)]}")
+    return str(FILTERED_TS_DIR / wildcards.chrom / f"{wildcards.rep}.{PAIR_EXT[(wildcards.chrom, wildcards.rep)]}")
 
 
 if EMIT_VCF:
@@ -618,7 +667,7 @@ if EMIT_VCF:
 
 def step6_inputs_for_chrom(wildcards):
     return [
-        str(STEP5_DIR / wildcards.chrom / f"{rep}.{PAIR_EXT[(wildcards.chrom, rep)]}")
+        str(FILTERED_TS_DIR / wildcards.chrom / f"{rep}.{PAIR_EXT[(wildcards.chrom, rep)]}")
         for rep in REPLICATES
         if (wildcards.chrom, rep) in TS_LOOKUP
     ]

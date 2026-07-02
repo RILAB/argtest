@@ -128,6 +128,7 @@ Optional keys (all have sensible defaults):
 - `suffix_to_strip`: suffix removed from sample IDs before matching in step 3 and step 5 (default: `"_anchorwave"`)
 - `trim_individuals`: extra individual IDs removed genome-wide in step 5, **in addition** to the step-3 mutload outliers (e.g. introgressed samples). Comma-separated string (`"id1,id2"`) or a YAML list; matched with `suffix_to_strip` like step 3. Default: unset (trim only mutload outliers)
 - `trim_remove_bed`: extra BED file(s) of per-individual intervals removed in step 5, in addition to the mutload outliers. Column 4 holds comma-separated sample IDs (or the filename stem if absent). Single path or a YAML list of paths; applied identically to every (chrom, rep). Default: unset
+- `min_samples`: minimum number of non-isolated **retained sample nodes** (haploids, not individuals) a local tree must have; intervals below it are dropped in an optional **step 5b** that runs after step 5 and before the merge. Dropping uses `delete_intervals`, so sequence coordinates are **preserved** (the removed spans become empty gaps — there is no coordinate compaction) and the `kept_intervals` metadata is intersected with the surviving spans so downstream accessibility is not overestimated. Each `(chrom, rep)` also gets a diagnostic BED of the dropped intervals (`chrom start end retained_samples min_samples`) under `<out_dir>/step5b_min_samples/`. When set, the merge, VCF export, and validation steps automatically consume the step-5b filtered tree sequences instead of the raw step-5 output. Default: unset/null (skip step 5b entirely, so existing configs are unaffected). Sample pruning in step 5 is what creates the low-sample intervals this filter targets
 - `allow_missing_replicates`: set to `true` to concatenate partial replicate sets (default: `false`)
 - `burnin`: number of leading discovered replicates to discard before concatenation (default: `0`); must be smaller than the number of replicates discovered after applying `tree_pattern`
 - `base_name`: prefix used for merged outputs (default: name of `root_dir`)
@@ -225,6 +226,7 @@ By default, Snakemake writes outputs beneath `out_dir` with subdirectories for e
   step4_masks/
   step4_trimmed_regions/
   step5_trimmed_samples/
+  step5b_min_samples/    # low-sample intervals dropped, if min_samples is set
   combined/
   step6_validation/    # step 6 validation plots (original and cleaned), if configured
   vcf/                 # per-(chromosome, replicate) VCFs, if emit_vcf: true
@@ -245,6 +247,7 @@ Pipeline scripts (called by the Snakefile). Run any with `--help` for arguments,
 - [`combine_remove_masks.py`](scripts/combine_remove_masks.py) — merge the step 1–3 BED masks into a single combined BED per chromosome.
 - [`trim_regions.py`](scripts/trim_regions.py) / [`trim_regions_single.py`](scripts/trim_regions_single.py) — apply a BED mask to a directory (or single file) of tree sequences and write trimmed outputs with compacted coordinates.
 - [`trim_samples.py`](scripts/trim_samples.py) — remove individuals genome-wide (`--individuals`) or over BED intervals (`--remove`). See [NOTES.md](NOTES.md) for the exact sample-ID matching rules.
+- [`filter_min_samples.py`](scripts/filter_min_samples.py) — drop intervals whose local trees retain fewer than `--min-samples` non-isolated sample nodes, via `delete_intervals` (coordinates preserved); updates `kept_intervals` metadata and writes a diagnostic BED. Optional pipeline step 5b, driven by `min_samples`.
 - [`validation_plots_from_ts.py`](scripts/validation_plots_from_ts.py) — SINGER-style QC plots (mutational load, diversity, Tajima's D, folded/unfolded SFS) across TS replicates; optional observed-vs-simulated overlays.
 - [`merge_treefiles_by_replicate.py`](scripts/merge_treefiles_by_replicate.py) — concatenate chromosome-specific tree-sequence files by replicate; embedded mutation-rate ratemaps are merged and carried forward.
 - [`export_vcf.py`](scripts/export_vcf.py) — export a `.vcf`/`.vcf.gz` from a (filtered) tree sequence: variable sites only, ploidy-aware genotypes, and samples pruned by `trim_samples` written as missing (`.`) via `isolated_as_missing`. Driven by `emit_vcf`; see [VCF export](#vcf-export).
