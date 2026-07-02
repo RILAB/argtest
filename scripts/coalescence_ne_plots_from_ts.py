@@ -221,14 +221,41 @@ def compute_quantile_time_windows(
         edge_arrays.append(edges)
     mean_edges = np.mean(np.stack(edge_arrays, axis=0), axis=0)
     if not np.all(np.diff(mean_edges) > 0):
+        # tskit's pair_coalescence_quantiles inverts the pair-coalescence CDF,
+        # which is a step function with one "atom" (jump) per coalescence node
+        # weighted by the pairs it resolves. A single deep node can be the MRCA
+        # for a large share (up to ~50%) of all sample-pairs at one instant, so
+        # any quantile that lands inside that jump has no unique time and comes
+        # back NaN (or as a tie with its neighbour). Averaging then leaves a
+        # non-increasing grid. This happens when the ARG has too few INDEPENDENT
+        # deep coalescence events for the tail quantiles to be resolved —
+        # typically a single low-recombination chromosome, where deep ancestry
+        # is shared across the genome. Adding independently-assorting chromosomes
+        # (or more recombination) splits the deep mass across distinct times and
+        # fixes it; otherwise pick the time grid yourself.
+        undefined = [
+            f"{q:.0%}" for q, e in zip(quantiles, mean_edges) if not np.isfinite(e)
+        ]
+        detail = (
+            f" ({len(undefined)} of {mean_edges.size} quantile edges were "
+            f"undefined, at quantiles {', '.join(undefined)})"
+            if undefined
+            else " (adjacent quantile edges are tied — a single node holds more "
+            "than one full bin's worth of pair-coalescence mass)"
+        )
         raise RuntimeError(
-            "Averaged quantile edges are not strictly increasing — try a "
-            "smaller --num-bins or supply --time-bins-file."
+            "Too few independent deep coalescence events in your ARG for the "
+            "empirical pair-coalescence CDF quantiles to define "
+            f"{num_bins} equal-mass time bins" + detail + ". Re-run with a set "
+            "of fixed time-bin edges via --time-bins-file (one edge per line, "
+            "e.g. log-spaced from ~10 to ~1e7 generations), or reduce "
+            "--num-bins."
         )
     if mean_edges[0] <= 0:
         raise RuntimeError(
             "Averaged minimum coalescence-time edge is non-positive; cannot "
-            "log-plot. Reduce --num-bins or supply --time-bins-file."
+            "log-plot. Reduce --num-bins or supply fixed edges via "
+            "--time-bins-file."
         )
     # Pad with 0 (tskit requires the grid to start at sample time) and inf
     # (tskit requires the rates grid to end at infinity). The two padded
