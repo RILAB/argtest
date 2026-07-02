@@ -223,3 +223,5 @@ def test_min_samples_enabled_inserts_step(tmp_path):
     assert "step5b_filter_min_samples" in result.stdout
     # Merge/step6 must now consume the step-5b output directory.
     assert "step5b_min_samples" in result.stdout
+    assert "--ts-dir" in result.stdout
+    assert str(dataset["out_dir"] / "step5b_min_samples") in result.stdout

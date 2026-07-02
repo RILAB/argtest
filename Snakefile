@@ -616,7 +616,7 @@ rule merge_replicates:
     log:
         str(LOG_DIR / "merge" / "{rep}.{ext}.log")
     params:
-        ts_dir=str(STEP5_DIR),
+        ts_dir=str(FILTERED_TS_DIR),
         out_dir=str(MERGED_DIR),
         base_name=BASE_NAME,
         merge_suffix_arg=MERGE_SUFFIX_ARG,

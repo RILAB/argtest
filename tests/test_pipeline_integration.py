@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import pickle
 import subprocess
 import sys
@@ -9,7 +10,6 @@ from types import SimpleNamespace
 
 import pytest
 import tskit
-import tszip
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -139,7 +139,7 @@ def build_dataset(root: Path) -> dict[str, Path]:
         write_mut_rate_map(tree_root / chrom / f"{chrom}.mut_rate.p")
         for rep in replicates:
             ts = make_tree_sequence(outlier_targets[(chrom, rep)])
-            tszip.compress(ts, tree_root / chrom / f"{rep}.tsz")
+            ts.dump(tree_root / chrom / f"{rep}.trees")
 
     for chrom in chroms:
         chrom_hapmap = root / f"{chrom}.hapmap.tsv"
@@ -150,7 +150,7 @@ def build_dataset(root: Path) -> dict[str, Path]:
         "root_dir": str(tree_root),
         "hapmap": str(hapmap),
         "fai": str(fai),
-        "tree_pattern": "*.tsz",
+        "tree_pattern": "*.trees",
         "rec_fraction": 0.5,
         "low_access_window_size": 1000,
         "low_access_cutoff_bp": 600,
@@ -185,6 +185,15 @@ def build_dataset(root: Path) -> dict[str, Path]:
 
 
 def run_snakemake(repo_root: Path, config_path: Path, *extra_args: str):
+    cache_root = config_path.parent / ".snakemake-test-cache"
+    tmp_root = config_path.parent / ".snakemake-test-tmp"
+    cache_root.mkdir(exist_ok=True)
+    tmp_root.mkdir(exist_ok=True)
+    env = os.environ.copy()
+    env.update({
+        "XDG_CACHE_HOME": str(cache_root),
+        "TMPDIR": str(tmp_root),
+    })
     cmd = [
         sys.executable,
         "-m",
@@ -201,6 +210,7 @@ def run_snakemake(repo_root: Path, config_path: Path, *extra_args: str):
         check=True,
         capture_output=True,
         text=True,
+        env=env,
     )
 
 
@@ -210,7 +220,7 @@ def test_snakemake_dry_run(tmp_path):
     result = run_snakemake(REPO_ROOT, dataset["config"], "-n", "-p")
 
     assert "rule all" in result.stdout
-    assert "demo.combined.1.tsz" in result.stdout
+    assert "demo.combined.1.trees" in result.stdout
     assert "step1_low_rec_masks" in result.stdout
 
 
@@ -233,13 +243,13 @@ def test_snakemake_real_run(tmp_path):
     result = run_snakemake(REPO_ROOT, dataset["config"], "--cores", "1", "--rerun-incomplete")
 
     combined_dir = dataset["out_dir"] / "combined"
-    combined = sorted(combined_dir.glob("demo.combined.*.tsz"))
+    combined = sorted(combined_dir.glob("demo.combined.*.trees"))
     assert len(combined) == 2
     assert (dataset["out_dir"] / "step1_low_rec" / "chr1.low_rec.mask.bed").exists()
     assert (dataset["out_dir"] / "step2_low_access" / "chr1" / "chr1.low_access.bed").exists()
     assert (dataset["out_dir"] / "step3_mutload" / "chr1" / "1.outliers.bed").exists()
     assert (dataset["out_dir"] / "step4_masks" / "chr1" / "1.remove_regions.bed").exists()
-    assert (dataset["out_dir"] / "step5_trimmed_samples" / "chr1" / "1.tsz").exists()
+    assert (dataset["out_dir"] / "step5_trimmed_samples" / "chr1" / "1.trees").exists()
 
     merged_ts = load_ts(combined[0])
     assert 0 < merged_ts.sequence_length <= 8000  # 2 chromosomes × 4000 bp each
