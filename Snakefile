@@ -613,6 +613,11 @@ rule merge_replicates:
         mem_mb=res_mem_mb("merge_replicates"),
         time=res_time("merge_replicates"),
         slurm_partition=res_partition("merge_replicates"),
+        # 1 unit of the custom `hi_mem_jobs` resource: caps how many RAM-heavy
+        # jobs run at once, independent of the global `jobs`/`--cores`. Only
+        # binds when a run sets `--resources hi_mem_jobs=N` (e.g. via the SLURM
+        # profile); otherwise unlimited, so plain runs are unaffected.
+        hi_mem_jobs=1,
     wildcard_constraints:
         rep="|".join(re.escape(r) for r in REPLICATES),
         ext="|".join(re.escape(s.lstrip(".")) for s in VALID_SUFFIXES),
@@ -696,6 +701,8 @@ if RUN_VALIDATION:
             mem_mb=res_mem_mb("step6_validation_plots"),
             time=res_time("step6_validation_plots"),
             slurm_partition=res_partition("step6_validation_plots"),
+            # See merge_replicates: 1 unit of the shared `hi_mem_jobs` cap.
+            hi_mem_jobs=1,
         log:
             str(LOG_DIR / "step6" / "{chrom}.log")
         params:

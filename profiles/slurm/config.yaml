@@ -62,6 +62,18 @@ default-resources:
 # of in-flight jobs would flood the shared slurmdbd. Override with `-j N`.
 jobs: 250
 
+# Separate concurrency cap for the RAM-heavy final steps — merge_replicates
+# (~96-128 GB, up to ~200 GB configured) and step6_validation_plots (~180 GB) —
+# independent of `jobs` above. Those two rules each request 1 unit of the custom
+# `hi_mem_jobs` resource, so at most this many run at once no matter how high
+# `jobs` is; all the light step1-5 jobs are unaffected and still fill up to
+# `jobs`. This stops every per-replicate merge from going ready at once and
+# flooding the queue with 200 GB requests. Raise/lower per run with
+# `--resources hi_mem_jobs=N`. Ignored by plain `snakemake --cores` (the
+# resource is simply unlimited when no cap is set).
+resources:
+  - hi_mem_jobs=5
+
 # Use the greedy scheduler instead of the PuLP/CBC ILP solver. CBC forks an
 # external binary to solve the schedule; near the cgroup PID cap that fork
 # fails and Snakemake falls back to greedy with a scary warning. Selecting
