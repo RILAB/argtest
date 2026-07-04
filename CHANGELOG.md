@@ -3,6 +3,36 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
+## [v1.7] — 2026-07-04 — scalar mutation-rate fallback + trimmed-sample mutation dropping
+
+### Added
+- Scalar mutation-rate fallback for `find_low_access_regions.py`
+  (`--mutation-rate`, wired through the Snakefile `step2_low_access` rule). The
+  accessibility rate is now resolved via `argtest_common.resolve_mu_rate` in
+  priority order: tree-sequence metadata ratemap → sibling `*.mut_rate.p` file →
+  the scalar fallback. A positive scalar marks the whole sequence accessible; a
+  non-positive scalar marks none of it accessible (every window flagged
+  low-access). Replaces the previous unconditional `*.mut_rate.p` pickle load.
+
+### Changed
+- `trim_samples` now drops mutations carried by trimmed sample nodes within
+  their trim intervals, so a removed individual no longer retains phantom
+  variants over regions it was trimmed from. Dropping is restricted to leaf
+  sample nodes; an internal sample node (one that appears as an edge parent)
+  keeps its mutations because untrimmed descendants still inherit them.
+- SLURM profile: a separate concurrency cap for the RAM-heavy merge step so it
+  no longer contends with lighter per-chromosome jobs.
+- Aligned the SLURM controller default configfile and docs with the
+  consolidated `config/snakemake.yaml` template.
+
+### Fixed
+- `pipeline_summary`: the genome-wide retained-sequence percentage is now
+  length-weighted per replicate (summing retained and total bp across
+  chromosomes before dividing) instead of an unweighted mean of per-chromosome
+  percentages, which skewed genomes with unevenly sized chromosomes. Outlier
+  summaries now count replicates in which an individual had zero outliers,
+  instead of averaging only over the replicates where it was flagged.
+
 ## [v1.6] — 2026-07-01 — minimum-retained-samples filter + configurable validation window
 
 ### Added
