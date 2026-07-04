@@ -124,13 +124,6 @@ def _intersect_edges_with_keep(left, right, parent, keep_left, keep_right):
     return frag_left, frag_right, frag_parent
 
 
-def _position_in_intervals(position: float, intervals) -> bool:
-    for left, right in intervals:
-        if left <= position < right:
-            return True
-    return False
-
-
 def _filter_trimmed_sample_mutations(tables, ts, merged_by_node) -> None:
     """Drop mutations carried by trimmed target sample nodes inside their trim
     intervals.
@@ -161,32 +154,72 @@ def _filter_trimmed_sample_mutations(tables, ts, merged_by_node) -> None:
     if not drop_by_node:
         return
 
-    tables.sites.clear()
-    tables.mutations.clear()
-    for site in ts.sites():
-        kept_mutations = []
-        for mut in site.mutations:
-            intervals = drop_by_node.get(int(mut.node))
-            if intervals and _position_in_intervals(float(site.position), intervals):
-                continue
-            kept_mutations.append(mut)
-        if not kept_mutations:
-            continue
+    mutations = tables.mutations
+    num_mutations = mutations.num_rows
+    if num_mutations == 0:
+        return
 
-        new_site_id = tables.sites.add_row(
-            position=site.position,
-            ancestral_state=site.ancestral_state,
-            metadata=site.metadata,
-        )
-        for mut in kept_mutations:
-            tables.mutations.add_row(
-                site=new_site_id,
-                node=mut.node,
-                derived_state=mut.derived_state,
-                parent=tskit.NULL,
-                time=mut.time,
-                metadata=mut.metadata,
-            )
+    mut_node = mutations.node
+    mut_site = mutations.site
+    site_position = tables.sites.position
+    drop_mutation = np.zeros(num_mutations, dtype=bool)
+
+    leaf_targets = np.fromiter(drop_by_node.keys(), dtype=mut_node.dtype)
+    target_mutations = np.flatnonzero(np.isin(mut_node, leaf_targets))
+    if target_mutations.size == 0:
+        return
+
+    target_order = np.argsort(mut_node[target_mutations], kind="stable")
+    target_mutations = target_mutations[target_order]
+    target_nodes = mut_node[target_mutations]
+    group_starts = np.concatenate(([0], np.flatnonzero(np.diff(target_nodes)) + 1))
+    group_ends = np.concatenate((group_starts[1:], [target_mutations.size]))
+
+    for start, end in zip(group_starts, group_ends):
+        node = int(target_nodes[start])
+        intervals = np.asarray(drop_by_node[node], dtype=np.float64)
+        if intervals.size == 0:
+            continue
+        idx = target_mutations[start:end]
+        positions = site_position[mut_site[idx]]
+        interval_idx = np.searchsorted(intervals[:, 0], positions, side="right") - 1
+        in_bounds = interval_idx >= 0
+        in_interval = np.zeros(idx.size, dtype=bool)
+        in_interval[in_bounds] = positions[in_bounds] < intervals[interval_idx[in_bounds], 1]
+        drop_mutation[idx[in_interval]] = True
+
+    if not np.any(drop_mutation):
+        return
+
+    keep_mutation = ~drop_mutation
+    keep_site = np.zeros(tables.sites.num_rows, dtype=bool)
+    keep_site[mut_site[keep_mutation]] = True
+
+    # Null mutation parents before row deletion. Some kept mutations may have
+    # had a dropped mutation parent; compute_mutation_parents below rebuilds the
+    # parent column after sorting/simplifying, matching the previous behavior.
+    mutations.set_columns(
+        site=mutations.site,
+        node=mutations.node,
+        time=mutations.time,
+        derived_state=mutations.derived_state,
+        derived_state_offset=mutations.derived_state_offset,
+        parent=np.full(num_mutations, tskit.NULL, dtype=mutations.parent.dtype),
+        metadata=mutations.metadata,
+        metadata_offset=mutations.metadata_offset,
+    )
+    mutations.keep_rows(keep_mutation)
+    site_map = tables.sites.keep_rows(keep_site)
+    mutations.set_columns(
+        site=site_map[mutations.site],
+        node=mutations.node,
+        time=mutations.time,
+        derived_state=mutations.derived_state,
+        derived_state_offset=mutations.derived_state_offset,
+        parent=mutations.parent,
+        metadata=mutations.metadata,
+        metadata_offset=mutations.metadata_offset,
+    )
 
 
 def trim_samples_single_pass(ts, remove_intervals, suffix_to_strip=""):
