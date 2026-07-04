@@ -97,6 +97,43 @@ def test_find_low_access_regions_uses_scalar_mutation_rate_fallback(tmp_path, mo
     assert out_bed.read_text() == ""
 
 
+def test_find_low_access_regions_nonpositive_rate_flags_whole_sequence(tmp_path, monkeypatch):
+    # A non-positive scalar rate means "no accessible sequence", so every window
+    # has zero accessible bp and is emitted as low-access.
+    ts_path = tmp_path / "chr1.tsz"
+    ts_path.touch()
+    out_bed = tmp_path / "low_access.bed"
+
+    monkeypatch.setattr(
+        far,
+        "parse_args",
+        lambda: type(
+            "A",
+            (),
+            {
+                "ts": ts_path,
+                "window_size": 5.0,
+                "cutoff_bp": 4.0,
+                "out": out_bed,
+                "log": None,
+                "mutation_rate": 0.0,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        far,
+        "load_ts",
+        lambda path: type("TS", (), {"sequence_length": 10.0, "metadata": {}})(),
+    )
+
+    far.main()
+
+    assert out_bed.read_text().splitlines() == [
+        "chr1\t0\t5\t0.000",
+        "chr1\t5\t10\t0.000",
+    ]
+
+
 def test_find_low_access_regions_uses_metadata_ratemap(tmp_path, monkeypatch):
     ts_path = tmp_path / "chr1.tsz"
     ts_path.touch()

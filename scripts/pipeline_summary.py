@@ -263,7 +263,6 @@ def collect_retention(chroms, replicates, out_dir, chrom_lengths):
             "s3_vals": s3_vals,
             "combined_vals": combined_vals,
             "retained_vals": retained_vals,
-            "pct_vals": pct_vals,
             "mean_pct": mean_pct,
         })
     return rows

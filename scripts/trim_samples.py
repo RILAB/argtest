@@ -131,23 +131,42 @@ def _position_in_intervals(position: float, intervals) -> bool:
     return False
 
 
-def _filter_trimmed_sample_mutations(tables, ts, node_intervals) -> None:
-    """Drop mutations on target sample nodes inside their trim intervals."""
-    if not node_intervals:
+def _filter_trimmed_sample_mutations(tables, ts, merged_by_node) -> None:
+    """Drop mutations carried by trimmed target sample nodes inside their trim
+    intervals.
+
+    Only mutations on *leaf* target nodes are dropped. A target node that acts
+    as a parent anywhere in the edge table still has descendant samples attached
+    after trimming (only ``child == target`` edges are cut), so a mutation on it
+    is inherited by untrimmed samples and must be kept to avoid corrupting their
+    genotypes. Sample nodes in this pipeline are leaves, so this guard leaves the
+    common case unchanged and only protects the internal-sample-node edge case.
+
+    ``merged_by_node`` maps each target node to its already-merged (sorted,
+    disjoint) removal intervals, reused from the edge-trimming pass.
+    """
+    if not merged_by_node:
         return
 
-    merged_by_node = {
-        int(node): merge_intervals(pairs)
-        for node, pairs in node_intervals.items()
+    # Restrict dropping to leaf targets: a node that never appears as an edge
+    # parent has no descendants, so its mutations are private to it.
+    parent_nodes = np.unique(ts.tables.edges.parent)
+    target_arr = np.fromiter(merged_by_node.keys(), dtype=np.int64)
+    leaf_targets = target_arr[~np.isin(target_arr, parent_nodes)]
+    drop_by_node = {
+        int(node): merged_by_node[int(node)]
+        for node in leaf_targets
+        if merged_by_node[int(node)]
     }
-    original_sites = list(ts.sites())
+    if not drop_by_node:
+        return
 
     tables.sites.clear()
     tables.mutations.clear()
-    for site in original_sites:
+    for site in ts.sites():
         kept_mutations = []
         for mut in site.mutations:
-            intervals = merged_by_node.get(int(mut.node))
+            intervals = drop_by_node.get(int(mut.node))
             if intervals and _position_in_intervals(float(site.position), intervals):
                 continue
             kept_mutations.append(mut)
@@ -207,6 +226,12 @@ def trim_samples_single_pass(ts, remove_intervals, suffix_to_strip=""):
     tables = ts.dump_tables()
 
     if node_intervals:
+        # Merge each target's spans once; reused for edge trimming and for
+        # dropping the targets' private mutations below.
+        merged_by_node = {
+            node: merge_intervals(pairs)  # sorted, disjoint [start, end]
+            for node, pairs in node_intervals.items()
+        }
         edges = tables.edges
         e_left = edges.left
         e_right = edges.right
@@ -222,11 +247,10 @@ def trim_samples_single_pass(ts, remove_intervals, suffix_to_strip=""):
         out_parent = [e_parent[~is_target]]
         out_child = [e_child[~is_target]]
 
-        for node, pairs in node_intervals.items():
+        for node, merged in merged_by_node.items():
             sel = np.flatnonzero(e_child == node)
             if sel.size == 0:
                 continue
-            merged = merge_intervals(pairs)  # sorted, disjoint [start, end]
             if not merged:
                 # No removal spans for this node -> keep all its edges verbatim.
                 out_left.append(e_left[sel])
@@ -258,7 +282,7 @@ def trim_samples_single_pass(ts, remove_intervals, suffix_to_strip=""):
             parent=np.concatenate(out_parent).astype(e_parent.dtype),
             child=np.concatenate(out_child).astype(e_child.dtype),
         )
-        _filter_trimmed_sample_mutations(tables, ts, node_intervals)
+        _filter_trimmed_sample_mutations(tables, ts, merged_by_node)
 
     # One canonical pass, mirroring the old per-interval tail.
     tables.sort()
