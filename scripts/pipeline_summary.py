@@ -289,8 +289,8 @@ def collect_outliers(chroms, replicates, out_dir):
 
     summary = []
     for ind, rep_data in by_ind_rep.items():
-        window_counts = [wc for wc, _ in rep_data.values()]
-        bp_vals = [bp for _, bp in rep_data.values()]
+        window_counts = [rep_data[rep][0] for rep in replicates]
+        bp_vals = [rep_data[rep][1] for rep in replicates]
         mean_w, sd_w = _mean_sd(window_counts)
         mean_bp, _ = _mean_sd(bp_vals)
         summary.append({
@@ -303,6 +303,24 @@ def collect_outliers(chroms, replicates, out_dir):
 
     summary.sort(key=lambda r: -r["mean_windows"])
     return summary
+
+
+def weighted_retained_pct(retention, replicates) -> float:
+    retained_by_rep: dict[str, float] = defaultdict(float)
+    length_by_rep: dict[str, float] = defaultdict(float)
+    for row in retention:
+        chrom_len = float(row["seq_len"])
+        for rep, retained in zip(replicates, row["retained_vals"]):
+            retained_by_rep[rep] += float(retained)
+            length_by_rep[rep] += chrom_len
+
+    pct_vals = [
+        100.0 * retained_by_rep[rep] / length_by_rep[rep]
+        for rep in replicates
+        if length_by_rep[rep]
+    ]
+    mean_pct, _ = _mean_sd(pct_vals)
+    return mean_pct
 
 
 # ---------------------------------------------------------------------------
@@ -424,9 +442,7 @@ def main():
     total_s2  = sum(r["s2_bp"] for r in retention)
     all_s3    = [v for r in retention for v in r["s3_vals"]]
     all_comb  = [v for r in retention for v in r["combined_vals"]]
-    all_ret   = [v for r in retention for v in r["retained_vals"]]
-    all_pct   = [v for r in retention for v in r["pct_vals"]]
-    mean_total_pct, _ = _mean_sd(all_pct)
+    mean_total_pct = weighted_retained_pct(retention, replicates)
 
     for r in retention:
         pct = r["mean_pct"]

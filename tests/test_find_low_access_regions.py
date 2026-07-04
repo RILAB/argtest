@@ -51,7 +51,7 @@ def test_find_low_access_regions_default_log_goes_under_logs(tmp_path, monkeypat
     monkeypatch.setattr(
         far,
         "load_ts",
-        lambda path: type("TS", (), {"sequence_length": 10.0})(),
+        lambda path: type("TS", (), {"sequence_length": 10.0, "metadata": {}})(),
     )
     monkeypatch.setattr(
         far,
@@ -62,3 +62,72 @@ def test_find_low_access_regions_default_log_goes_under_logs(tmp_path, monkeypat
 
     assert out_bed.exists()
     assert (tmp_path / "logs" / "low_access.log").exists()
+
+
+def test_find_low_access_regions_uses_scalar_mutation_rate_fallback(tmp_path, monkeypatch):
+    ts_path = tmp_path / "chr1.tsz"
+    ts_path.touch()
+    out_bed = tmp_path / "low_access.bed"
+
+    monkeypatch.setattr(
+        far,
+        "parse_args",
+        lambda: type(
+            "A",
+            (),
+            {
+                "ts": ts_path,
+                "window_size": 5.0,
+                "cutoff_bp": 4.0,
+                "out": out_bed,
+                "log": None,
+                "mutation_rate": 1.0,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        far,
+        "load_ts",
+        lambda path: type("TS", (), {"sequence_length": 10.0, "metadata": {}})(),
+    )
+
+    far.main()
+
+    assert out_bed.exists()
+    assert out_bed.read_text() == ""
+
+
+def test_find_low_access_regions_uses_metadata_ratemap(tmp_path, monkeypatch):
+    ts_path = tmp_path / "chr1.tsz"
+    ts_path.touch()
+    out_bed = tmp_path / "low_access.bed"
+    metadata = {"mu_position": [0.0, 3.0, 10.0], "mu_rate": [1.0, 0.0]}
+
+    monkeypatch.setattr(
+        far,
+        "parse_args",
+        lambda: type(
+            "A",
+            (),
+            {
+                "ts": ts_path,
+                "window_size": 5.0,
+                "cutoff_bp": 4.0,
+                "out": out_bed,
+                "log": None,
+                "mutation_rate": None,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        far,
+        "load_ts",
+        lambda path: type("TS", (), {"sequence_length": 10.0, "metadata": metadata})(),
+    )
+
+    far.main()
+
+    assert out_bed.read_text().splitlines() == [
+        "chr1\t0\t5\t3.000",
+        "chr1\t5\t10\t0.000",
+    ]

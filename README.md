@@ -246,7 +246,8 @@ Pipeline scripts (called by the Snakefile). Run any with `--help` for arguments,
 - [`mutload_summary.py`](scripts/mutload_summary.py) — interactive HTML diagnostic for the mutload step: per-individual residual load after window-level pruning (ASCII bar chart, red highlight on individuals still outside the cutoff band, lineage table of flagged counts).
 - [`mutload_masks.py`](scripts/mutload_masks.py) — outlier and mutation-masked BED files for one tree sequence (pipeline step 3).
 - [`combine_remove_masks.py`](scripts/combine_remove_masks.py) — merge the step 1–3 BED masks into a single combined BED per chromosome.
-- [`trim_regions.py`](scripts/trim_regions.py) / [`trim_regions_single.py`](scripts/trim_regions_single.py) — apply a BED mask to a directory (or single file) of tree sequences and write trimmed outputs with compacted coordinates.
+- [`trim_regions.py`](scripts/trim_regions.py) — apply a BED mask to a directory of tree sequences and write trimmed outputs with compacted coordinates.
+- [`trim_regions_single.py`](scripts/trim_regions_single.py) — apply a BED mask to one tree sequence while preserving the original coordinate system.
 - [`trim_samples.py`](scripts/trim_samples.py) — remove individuals genome-wide (`--individuals`) or over BED intervals (`--remove`). See [NOTES.md](NOTES.md) for the exact sample-ID matching rules.
 - [`filter_min_samples.py`](scripts/filter_min_samples.py) — drop intervals whose local trees retain fewer than `--min-samples` non-isolated sample nodes, via `delete_intervals` (coordinates preserved); updates `kept_intervals` metadata and writes a diagnostic BED. Optional pipeline step 5b, driven by `min_samples`.
 - [`validation_plots_from_ts.py`](scripts/validation_plots_from_ts.py) — SINGER-style QC plots (mutational load, diversity, Tajima's D, folded/unfolded SFS) across TS replicates; optional observed-vs-simulated overlays.

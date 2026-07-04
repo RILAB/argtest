@@ -440,12 +440,14 @@ rule step2_low_access:
     params:
         window_size=LOW_ACCESS_WINDOW_SIZE,
         cutoff_bp=LOW_ACCESS_CUTOFF_BP,
+        mutation_rate_arg=MUTATION_RATE_ARG,
     shell:
         """
         python scripts/find_low_access_regions.py \
           --ts "{input}" \
           --window-size {params.window_size} \
           --cutoff-bp {params.cutoff_bp} \
+          {params.mutation_rate_arg} \
           --out "{output}" \
           --log "{log}"
         """

@@ -1,21 +1,11 @@
-# Tree Sequence Simulations
+# Example Data
 
-This directory contains 10 tree sequences generated with `msprime`.
+This directory contains small tree-sequence fixtures used by the tests and documentation examples:
 
-Simulation details:
-- Method: `msprime.sim_ancestry`
-- Replicates: 10
-- Sample size: 24 haploid samples
-- Population size (Ne): 100,000
-- Sequence length: 5,000,000 bp (5 Mb)
-- Recombination rate: 1e-8 per bp
-- Random seed: replicate index (1..10)
+- `test_100trees.tsz` - compact single-file fixture.
+- `maize.tsz` - compact maize-derived fixture for script smoke tests.
+- `sim_2chr_5rep/` - two-chromosome, five-replicate simulated dataset with matching HapMap, `.fai`, masks, and mutation-rate files.
 
-Files are named `sim_###.tsz` (e.g., `sim_001.tsz`).
+For the current end-to-end example dataset, use the repository-level `argtest-realistic-example/` workflow described in the main `README.md` and `MAKE_REALISTIC_EXAMPLE.md`.
 
-The directory also contains one tree sequence estimated from 26 maize individuals named `maize.tsz`
-
-Mutational load output:
-- `maize_mutload.html` generated from `maize.tsz` using 1,000,000 bp windows.
-- Per-individual BED files are emitted alongside the HTML, listing windows where
-  the individual's load is >1.25x the mean load for that window.
+For mutational-load outputs, use `scripts/mutload_summary.py` for the HTML diagnostic and `scripts/mutload_masks.py` for BED masks.

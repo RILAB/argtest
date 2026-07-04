@@ -28,11 +28,10 @@
 # Usage (from the repo root):
 #   mkdir -p logs/slurm
 #   sbatch profiles/slurm/run-controller.sbatch [CONFIGFILE] [EXTRA snakemake args...]
-# Defaults to config/admix.yaml. --rerun-incomplete is always applied.
+# Defaults to config/snakemake.yaml. --rerun-incomplete is always applied.
 # Examples:
 #   sbatch profiles/slurm/run-controller.sbatch
-#   sbatch profiles/slurm/run-controller.sbatch config/thaliana.yaml
-#   sbatch profiles/slurm/run-controller.sbatch config/admix.yaml -n   # dry-run
+#   sbatch profiles/slurm/run-controller.sbatch config/snakemake.yaml -n   # dry-run
 #
 # Watch progress:  tail -f logs/slurm/controller-<jobid>.out
 
@@ -41,7 +40,7 @@ set -euo pipefail
 # First positional arg is the configfile, but only if it isn't itself a flag
 # (so `sbatch ... -n` still works without a configfile). Everything left over
 # is forwarded to snakemake verbatim.
-configfile="config/admix.yaml"
+configfile="config/snakemake.yaml"
 if [[ "${1:-}" && "${1:-}" != -* ]]; then
     configfile="$1"
     shift

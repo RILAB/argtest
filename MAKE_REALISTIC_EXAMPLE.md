@@ -228,6 +228,5 @@ after running the scorer.
   severity=2 it can be enough to push some replicates below detection.
   If precise severity targeting matters, increase `--seq-length` or
   reduce `--prune-frac-windows`/`--prune-frac-samples`.
-- The script does **not** currently write a `.fai` file; if you need
-  one for `hapmap_low_rec_mask.py --fai`, generate it from the per-chrom
-  sequence lengths.
+- The script writes `sim.fai` from the per-chromosome sequence lengths for use
+  with `hapmap_low_rec_mask.py --fai`.

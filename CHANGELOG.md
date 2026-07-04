@@ -45,7 +45,7 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
 
 ### Changed
 - Consolidated to a single documented `config/snakemake.yaml` template;
-  removed dataset-specific `admix.yaml`/`thaliana.yaml`.
+  removed older dataset-specific config templates.
 - Removed the superseded `sim_2chr` example data (the realistic example is the
   default).
 - Documented file naming / chromosome-label matching (hapmap `Chromosome` and

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import pickle
 import sys
 from pathlib import Path
 
@@ -10,10 +9,10 @@ import numpy as np
 
 from argtest_common import (
     accessible_intervals_from_mu,
-    infer_mu_base,
     infer_mu_path,
     load_ts,
     overlap_lengths,
+    resolve_mu_rate,
 )
 
 
@@ -57,6 +56,16 @@ def parse_args():
         default=None,
         help="Optional log file path (default: same base as output with .log).",
     )
+    p.add_argument(
+        "--mutation-rate",
+        type=float,
+        default=None,
+        help=(
+            "Scalar mutation-rate fallback used when neither tree-sequence "
+            "metadata nor a sibling .mut_rate.p file supplies a ratemap. A "
+            "positive scalar marks the whole sequence accessible."
+        ),
+    )
     return p.parse_args()
 
 
@@ -68,18 +77,28 @@ def default_log_path(out_path: Path) -> Path:
     return out_path.parent / "logs" / f"{out_path.stem}.log"
 
 
+def accessible_intervals_for_rate(mu, sequence_length: float) -> np.ndarray:
+    if isinstance(mu, float):
+        if mu <= 0:
+            return np.empty((0, 2), dtype=float)
+        return np.array([[0.0, sequence_length]], dtype=float)
+    return accessible_intervals_from_mu(mu)
+
+
 def main():
     args = parse_args()
     ts_path = args.ts
     first_ts = load_ts(ts_path)
-    mu_path = infer_mu_path(ts_path)
-    with open(mu_path, "rb") as fh:
-        mu = pickle.load(fh)
     sequence_length = float(first_ts.sequence_length)
+    mu = resolve_mu_rate(
+        first_ts,
+        ts_path,
+        scalar_fallback=getattr(args, "mutation_rate", None),
+    )
     windows = np.arange(0, sequence_length + args.window_size, args.window_size, dtype=float)
     if windows[-1] > sequence_length:
         windows[-1] = sequence_length
-    acc_bp = overlap_lengths(accessible_intervals_from_mu(mu), windows)
+    acc_bp = overlap_lengths(accessible_intervals_for_rate(mu, sequence_length), windows)
 
     out_path = args.out or default_out_path(ts_path, args.window_size, args.cutoff_bp)
     lines = []

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import tskit
 
 from argtest_common import (
     dump_ts,
@@ -123,6 +124,52 @@ def _intersect_edges_with_keep(left, right, parent, keep_left, keep_right):
     return frag_left, frag_right, frag_parent
 
 
+def _position_in_intervals(position: float, intervals) -> bool:
+    for left, right in intervals:
+        if left <= position < right:
+            return True
+    return False
+
+
+def _filter_trimmed_sample_mutations(tables, ts, node_intervals) -> None:
+    """Drop mutations on target sample nodes inside their trim intervals."""
+    if not node_intervals:
+        return
+
+    merged_by_node = {
+        int(node): merge_intervals(pairs)
+        for node, pairs in node_intervals.items()
+    }
+    original_sites = list(ts.sites())
+
+    tables.sites.clear()
+    tables.mutations.clear()
+    for site in original_sites:
+        kept_mutations = []
+        for mut in site.mutations:
+            intervals = merged_by_node.get(int(mut.node))
+            if intervals and _position_in_intervals(float(site.position), intervals):
+                continue
+            kept_mutations.append(mut)
+        if not kept_mutations:
+            continue
+
+        new_site_id = tables.sites.add_row(
+            position=site.position,
+            ancestral_state=site.ancestral_state,
+            metadata=site.metadata,
+        )
+        for mut in kept_mutations:
+            tables.mutations.add_row(
+                site=new_site_id,
+                node=mut.node,
+                derived_state=mut.derived_state,
+                parent=tskit.NULL,
+                time=mut.time,
+                metadata=mut.metadata,
+            )
+
+
 def trim_samples_single_pass(ts, remove_intervals, suffix_to_strip=""):
     """Remove the ancestry of each named individual over its intervals, in a
     single pass.
@@ -211,6 +258,7 @@ def trim_samples_single_pass(ts, remove_intervals, suffix_to_strip=""):
             parent=np.concatenate(out_parent).astype(e_parent.dtype),
             child=np.concatenate(out_child).astype(e_child.dtype),
         )
+        _filter_trimmed_sample_mutations(tables, ts, node_intervals)
 
     # One canonical pass, mirroring the old per-interval tail.
     tables.sort()

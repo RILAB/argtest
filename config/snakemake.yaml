@@ -113,7 +113,7 @@ suffix_to_strip: ""
 # trim_remove_bed: []
 
 # --------------------------------------------------------------------------- #
-# Concatenation behavior (step 6 merging)
+# Concatenation behavior (merge step)
 # --------------------------------------------------------------------------- #
 
 # If true, allow merging when a replicate is absent in some chromosome

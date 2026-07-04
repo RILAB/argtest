@@ -242,6 +242,55 @@ Add tests for:
   sequence structure
 - Snakemake behavior when `min_samples: null` versus an integer threshold
 
+## Review Backlog (2026-07-04)
+
+Efficiency follow-ups from the read-only review:
+
+- `step1_low_rec_masks` runs once per chromosome but each job reparses the full
+  HapMap before filtering to one chromosome. Stream only the requested
+  chromosome in `hapmap_low_rec_mask.py`, or make the workflow emit all
+  chromosome masks from one parse.
+- `merge_replicates` invokes `merge_treefiles_by_replicate.py` once per
+  replicate, but the script scans the whole filtered tree directory each time.
+  Pass exact Snakemake inputs or use a replicate-specific pattern.
+- `merge_group()` loads all chromosome tree sequences at once before
+  concatenating. Reduce peak RAM by extracting metadata first and loading /
+  concatenating iteratively or in a balanced tree.
+- `argtest_common.mutational_load()` slices a sub-tree-sequence for every
+  removal segment and expands descendant sample lists per mutation. Rework as a
+  single pass over trees/sites with precomputed segment membership, or use
+  tskit stats/sample-count primitives where possible.
+- Step 3 computes observed mutational load and then simulated expected load
+  through the same heavy traversal. Consider an analytic expectation, batched
+  simulation, or shared traversal state.
+- `filter_min_samples.py` has avoidable nested interval scans in
+  `_intersect_keep_with_drops()` and dropped-BED annotation. Replace with
+  two-pointer sweeps over sorted intervals/count segments.
+- Validation and coalescence plotting scripts repeatedly load large tree
+  sequences and keep many per-replicate arrays in memory. Stream summaries,
+  cache intermediate metrics, or use memmaps where exact quantiles are needed.
+- `pipeline_summary.py` reads BED-like files with `read_text().splitlines()`.
+  Stream line-by-line for large masks/outlier files.
+
+Test follow-ups from the read-only review:
+
+- Add a regression that `trim_samples.py` drops mutations carried by targeted
+  sample nodes inside trimmed intervals.
+- Add coverage for `find_low_access_regions.py` with metadata ratemaps and with
+  scalar `--mutation-rate` fallback.
+- Add `mutload_masks.py --fraction` threshold tests for below, equal, and above
+  the cutoff, since the code uses `>` rather than `>=`.
+- Strengthen the real Snakemake integration test with content assertions:
+  expected outlier names, mask contents, nonempty merged tree sequences, and
+  evidence that downstream rules consumed upstream outputs.
+- Extend VCF export tests for diploid grouping, mixed-ploidy fallback to
+  per-node columns, missing individual metadata fallback, and suffix stripping.
+- Add `combine_remove_masks.py` tests for missing inputs, comments/blank lines,
+  malformed short lines, zero/negative intervals, and empty merged output.
+- Replace tautological/implementation-detail assertions in `tests/test_mutload.py`
+  with structural checks: sample IDs/order, expected sites/mutations,
+  `validate_trimmed_ts`, and mutation-parent integrity.
+
 ## Open Questions
 
 - ~~Should the first implementation support both `mask` and `excise`, or only

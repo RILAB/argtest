@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import argtest_common as mc
 import mutload_summary as ms
+import trim_samples as tsamp
 
 
 def make_simple_ts():
@@ -97,6 +98,17 @@ def test_windowing_sanity():
     assert load[0, 1] == 0
     assert load[1, 0] == 0
     assert load[1, 1] == 1
+
+
+def test_trim_samples_single_pass_removes_target_node_mutations():
+    ts = make_simple_ts()
+    intervals = {"A": {"starts": [0.0], "ends": [5.0]}}
+
+    trimmed, summary = tsamp.trim_samples_single_pass(ts, intervals)
+
+    assert summary["names_removed"] == {"A"}
+    assert trimmed.sites_position.tolist() == [7.0]
+    mc.validate_trimmed_ts(trimmed)
 
 
 def test_build_snp_windows_single_variant_per_window():
