@@ -173,19 +173,45 @@ def _intersect_keep_with_drops(keep, dropped, seq_len):
     keep = merge_intervals([[float(l), float(r)] for l, r in keep])
     dropped = merge_intervals([[float(l), float(r)] for l, r in dropped])
     out = []
+    drop_i = 0
     for kl, kr in keep:
         cur = kl
-        for dl, dr in dropped:
-            if dr <= cur or dl >= kr:
-                continue
+        while drop_i < len(dropped) and dropped[drop_i][1] <= cur:
+            drop_i += 1
+        j = drop_i
+        while j < len(dropped):
+            dl, dr = dropped[j]
+            if dl >= kr:
+                break
             if dl > cur:
                 out.append([cur, min(dl, kr)])
             cur = max(cur, dr)
             if cur >= kr:
                 break
+            j += 1
         if cur < kr:
             out.append([cur, kr])
     return [[l, r] for l, r in out if r > l]
+
+
+def _min_counts_for_dropped_intervals(dropped, tree_counts):
+    """Return the minimum retained count overlapped by each dropped interval."""
+    mins = []
+    count_i = 0
+    for dl, dr in dropped:
+        while count_i < len(tree_counts) and tree_counts[count_i][1] <= dl:
+            count_i += 1
+        j = count_i
+        rc = None
+        while j < len(tree_counts):
+            l, r, c = tree_counts[j]
+            if l >= dr:
+                break
+            if r > dl:
+                rc = c if rc is None else min(rc, c)
+            j += 1
+        mins.append(0 if rc is None else rc)
+    return mins
 
 
 def filter_min_samples(ts: tskit.TreeSequence, min_samples: int):
@@ -243,10 +269,9 @@ def main():
     out_mask.parent.mkdir(parents=True, exist_ok=True)
     # For BED annotation, report the smallest retained count spanned by each
     # dropped (merged) interval — the worst offending tree it covers.
+    min_counts = _min_counts_for_dropped_intervals(dropped, tree_counts)
     with open(out_mask, "w") as fh:
-        for dl, dr in dropped:
-            spanned = [c for (l, r, c) in tree_counts if r > dl and l < dr]
-            rc = min(spanned) if spanned else 0
+        for (dl, dr), rc in zip(dropped, min_counts):
             fh.write(f"{chrom}\t{int(dl)}\t{int(dr)}\t{rc}\t{args.min_samples}\n")
 
     seq_len = float(ts.sequence_length)

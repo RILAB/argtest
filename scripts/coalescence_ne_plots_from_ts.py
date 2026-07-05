@@ -451,11 +451,12 @@ def main():
     breaks = time_windows[:-1][keep_mask]
     plot_breaks = breaks / args.time_adjust
 
-    pdf_vals_full = []
-    rate_vals_full = []
+    pdf_vals = []
+    rate_vals = []
+    rate_vals_finite_post = []
     n_samples = None
     seq_lengths = []
-    for ts_path in ts_files:
+    for i, ts_path in enumerate(ts_files):
         ts = load_ts(ts_path)
         if n_samples is None:
             n_samples = ts.num_samples
@@ -464,14 +465,14 @@ def main():
                 f"Sample count mismatch: {ts_path} has {ts.num_samples}, expected {n_samples}."
             )
         pdf, rates = compute_pair_coal(ts, time_windows, args.tail_cutoff)
-        pdf_vals_full.append(pdf)
-        rate_vals_full.append(rates)
+        pdf_vals.append(pdf[keep_mask])
+        rate_vals.append(rates[keep_mask])
+        if i in keep_post:
+            rate_vals_finite_post.append(rates[finite_mask])
         seq_lengths.append(float(ts.sequence_length))
 
-    pdf_vals_full = np.stack(pdf_vals_full, axis=0)
-    rate_vals_full = np.stack(rate_vals_full, axis=0)
-    pdf_vals = pdf_vals_full[:, keep_mask]
-    rate_vals = rate_vals_full[:, keep_mask]
+    pdf_vals = np.stack(pdf_vals, axis=0)
+    rate_vals = np.stack(rate_vals, axis=0)
 
     # Convert PMF to density on log scale: divide by log bin width so equal
     # area on the log x-axis equals equal probability.
@@ -531,7 +532,7 @@ def main():
     sim_sfs_out_path = None
     sim_graph = None
     if args.sim > 0:
-        mean_rates_finite = safe_nanmean(rate_vals_full[keep_post][:, finite_mask], axis=0)
+        mean_rates_finite = safe_nanmean(np.stack(rate_vals_finite_post, axis=0), axis=0)
         ne_finite = np.full_like(mean_rates_finite, np.nan, dtype=float)
         valid = np.isfinite(mean_rates_finite) & (mean_rates_finite > 0)
         ne_finite[valid] = 1.0 / (2.0 * mean_rates_finite[valid])

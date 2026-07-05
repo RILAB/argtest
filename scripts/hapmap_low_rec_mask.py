@@ -47,7 +47,7 @@ def parse_args():
     return args
 
 
-def load_hapmap(path: Path):
+def load_hapmap(path: Path, chrom_filter: str | None = None, output_chrom: str | None = None):
     by_chr = defaultdict(list)
     with open(path, "r", newline="") as fh:
         reader = csv.reader(fh, delimiter="\t")
@@ -55,10 +55,25 @@ def load_hapmap(path: Path):
             if not row or row[0].strip() == "Chromosome":
                 continue
             chrom = row[0].strip()
+            if chrom_filter is not None and chrom != chrom_filter:
+                continue
             pos = int(float(row[1]))
             rate = float(row[2])
+            if output_chrom is not None:
+                chrom = output_chrom
             by_chr[chrom].append((pos, rate))
     return by_chr
+
+
+def hapmap_chroms(path: Path) -> set[str]:
+    chroms = set()
+    with open(path, "r", newline="") as fh:
+        reader = csv.reader(fh, delimiter="\t")
+        for row in reader:
+            if not row or row[0].strip() == "Chromosome":
+                continue
+            chroms.add(row[0].strip())
+    return chroms
 
 
 def load_fai(path: Path):
@@ -122,14 +137,15 @@ def main():
     args = parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
-    hapmap = load_hapmap(args.hapmap)
     fai = load_fai(args.fai)
 
     if args.chrom is not None:
-        hapmap_key = _resolve_chrom(args.chrom, hapmap)
+        hapmap_key = _resolve_chrom(args.chrom, hapmap_chroms(args.hapmap))
         if hapmap_key is None:
             raise KeyError(f"Chromosome {args.chrom!r} not found in {args.hapmap}")
-        hapmap = {args.chrom: hapmap[hapmap_key]}
+        hapmap = load_hapmap(args.hapmap, chrom_filter=hapmap_key, output_chrom=args.chrom)
+    else:
+        hapmap = load_hapmap(args.hapmap)
 
     total_written = 0
     per_chrom = {}

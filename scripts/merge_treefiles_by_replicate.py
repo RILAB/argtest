@@ -101,6 +101,48 @@ def find_tree_files(ts_dir: Path, pattern: str):
     return files
 
 
+def find_tree_files_for_replicate(
+    ts_dir: Path,
+    pattern: str,
+    replicate: str | None,
+    layout: str,
+):
+    """Find candidate tree files, narrowing early for one-replicate jobs."""
+    if replicate is None:
+        return find_tree_files(ts_dir, pattern)
+    if not ts_dir.exists():
+        raise FileNotFoundError(f"Tree directory does not exist: {ts_dir}")
+    if not ts_dir.is_dir():
+        raise NotADirectoryError(f"Expected a directory for --ts-dir: {ts_dir}")
+
+    files = []
+    if layout == "nested":
+        for chrom_dir in sorted((p for p in ts_dir.iterdir() if p.is_dir()), key=lambda p: natural_key(p.name)):
+            for suffix in VALID_SUFFIXES:
+                path = chrom_dir / f"{replicate}{suffix}"
+                if path.is_file() and path.match(pattern):
+                    files.append(path)
+        return files
+
+    if layout == "flat":
+        for suffix in VALID_SUFFIXES:
+            files.extend(
+                p for p in ts_dir.glob(f"*.{replicate}{suffix}")
+                if p.is_file() and p.match(pattern)
+            )
+        return sorted(files, key=lambda p: natural_key(p.name))
+
+    filtered = []
+    for path in find_tree_files(ts_dir, pattern):
+        flat = parse_input_name(path)
+        nested = parse_nested_input_name(path, ts_dir=ts_dir, base_name=None)
+        if (flat is not None and flat[2] == replicate) or (
+            nested is not None and nested[2] == replicate
+        ):
+            filtered.append(path)
+    return filtered
+
+
 def parse_nested_input_name(path: Path, ts_dir: Path, base_name: str | None):
     rel = path.relative_to(ts_dir)
     if len(rel.parts) != 2:
@@ -156,28 +198,30 @@ def group_tree_files(paths, ts_dir: Path | None = None, layout: str = "flat", ba
 
 def merge_group(paths):
     chrom_paths = sorted(paths, key=lambda item: natural_key(item[0]))
-    tseqs = [load_ts(p) for _, p in chrom_paths]
+    _, first_path = chrom_paths[0]
+    first_ts = load_ts(first_path)
+    offsets = [0.0]
+    ratemaps = [ratemap_from_metadata(first_ts.metadata or {})]
+    kept_lists = [(first_ts.metadata or {}).get("kept_intervals")]
+    cumulative = float(first_ts.sequence_length)
 
-    merged = tseqs[0]
-    for ts in tseqs[1:]:
+    merged = first_ts
+    for _, path in chrom_paths[1:]:
+        ts = load_ts(path)
+        offsets.append(cumulative)
+        ratemaps.append(ratemap_from_metadata(ts.metadata or {}))
+        kept_lists.append((ts.metadata or {}).get("kept_intervals"))
+        cumulative += float(ts.sequence_length)
         merged = merged.concatenate(ts)
 
     # tskit's concatenate keeps only the first ts's top-level metadata, so any
     # coordinate-shifted fields (ratemap, kept_intervals) must be re-merged here
     # against the cumulative per-chromosome offsets.
-    offsets = []
-    cumulative = 0.0
-    for ts in tseqs:
-        offsets.append(cumulative)
-        cumulative += float(ts.sequence_length)
-
     extra: dict = {}
 
-    ratemaps = [ratemap_from_metadata(ts.metadata or {}) for ts in tseqs]
     if all(mu is not None for mu in ratemaps):
         extra.update(ratemap_to_metadata(merge_ratemaps(ratemaps, offsets)))
 
-    kept_lists = [(ts.metadata or {}).get("kept_intervals") for ts in tseqs]
     if all(k is not None for k in kept_lists):
         merged_kept: list = []
         for off, intervals in zip(offsets, kept_lists):
@@ -199,7 +243,12 @@ def main():
     out_dir = args.out_dir if args.out_dir is not None else args.ts_dir / "combined"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    files = find_tree_files(args.ts_dir, args.pattern)
+    files = find_tree_files_for_replicate(
+        args.ts_dir,
+        args.pattern,
+        args.replicate,
+        args.layout,
+    )
     grouped, skipped, detected_layout = group_tree_files(
         files,
         ts_dir=args.ts_dir,

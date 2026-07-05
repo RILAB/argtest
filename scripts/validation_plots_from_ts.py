@@ -186,10 +186,14 @@ def _try_mu_ratemap(ts_files: list[Path]):
         return None
 
 
-def _try_mu_intervals(ts_files: list[Path]):
-    """Return accessible intervals from the nearest *.mut_rate.p file, or None if not found."""
-    mu = _try_mu_ratemap(ts_files)
-    return accessible_intervals_from_mu(mu) if mu is not None else None
+def _try_sibling_mu_ratemap(ts_path: Path):
+    """Return the nearest sibling *.mut_rate.p RateMap-like object, or None."""
+    try:
+        mu_path = infer_mu_path(ts_path)
+        with open(mu_path, "rb") as fh:
+            return pickle.load(fh)
+    except Exception:
+        return None
 
 
 def genome_windows(sequence_length: float, window_size: float) -> np.ndarray:
@@ -303,8 +307,6 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
     if sim_branch and msprime is None:
         raise RuntimeError("msprime is required for --sim-branch mode")
 
-    _sim_rate = mu_ratemap if mu_ratemap is not None else mutation_rate
-
     load_vals, seq_lengths = [], []
     sim_load_vals = [] if sim_branch else None
     site_div_vals = []
@@ -319,10 +321,7 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
     sim_afs_folded_vals = [] if sim_branch else None
     n_samples = None
 
-    if mu_ratemap is not None:
-        mu_intervals = accessible_intervals_from_mu(mu_ratemap)
-    else:
-        mu_intervals = _try_mu_intervals(ts_files)
+    sibling_mu_ratemap = None if mu_ratemap is not None else _try_sibling_mu_ratemap(ts_files[0])
 
     parsed_rep_ids = [extract_replicate_id(p) for p in ts_files]
     replicate_ids = np.array(
@@ -346,11 +345,17 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
         #   1. kept_intervals metadata (written by trim_regions_single) — exact post-pipeline mask
         #   2. mu_intervals from *.mut_rate.p — pre-pipeline accessibility (rate > 0)
         #   3. fallback: treat entire sequence as accessible
+        per_ts_mu = mu_ratemap
+        if per_ts_mu is None:
+            per_ts_mu = ratemap_from_metadata(ts.metadata or {})
+        if per_ts_mu is None:
+            per_ts_mu = sibling_mu_ratemap
+
         kept_intervals = ts.metadata.get("kept_intervals") if ts.metadata else None
         if kept_intervals is not None:
             acc_intervals = np.asarray(kept_intervals, dtype=float)
-        elif mu_intervals is not None:
-            acc_intervals = mu_intervals
+        elif per_ts_mu is not None:
+            acc_intervals = accessible_intervals_from_mu(per_ts_mu)
         else:
             acc_intervals = None
         total_accessible = tree_covered_accessible_bp(ts, acc_intervals)
@@ -398,11 +403,17 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
         site_afs_folded_vals.append(site_afs_folded)
 
         if sim_branch:
+            sim_rate = per_ts_mu if per_ts_mu is not None else mutation_rate
+            if sim_rate is None:
+                raise RuntimeError(
+                    "--sim-branch requires either an embedded/sibling mutation-rate "
+                    "ratemap or --mutation-rate as a scalar fallback."
+                )
             # Posterior predictive check: simulate mutations on the ARG topology at
             # the observed rate, then compute site-mode stats on the result. Seed is
             # deterministic from replicate id so runs are reproducible.
             sim_ts = msprime.sim_mutations(
-                ts, rate=_sim_rate, keep=False, random_seed=1 + int(rep_id) * 1000
+                ts, rate=sim_rate, keep=False, random_seed=1 + int(rep_id) * 1000
             )
             # Per-sample expected load from this simulation draw (matches the
             # observed per-sample load normalization above).
@@ -528,26 +539,14 @@ def main():
     ts_files = find_tree_files(args.ts_dir, args.pattern)
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
-    mu_ratemap = None
     if args.sim_branch:
         if msprime is None:
             raise RuntimeError("msprime is required for --sim-branch mode")
-        mu_ratemap = _try_mu_ratemap(ts_files)
-        if mu_ratemap is None:
-            if args.mutation_rate is None:
-                raise RuntimeError(
-                    "--sim-branch requires either an embedded/sibling mutation-rate "
-                    "ratemap or --mutation-rate as a scalar fallback."
-                )
-            warnings.warn(
-                "--sim-branch requested but no *.mut_rate.p file found; "
-                "simulating with uniform rate (--mutation-rate)."
-            )
 
     pri = collect_stats(
         ts_files, args.window_size, args.burnin_frac, args.mutation_rate,
         mcmc_thin=args.mcmc_thin,
-        sim_branch=args.sim_branch, mu_ratemap=mu_ratemap,
+        sim_branch=args.sim_branch, mu_ratemap=None,
     )
     pri_label = args.ts_dir.name
 
@@ -555,17 +554,10 @@ def main():
     cmp_label = None
     if args.compare is not None:
         cmp_files = find_tree_files(args.compare, args.pattern)
-        cmp_mu_ratemap = _try_mu_ratemap(cmp_files) if args.sim_branch else None
-        if args.sim_branch and cmp_mu_ratemap is None and args.mutation_rate is None:
-            raise RuntimeError(
-                "--sim-branch with --compare requires the comparison directory to "
-                "have an embedded/sibling mutation-rate ratemap, or --mutation-rate "
-                "as a scalar fallback."
-            )
         cmp = collect_stats(
             cmp_files, args.window_size, args.burnin_frac, args.mutation_rate,
             mcmc_thin=args.mcmc_thin,
-            sim_branch=args.sim_branch, mu_ratemap=cmp_mu_ratemap,
+            sim_branch=args.sim_branch, mu_ratemap=None,
         )
         cmp_label = args.compare.name
 
