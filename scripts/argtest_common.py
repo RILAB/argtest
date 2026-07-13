@@ -353,6 +353,70 @@ def merge_intervals(intervals):
     return merged
 
 
+def chrom_offsets_from_metadata(ts: tskit.TreeSequence):
+    """Return the recorded [{chrom, offset, length}, ...] table for a merged TS, or None.
+
+    Populated by merge_treefiles_by_replicate.py. Older merged files predating that
+    field return None.
+    """
+    md = ts.metadata if isinstance(ts.metadata, dict) else {}
+    return md.get("chrom_offsets")
+
+
+def genome_position(ts: tskit.TreeSequence, chrom, position: float) -> float:
+    """Map (chromosome, within-chromosome position) to a coordinate in a merged TS.
+
+    Uses the ``chrom_offsets`` metadata written at merge time, so no reference-genome
+    lengths or manual offset arithmetic are needed. Raises KeyError if the metadata is
+    absent (re-run the merge to record it) or the chromosome is unknown, and ValueError
+    if the position falls outside that chromosome.
+    """
+    entries = chrom_offsets_from_metadata(ts)
+    if not entries:
+        raise KeyError(
+            "Tree sequence has no 'chrom_offsets' metadata; re-run "
+            "merge_treefiles_by_replicate.py on the inputs to record it."
+        )
+    chrom = str(chrom)
+    for e in entries:
+        if str(e["chrom"]) == chrom:
+            length = float(e["length"])
+            pos = float(position)
+            if pos < 0 or pos >= length:
+                raise ValueError(
+                    f"position {position} out of range [0, {length}) for chromosome {chrom}"
+                )
+            return float(e["offset"]) + pos
+    known = ", ".join(str(e["chrom"]) for e in entries)
+    raise KeyError(f"chromosome {chrom!r} not found in merged tree sequence; known: {known}")
+
+
+def chrom_position_from_genome(ts: tskit.TreeSequence, genome_pos: float):
+    """Inverse of genome_position: map a merged coordinate to (chrom, within-chrom pos)."""
+    entries = chrom_offsets_from_metadata(ts)
+    if not entries:
+        raise KeyError(
+            "Tree sequence has no 'chrom_offsets' metadata; re-run "
+            "merge_treefiles_by_replicate.py on the inputs to record it."
+        )
+    g = float(genome_pos)
+    for e in entries:
+        off = float(e["offset"])
+        length = float(e["length"])
+        if off <= g < off + length:
+            return str(e["chrom"]), g - off
+    raise ValueError(f"genome position {genome_pos} is outside the merged sequence")
+
+
+def tree_at_chrom_position(ts: tskit.TreeSequence, chrom, position: float):
+    """Return the tree covering (chromosome, within-chromosome position) in a merged TS.
+
+    If the position lies in a masked/trimmed region the returned tree has no topology
+    (``tree.num_edges == 0``); check that if a real local tree is required.
+    """
+    return ts.at(genome_position(ts, chrom, position))
+
+
 def ratemap_to_metadata(mu) -> dict:
     """Serialize a RateMap to a JSON-safe dict for storage in tree-sequence metadata."""
     return {

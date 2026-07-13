@@ -60,6 +60,10 @@ def test_merge_group_offsets_kept_intervals(tmp_path):
 
     assert merged.sequence_length == 12
     assert merged.metadata["kept_intervals"] == [[0.0, 3.0], [6.0, 9.0], [10.0, 12.0]]
+    assert merged.metadata["chrom_offsets"] == [
+        {"chrom": "chr1", "offset": 0.0, "length": 5.0},
+        {"chrom": "chr2", "offset": 5.0, "length": 7.0},
+    ]
 
 
 def test_merge_group_concatenates_sequence_length(tmp_path, monkeypatch):

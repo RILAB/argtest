@@ -198,17 +198,21 @@ def group_tree_files(paths, ts_dir: Path | None = None, layout: str = "flat", ba
 
 def merge_group(paths):
     chrom_paths = sorted(paths, key=lambda item: natural_key(item[0]))
-    _, first_path = chrom_paths[0]
+    chrom, first_path = chrom_paths[0]
     first_ts = load_ts(first_path)
     offsets = [0.0]
+    lengths = [float(first_ts.sequence_length)]
+    chroms = [chrom]
     ratemaps = [ratemap_from_metadata(first_ts.metadata or {})]
     kept_lists = [(first_ts.metadata or {}).get("kept_intervals")]
     cumulative = float(first_ts.sequence_length)
 
     merged = first_ts
-    for _, path in chrom_paths[1:]:
+    for chrom, path in chrom_paths[1:]:
         ts = load_ts(path)
         offsets.append(cumulative)
+        lengths.append(float(ts.sequence_length))
+        chroms.append(chrom)
         ratemaps.append(ratemap_from_metadata(ts.metadata or {}))
         kept_lists.append((ts.metadata or {}).get("kept_intervals"))
         cumulative += float(ts.sequence_length)
@@ -218,6 +222,14 @@ def merge_group(paths):
     # coordinate-shifted fields (ratemap, kept_intervals) must be re-merged here
     # against the cumulative per-chromosome offsets.
     extra: dict = {}
+
+    # Record where each chromosome lives in the concatenated coordinate system so
+    # callers can map a (chromosome, within-chromosome position) back to a genome
+    # coordinate without re-deriving offsets from the per-chromosome inputs.
+    extra["chrom_offsets"] = [
+        {"chrom": c, "offset": off, "length": length}
+        for c, off, length in zip(chroms, offsets, lengths)
+    ]
 
     if all(mu is not None for mu in ratemaps):
         extra.update(ratemap_to_metadata(merge_ratemaps(ratemaps, offsets)))

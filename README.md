@@ -165,6 +165,28 @@ The Snakemake workflow automates the [Suggested Workflow](#suggested-workflow) s
 
 and are written under the configured `out_dir` in a `combined/` directory.
 
+### Locating a tree by chromosome and position
+
+The merge lays chromosomes end-to-end along a single coordinate axis, so a within-chromosome position (e.g. position 1234 on chromosome 8) sits at `chromosome_offset + position` in the merged sequence. To spare you that arithmetic, the merge records a `chrom_offsets` table (`[{chrom, offset, length}, ...]`) in the merged tree sequence's top-level metadata.
+
+Use [`scripts/locate_tree.py`](scripts/locate_tree.py) to find the local tree at a `(chromosome, position)`:
+
+```bash
+python scripts/locate_tree.py --ts <out_dir>/combined/<base>.combined.<rep>.tsz --chrom 8 --position 1234
+```
+
+It prints the genome coordinate, the covering tree's index/interval, and flags when the position falls in a masked/trimmed region (a tree with no topology, `num_edges == 0`). The same mapping is available programmatically in [`scripts/argtest_common.py`](scripts/argtest_common.py):
+
+```python
+from argtest_common import load_ts, tree_at_chrom_position, genome_position, chrom_position_from_genome
+ts = load_ts("combined/run.combined.101.tsz")
+tree = tree_at_chrom_position(ts, "8", 1234)   # local tree at chr8:1234
+gpos = genome_position(ts, "8", 1234)          # concatenated coordinate
+chrom, pos = chrom_position_from_genome(ts, gpos)  # inverse mapping
+```
+
+**Merged files produced before this feature** lack `chrom_offsets` and will raise a `KeyError` asking you to re-merge. For those, either read the local tree straight from the per-chromosome file (native coordinates, no offset needed) — `tszip.decompress(".../step5_trimmed_samples/<chrom>/<rep>.tsz").at(position)` — or add the offset by hand. Since trimming preserves each chromosome's length, the offset table is identical across replicates, so you only need to compute it once (sum the per-chromosome `sequence_length`s in natural chromosome order).
+
 ### VCF export
 
 Set `emit_vcf: true` to write one bgzip-less `.vcf.gz` per `(chromosome, replicate)` under `<out_dir>/vcf/<chrom>/<rep>.vcf.gz`, produced by [`scripts/export_vcf.py`](scripts/export_vcf.py) from the filtered per-chromosome tree sequences: step 5 output by default, or step 5b output when `min_samples` is enabled. Coordinates are real per-chromosome positions, not the concatenated coordinates of the merged ARG. Notes:
@@ -267,6 +289,7 @@ Scripts not called by the Snakemake pipeline.
 
 > ⚠️ **Per-window caveat (pair-coalescence rescale):** `compute_pair_coal` rescales tskit's `pair_coalescence_counts(pair_normalise=True)` PDF by a single scalar (`n_pairs · seq_length / connected_pair_span`) to fix the over-counted denominator when partial trees leave some samples isolated. This is the same bug fixed upstream in [nspope/tskit `nsp-paircoal-partial-missing`](https://github.com/nspope/tskit/tree/nsp-paircoal-partial-missing) (commit `be9f67f2`). The scalar rescale is mathematically exact for the script's current global, single-sample-set, time-binned output, but would **not** be correct if the script were extended to emit spatial-`windows=` rates or multiple-`sample_sets` output — those need per-window or per-index-pair denominators rather than a single scalar. The rescale will be retired in favor of the in-engine fix once it ships in a released `tskit`.
 - [`compare_trees_html.py`](scripts/compare_trees_html.py) — render one tree index from each of two tree sequences side-by-side into a single HTML file.
+- [`locate_tree.py`](scripts/locate_tree.py) — find the local tree at a `(chromosome, position)` in a merged tree sequence, using the `chrom_offsets` metadata to map the within-chromosome coordinate to the concatenated axis. See [Locating a tree by chromosome and position](#locating-a-tree-by-chromosome-and-position).
 - [`trees_gallery_html.py`](scripts/trees_gallery_html.py) — scrollable HTML gallery of all trees from two tree sequences, useful for quick before/after inspection.
 - [`simulate_two_bottleneck_demography.py`](scripts/simulate_two_bottleneck_demography.py) — simulate replicate ARGs under a fixed two-bottleneck demography (35 ka + 9 ka bottlenecks, present-day expansion) for known-truth pipeline tests.
 - [`make_realistic_example.py`](scripts/make_realistic_example.py) — generate a realistic synthetic example dataset (ARGs from the two-bottleneck model + three injected flaws: contaminated individuals, per-window sample pruning, and a `mut_rate.p` accessibility mask) for end-to-end pipeline testing. Emits a `ground_truth.json` for scoring the pipeline's masks. See [MAKE_REALISTIC_EXAMPLE.md](MAKE_REALISTIC_EXAMPLE.md) for details, CLI options, and the ground-truth schema.
