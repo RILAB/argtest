@@ -3,6 +3,46 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
+## [v1.8] — unreleased — chromosome-position tree lookup + pipeline hotspot optimizations
+
+### Added
+- Merged tree sequences now record a `chrom_offsets` table
+  (`[{chrom, offset, length}, ...]`) in their top-level metadata, capturing
+  where each chromosome lives on the concatenated coordinate axis. New
+  `argtest_common` helpers map between within-chromosome and merged coordinates
+  without re-deriving offsets from the per-chromosome inputs:
+  `genome_position`, `chrom_position_from_genome`, `tree_at_chrom_position`, and
+  `chrom_offsets_from_metadata`.
+- `scripts/locate_tree.py`: CLI to find the local tree at a
+  `(chromosome, position)` in a merged tree sequence, reporting the genome
+  coordinate, covering tree index/interval, and whether the position falls in a
+  masked/trimmed region (`num_edges == 0`). Documented in the README. Merged
+  files produced before this release lack `chrom_offsets` and raise a clear
+  `KeyError` pointing to a re-merge or the per-chromosome fallback.
+
+### Performance
+- `trim_samples` trimmed-sample mutation filtering is vectorized: the per-site,
+  per-mutation Python loop that rebuilt the site and mutation tables is replaced
+  by a numpy `searchsorted` grouping over drop intervals plus table
+  `keep_rows`, dropping the same mutations without materializing every kept row
+  in Python.
+- `merge_treefiles_by_replicate` narrows file discovery to the requested
+  replicate up front (`find_tree_files_for_replicate`) instead of scanning and
+  grouping the whole tree directory, and loads/concatenates chromosomes
+  incrementally rather than materializing every per-chromosome tree sequence
+  before merging.
+- `hapmap_low_rec_mask` resolves and loads only the requested chromosome's rows
+  (scanning the `Chromosome` column for the key, then filtering while loading)
+  instead of parsing the entire hapmap and subsetting afterward.
+- `filter_min_samples` computes each dropped interval's minimum retained-sample
+  count with a single ordered sweep over the per-tree counts, replacing the
+  per-interval rescans; the `kept_intervals` intersection uses an advancing
+  two-pointer sweep instead of re-scanning all dropped spans per kept interval.
+- `coalescence_ne_plots_from_ts` accumulates the masked PDF/rate arrays per
+  replicate as it reads them, rather than stacking the full-length arrays for
+  all replicates and slicing afterward, lowering peak memory. Companion
+  streamlining in `validation_plots_from_ts`.
+
 ## [v1.7] — 2026-07-04 — scalar mutation-rate fallback + trimmed-sample mutation dropping
 
 ### Added
