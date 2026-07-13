@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from __future__ import annotations
 
+import math
 import pickle
 import re
 import sys
@@ -382,7 +383,7 @@ def genome_position(ts: tskit.TreeSequence, chrom, position: float) -> float:
         if str(e["chrom"]) == chrom:
             length = float(e["length"])
             pos = float(position)
-            if pos < 0 or pos >= length:
+            if not math.isfinite(pos) or pos < 0 or pos >= length:
                 raise ValueError(
                     f"position {position} out of range [0, {length}) for chromosome {chrom}"
                 )

@@ -58,6 +58,8 @@ def test_genome_position_out_of_range(tmp_path):
         genome_position(merged, "chr1", 5)  # length is 5, so [0, 5)
     with pytest.raises(ValueError):
         genome_position(merged, "chr2", -1)
+    with pytest.raises(ValueError):
+        genome_position(merged, "chr1", float("nan"))
 
 
 def test_genome_position_unknown_chrom(tmp_path):
