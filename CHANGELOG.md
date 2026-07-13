@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
-## [v1.8] — unreleased — chromosome-position tree lookup + pipeline hotspot optimizations
+## [v1.8] — 2026-07-13 — chromosome-position tree lookup + pipeline hotspot optimizations
 
 ### Added
 - Merged tree sequences now record a `chrom_offsets` table
