@@ -43,6 +43,11 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
   all replicates and slicing afterward, lowering peak memory. Companion
   streamlining in `validation_plots_from_ts`.
 
+### Fixed
+- `genome_position` now rejects non-finite positions (`NaN`, `inf`) with the
+  same out-of-range `ValueError` instead of letting them slip past the bounds
+  check.
+
 ## [v1.7] — 2026-07-04 — scalar mutation-rate fallback + trimmed-sample mutation dropping
 
 ### Added
