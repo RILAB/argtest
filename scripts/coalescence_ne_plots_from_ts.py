@@ -72,11 +72,13 @@ def parse_args():
         default=None,
         help=(
             "Choose this many equal-coalescence-event bins automatically. "
-            "Edges are derived from tskit's pair_coalescence_quantiles on each "
-            "post-burnin replicate (quantiles 0, 1/N, ..., 1) and averaged "
-            "across replicates; 0 and inf are then padded on so tskit's rate "
-            "calc accepts the grid. The two padded intervals are dropped from "
-            "plotting, leaving N plotted bins each holding ~1/N of pair "
+            "Edges are derived from conditional connected-pair coalescence "
+            "quantiles on each post-burnin replicate (quantiles 0, 1/N, ..., "
+            "1) and averaged across replicates. This conditions out pair-spans "
+            "that cannot coalesce because samples are locally isolated. Zero "
+            "and inf are then padded on so tskit's rate calculation accepts "
+            "the grid. The two padded intervals are dropped from plotting, "
+            "leaving N plotted bins each holding ~1/N of connected-pair "
             "coalescence mass. Mutually exclusive with --time-bins-file and "
             "--num-bins."
         ),
@@ -216,13 +218,45 @@ def load_time_windows(path: Path) -> np.ndarray:
     return windows
 
 
+def connected_pair_coalescence_quantiles(ts, quantiles: np.ndarray) -> np.ndarray:
+    """Invert the pair-coalescence CDF conditional on pairs that can coalesce.
+
+    ``pair_coalescence_quantiles`` uses the standard pair normalisation. When
+    samples are isolated in some local trees, its CDF stops below one and upper
+    quantiles are undefined. The sum of the standard-normalised node counts is
+    that CDF's finite mass, so an interior conditional probability ``p`` maps
+    to the unconditional probability ``p * mass``. Keep exact 0 and 1 requests
+    unchanged because tskit handles them as the youngest/oldest endpoints.
+    """
+    quantiles = np.asarray(quantiles, dtype=float)
+    mass = float(
+        np.sum(ts.pair_coalescence_counts(pair_normalise=True), dtype=float)
+    )
+    if not np.isfinite(mass) or mass <= 0:
+        raise RuntimeError(
+            "No connected pair-coalescence mass is available to define "
+            "quantile time bins."
+        )
+    if mass > 1.0 + 1e-9:
+        raise RuntimeError(
+            "Pair-coalescence mass exceeds one; cannot construct conditional "
+            f"quantiles safely (mass={mass:.10g})."
+        )
+    mass = min(mass, 1.0)
+    adjusted = quantiles.copy()
+    interior = (adjusted > 0.0) & (adjusted < 1.0)
+    adjusted[interior] *= mass
+    return np.asarray(
+        ts.pair_coalescence_quantiles(quantiles=adjusted), dtype=float
+    )
+
+
 def compute_quantile_time_windows(
     ts_files: list[Path],
     post_burnin_indices: np.ndarray,
     num_quantiles: int,
 ) -> np.ndarray:
-    """Build N+1 equal-event bin edges by averaging per-replicate pair-coalescence
-    quantiles across the post-burnin replicates."""
+    """Build N+1 equal-connected-event bin edges averaged across replicates."""
     if num_quantiles < 2:
         raise ValueError("--num-quantiles must be >= 2.")
     if len(post_burnin_indices) == 0:
@@ -231,24 +265,15 @@ def compute_quantile_time_windows(
     edge_arrays = []
     for idx in post_burnin_indices:
         ts = load_ts(ts_files[idx])
-        edges = np.asarray(
-            ts.pair_coalescence_quantiles(quantiles=quantiles), dtype=float
-        )
+        edges = connected_pair_coalescence_quantiles(ts, quantiles)
         edge_arrays.append(edges)
     mean_edges = np.mean(np.stack(edge_arrays, axis=0), axis=0)
     if not np.all(np.diff(mean_edges) > 0):
-        # tskit's pair_coalescence_quantiles inverts the pair-coalescence CDF,
-        # which is a step function with one "atom" (jump) per coalescence node
-        # weighted by the pairs it resolves. A single deep node can be the MRCA
-        # for a large share (up to ~50%) of all sample-pairs at one instant, so
-        # any quantile that lands inside that jump has no unique time and comes
-        # back NaN (or as a tie with its neighbour). Averaging then leaves a
-        # non-increasing grid. This happens when the ARG has too few INDEPENDENT
-        # deep coalescence events for the tail quantiles to be resolved —
-        # typically a single low-recombination chromosome, where deep ancestry
-        # is shared across the genome. Adding independently-assorting chromosomes
-        # (or more recombination) splits the deep mass across distinct times and
-        # fixes it; otherwise pick the time grid yourself.
+        # The conditional CDF is a step function with one weighted atom per
+        # coalescence node. If one atom spans multiple requested probabilities,
+        # adjacent quantiles have the same time and cannot define positive-width
+        # bins. Nonfinite values here indicate an unexpected inversion failure,
+        # since locally unconnected pair mass has already been conditioned out.
         undefined = [
             f"{q:.0%}" for q, e in zip(quantiles, mean_edges) if not np.isfinite(e)
         ]
@@ -260,11 +285,10 @@ def compute_quantile_time_windows(
             "than one full bin's worth of pair-coalescence mass)"
         )
         raise RuntimeError(
-            "Too few independent deep coalescence events in your ARG for the "
-            "empirical pair-coalescence CDF quantiles to define "
-            f"{num_quantiles} equal-mass time bins" + detail + ". Re-run with a "
-            "set of fixed time-bin edges via --time-bins-file (one edge per "
-            "line, e.g. log-spaced from ~10 to ~1e7 generations), with uniform "
+            "The conditional connected-pair coalescence CDF cannot define "
+            f"{num_quantiles} positive-width equal-mass time bins"
+            + detail
+            + ". Re-run with fixed edges via --time-bins-file, with uniform "
             "log-spaced bins via --num-bins, or reduce --num-quantiles."
         )
     if mean_edges[0] <= 0:
