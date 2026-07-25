@@ -11,6 +11,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import coalescence_ne_plots_from_ts as coal
 
 
+class _RecordingAxes:
+    def __init__(self):
+        self.calls = []
+
+    def step(self, x, y, **kwargs):
+        self.calls.append((np.asarray(x), np.asarray(y), kwargs))
+
+
 def _partially_isolated_ts():
     """Eight equal-span trees with only one of six sample pairs connected."""
     tables = tskit.TableCollection(sequence_length=8)
@@ -43,3 +51,21 @@ def test_connected_pair_quantiles_condition_out_isolated_pair_spans():
     assert np.isfinite(conditional).all()
     assert np.all(np.diff(conditional) > 0)
     np.testing.assert_array_equal(conditional[[0, -1]], [1, 8])
+
+
+def test_replicate_plot_excludes_burnin_values():
+    ax = _RecordingAxes()
+    x = np.array([1, 2])
+    values = np.array([[10, 20], [30, 40], [50, 60]])
+
+    coal.plot_postburn_replicates(
+        ax,
+        x,
+        values,
+        np.array([1, 2]),
+        color="gray",
+    )
+
+    assert len(ax.calls) == 2
+    np.testing.assert_array_equal(ax.calls[0][1], values[1])
+    np.testing.assert_array_equal(ax.calls[1][1], values[2])

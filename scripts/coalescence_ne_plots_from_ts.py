@@ -398,6 +398,12 @@ def safe_nanmean(a: np.ndarray, axis=None):
         return np.nanmean(a, axis=axis)
 
 
+def plot_postburn_replicates(ax, x, values, postburn_indices, **kwargs):
+    """Draw only replicate trajectories that contribute to the mean."""
+    for val in values[postburn_indices]:
+        ax.step(x, val, **kwargs)
+
+
 def fill_ne_trajectory(ne: np.ndarray) -> np.ndarray:
     """
     Replace invalid Ne values with nearest-neighbor interpolation on interval index.
@@ -573,8 +579,9 @@ def main():
     mean_kwargs = {"color": "black", "linewidth": 1.5}
 
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    for val in pdf_density:
-        ax.step(plot_breaks, val, **reps_kwargs)
+    plot_postburn_replicates(
+        ax, plot_breaks, pdf_density, keep_post, **reps_kwargs
+    )
     ax.step(plot_breaks, mean_pdf, **mean_kwargs)
     ax.set_xlabel("Adjusted generations in past")
     ax.set_ylabel("Coalescence density (proportion / log-generation)")
@@ -584,8 +591,7 @@ def main():
     plt.clf()
 
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    for val in rate_vals:
-        ax.step(plot_breaks, val, **reps_kwargs)
+    plot_postburn_replicates(ax, plot_breaks, rate_vals, keep_post, **reps_kwargs)
     ax.step(plot_breaks, mean_rates, **mean_kwargs)
     ax.set_xlabel("Adjusted generations in past")
     ax.set_ylabel("Pair coalescence rate")
@@ -601,8 +607,7 @@ def main():
     ne_vals[valid_rates] = 1.0 / (2.0 * rate_vals[valid_rates])
     mean_ne = safe_nanmean(ne_vals[keep_post], axis=0)
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    for val in ne_vals:
-        ax.step(plot_breaks, val, **reps_kwargs)
+    plot_postburn_replicates(ax, plot_breaks, ne_vals, keep_post, **reps_kwargs)
     ax.step(plot_breaks, mean_ne, **mean_kwargs)
     if args.year is not None:
         ax.axvline(args.year, color="red", linestyle="--", linewidth=1.2)
