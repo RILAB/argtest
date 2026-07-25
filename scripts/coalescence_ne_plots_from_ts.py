@@ -67,7 +67,7 @@ def parse_args():
         ),
     )
     p.add_argument(
-        "--num-bins",
+        "--num-quantiles",
         type=int,
         default=None,
         help=(
@@ -77,7 +77,23 @@ def parse_args():
             "across replicates; 0 and inf are then padded on so tskit's rate "
             "calc accepts the grid. The two padded intervals are dropped from "
             "plotting, leaving N plotted bins each holding ~1/N of pair "
-            "coalescence mass. Mutually exclusive with --time-bins-file."
+            "coalescence mass. Mutually exclusive with --time-bins-file and "
+            "--num-bins."
+        ),
+    )
+    p.add_argument(
+        "--num-bins",
+        type=int,
+        default=None,
+        help=(
+            "Choose this many bins spaced uniformly on a log scale across the "
+            "coalescence-time range of the tree sequences. The range runs from "
+            "the youngest to the oldest node time observed across the "
+            "post-burnin replicates; N+1 log-spaced edges are laid over it, then "
+            "0 and inf are padded on so tskit's rate calc accepts the grid. The "
+            "two padded intervals are dropped from plotting, leaving N plotted "
+            "bins of equal width in log-time. Mutually exclusive with "
+            "--time-bins-file and --num-quantiles."
         ),
     )
     p.add_argument(
@@ -203,15 +219,15 @@ def load_time_windows(path: Path) -> np.ndarray:
 def compute_quantile_time_windows(
     ts_files: list[Path],
     post_burnin_indices: np.ndarray,
-    num_bins: int,
+    num_quantiles: int,
 ) -> np.ndarray:
     """Build N+1 equal-event bin edges by averaging per-replicate pair-coalescence
     quantiles across the post-burnin replicates."""
-    if num_bins < 2:
-        raise ValueError("--num-bins must be >= 2.")
+    if num_quantiles < 2:
+        raise ValueError("--num-quantiles must be >= 2.")
     if len(post_burnin_indices) == 0:
-        raise RuntimeError("No post-burnin replicates available for --num-bins.")
-    quantiles = np.linspace(0.0, 1.0, num_bins + 1)
+        raise RuntimeError("No post-burnin replicates available for --num-quantiles.")
+    quantiles = np.linspace(0.0, 1.0, num_quantiles + 1)
     edge_arrays = []
     for idx in post_burnin_indices:
         ts = load_ts(ts_files[idx])
@@ -246,21 +262,56 @@ def compute_quantile_time_windows(
         raise RuntimeError(
             "Too few independent deep coalescence events in your ARG for the "
             "empirical pair-coalescence CDF quantiles to define "
-            f"{num_bins} equal-mass time bins" + detail + ". Re-run with a set "
-            "of fixed time-bin edges via --time-bins-file (one edge per line, "
-            "e.g. log-spaced from ~10 to ~1e7 generations), or reduce "
-            "--num-bins."
+            f"{num_quantiles} equal-mass time bins" + detail + ". Re-run with a "
+            "set of fixed time-bin edges via --time-bins-file (one edge per "
+            "line, e.g. log-spaced from ~10 to ~1e7 generations), with uniform "
+            "log-spaced bins via --num-bins, or reduce --num-quantiles."
         )
     if mean_edges[0] <= 0:
         raise RuntimeError(
             "Averaged minimum coalescence-time edge is non-positive; cannot "
-            "log-plot. Reduce --num-bins or supply fixed edges via "
+            "log-plot. Reduce --num-quantiles or supply fixed edges via "
             "--time-bins-file."
         )
     # Pad with 0 (tskit requires the grid to start at sample time) and inf
     # (tskit requires the rates grid to end at infinity). The two padded
     # intervals are empty in expectation and dropped by plottable_interval_mask.
     return np.concatenate(([0.0], mean_edges, [np.inf]))
+
+
+def compute_logspaced_time_windows(
+    ts_files: list[Path],
+    post_burnin_indices: np.ndarray,
+    num_bins: int,
+) -> np.ndarray:
+    """Build N uniform log-spaced bins across the coalescence-time range.
+
+    The range is the youngest to oldest (non-sample) node time observed across
+    the post-burnin replicates; N+1 log-spaced edges span it, and 0 / inf are
+    padded on so tskit's rate calc accepts the grid. The two padded intervals
+    are dropped by plottable_interval_mask, leaving N plotted bins."""
+    if num_bins < 2:
+        raise ValueError("--num-bins must be >= 2.")
+    if len(post_burnin_indices) == 0:
+        raise RuntimeError("No post-burnin replicates available for --num-bins.")
+    lo = np.inf
+    hi = 0.0
+    for idx in post_burnin_indices:
+        ts = load_ts(ts_files[idx])
+        times = np.asarray(ts.tables.nodes.time, dtype=float)
+        positive = times[times > 0]
+        if positive.size:
+            lo = min(lo, float(positive.min()))
+            hi = max(hi, float(positive.max()))
+    if not np.isfinite(lo) or hi <= lo:
+        raise RuntimeError(
+            "Could not determine a positive coalescence-time range for "
+            "--num-bins (need at least two distinct positive node times across "
+            "the post-burnin replicates). Supply fixed edges via "
+            "--time-bins-file instead."
+        )
+    edges = np.logspace(np.log10(lo), np.log10(hi), num_bins + 1)
+    return np.concatenate(([0.0], edges, [np.inf]))
 
 
 def plottable_interval_mask(time_windows: np.ndarray) -> np.ndarray:
@@ -427,10 +478,18 @@ def main():
         raise ValueError("--sim-length must be > 0")
     if args.sim_window_size <= 0:
         raise ValueError("--sim-window-size must be > 0")
-    if (args.time_bins_file is None) == (args.num_bins is None):
+    grid_opts = [
+        args.time_bins_file is not None,
+        args.num_quantiles is not None,
+        args.num_bins is not None,
+    ]
+    if sum(grid_opts) != 1:
         raise ValueError(
-            "Provide exactly one of --time-bins-file or --num-bins."
+            "Provide exactly one of --time-bins-file, --num-quantiles, or "
+            "--num-bins."
         )
+    if args.num_quantiles is not None and args.num_quantiles < 2:
+        raise ValueError("--num-quantiles must be >= 2.")
     if args.num_bins is not None and args.num_bins < 2:
         raise ValueError("--num-bins must be >= 2.")
     ts_files = find_tree_files(args.ts_dir, args.pattern)
@@ -442,8 +501,12 @@ def main():
 
     if args.time_bins_file is not None:
         time_windows = load_time_windows(args.time_bins_file)
-    else:
+    elif args.num_quantiles is not None:
         time_windows = compute_quantile_time_windows(
+            ts_files, keep_post, args.num_quantiles
+        )
+    else:
+        time_windows = compute_logspaced_time_windows(
             ts_files, keep_post, args.num_bins
         )
     finite_mask = finite_interval_mask(time_windows)
@@ -561,6 +624,7 @@ def main():
                 f"burnin_frac={args.burnin_frac}",
                 f"burnin_index={burnin}",
                 f"time_bins_file={args.time_bins_file}",
+                f"num_quantiles={args.num_quantiles}",
                 f"num_bins={args.num_bins}",
                 f"time_windows={time_windows.tolist()}",
                 f"time_adjust={args.time_adjust}",
