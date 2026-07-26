@@ -19,6 +19,20 @@ class _RecordingAxes:
         self.calls.append((np.asarray(x), np.asarray(y), kwargs))
 
 
+def test_find_tree_files_uses_natural_replicate_order(tmp_path):
+    for replicate in [10, 2, 1, 0]:
+        (tmp_path / f"run.combined.{replicate}.tsz").touch()
+
+    files = coal.find_tree_files(tmp_path, "*.tsz")
+
+    assert [path.name for path in files] == [
+        "run.combined.0.tsz",
+        "run.combined.1.tsz",
+        "run.combined.2.tsz",
+        "run.combined.10.tsz",
+    ]
+
+
 def _partially_isolated_ts():
     """Eight equal-span trees with only one of six sample pairs connected."""
     tables = tskit.TableCollection(sequence_length=8)

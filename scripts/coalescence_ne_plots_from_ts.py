@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import re
 import warnings
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
@@ -193,8 +194,16 @@ def parse_args():
 
 
 def find_tree_files(ts_dir: Path, pattern: str) -> list[Path]:
-    files = sorted(
-        [p for p in ts_dir.glob(pattern) if p.is_file() and p.suffix in {".tsz", ".ts", ".trees"}]
+    files = [
+        p
+        for p in ts_dir.glob(pattern)
+        if p.is_file() and p.suffix in {".tsz", ".ts", ".trees"}
+    ]
+    files.sort(
+        key=lambda p: [
+            int(part) if part.isdigit() else part.casefold()
+            for part in re.split(r"(\d+)", str(p.relative_to(ts_dir)))
+        ]
     )
     if not files:
         raise RuntimeError(f"No tree files found in {ts_dir} matching pattern '{pattern}'.")
