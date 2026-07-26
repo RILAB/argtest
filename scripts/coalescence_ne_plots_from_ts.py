@@ -413,6 +413,90 @@ def plot_postburn_replicates(ax, x, values, postburn_indices, **kwargs):
         ax.step(x, val, **kwargs)
 
 
+def write_coalescence_estimates(
+    out_path: Path,
+    ts_files: list[Path],
+    postburn_indices: np.ndarray,
+    time_windows: np.ndarray,
+    keep_mask: np.ndarray,
+    time_adjust: float,
+    pdf_mass: np.ndarray,
+    pdf_density: np.ndarray,
+    rates: np.ndarray,
+    ne: np.ndarray,
+    mean_pdf_mass: np.ndarray,
+    mean_pdf_density: np.ndarray,
+    mean_rates: np.ndarray,
+    mean_ne: np.ndarray,
+) -> Path:
+    """Save plotted post-burnin trajectories and their posterior means."""
+    left = time_windows[:-1][keep_mask]
+    right = time_windows[1:][keep_mask]
+    header = [
+        "series",
+        "replicate_index",
+        "tree_file",
+        "bin_index",
+        "time_left",
+        "time_right",
+        "adjusted_time_left",
+        "adjusted_time_right",
+        "pair_coalescence_mass",
+        "pair_coalescence_log_density",
+        "pair_coalescence_rate",
+        "effective_population_size",
+    ]
+    lines = ["\t".join(header)]
+
+    def add_series(
+        series,
+        replicate_index,
+        tree_file,
+        mass_values,
+        density_values,
+        rate_values,
+        ne_values,
+    ):
+        for j in range(left.size):
+            row = [
+                series,
+                str(replicate_index),
+                str(tree_file),
+                str(j),
+                f"{left[j]:.10g}",
+                f"{right[j]:.10g}",
+                f"{left[j] / time_adjust:.10g}",
+                f"{right[j] / time_adjust:.10g}",
+                f"{mass_values[j]:.10g}",
+                f"{density_values[j]:.10g}",
+                f"{rate_values[j]:.10g}",
+                f"{ne_values[j]:.10g}",
+            ]
+            lines.append("\t".join(row))
+
+    for i in postburn_indices:
+        add_series(
+            "replicate",
+            int(i),
+            ts_files[i],
+            pdf_mass[i],
+            pdf_density[i],
+            rates[i],
+            ne[i],
+        )
+    add_series(
+        "posterior_mean",
+        "",
+        "",
+        mean_pdf_mass,
+        mean_pdf_density,
+        mean_rates,
+        mean_ne,
+    )
+    out_path.write_text("\n".join(lines) + "\n")
+    return out_path
+
+
 def fill_ne_trajectory(ne: np.ndarray) -> np.ndarray:
     """
     Replace invalid Ne values with nearest-neighbor interpolation on interval index.
@@ -581,6 +665,7 @@ def main():
     bin_widths = np.log(time_windows[1:][keep_mask] / time_windows[:-1][keep_mask])
     pdf_density = pdf_vals / bin_widths
 
+    mean_pdf_mass = safe_nanmean(pdf_vals[keep_post], axis=0)
     mean_pdf = safe_nanmean(pdf_density[keep_post], axis=0)
     mean_rates = safe_nanmean(rate_vals[keep_post], axis=0)
 
@@ -628,6 +713,23 @@ def main():
     ne_path = args.out_dir / f"{args.prefix}effective-pop-size.png"
     plt.savefig(ne_path)
     plt.clf()
+
+    estimates_path = write_coalescence_estimates(
+        args.out_dir / f"{args.prefix}coalescence-ne-estimates.tsv",
+        ts_files,
+        keep_post,
+        time_windows,
+        keep_mask,
+        args.time_adjust,
+        pdf_vals,
+        pdf_density,
+        rate_vals,
+        ne_vals,
+        mean_pdf_mass,
+        mean_pdf,
+        mean_rates,
+        mean_ne,
+    )
 
     sim_out_path = None
     sim_sfs_out_path = None
@@ -678,6 +780,7 @@ def main():
                 f"pair_coalescence_pdf_plot={pdf_path}",
                 f"pair_coalescence_rates_plot={rate_path}",
                 f"effective_pop_size_plot={ne_path}",
+                f"coalescence_estimates_tsv={estimates_path}",
                 f"simulation_window_stats_tsv={sim_out_path}",
                 f"simulation_sfs_tsv={sim_sfs_out_path}",
             ]
@@ -688,6 +791,7 @@ def main():
     print(f"Wrote: {pdf_path}")
     print(f"Wrote: {rate_path}")
     print(f"Wrote: {ne_path}")
+    print(f"Wrote: {estimates_path}")
     if sim_out_path is not None:
         print(f"Wrote: {sim_out_path}")
     if sim_sfs_out_path is not None:

@@ -112,6 +112,14 @@ suffix_to_strip: ""
 # trim_individuals: ""
 # trim_remove_bed: []
 
+# Step 5b: minimum-sample interval filter. Intervals whose local trees carry
+# fewer than this many samples are dropped before the merge. Must be an integer
+# >= 0. Left commented out by default, which skips step 5b entirely (the merge
+# reads step 5 directly). Uncomment to enable it; note that a value of 0 keeps
+# every interval (nothing is below 0) but still runs the step as a pass-through,
+# so use a value >= 1 to actually prune low-sample intervals.
+# min_samples: 0
+
 # --------------------------------------------------------------------------- #
 # Concatenation behavior (merge step)
 # --------------------------------------------------------------------------- #

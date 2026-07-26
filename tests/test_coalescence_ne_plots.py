@@ -83,3 +83,37 @@ def test_replicate_plot_excludes_burnin_values():
     assert len(ax.calls) == 2
     np.testing.assert_array_equal(ax.calls[0][1], values[1])
     np.testing.assert_array_equal(ax.calls[1][1], values[2])
+
+
+def test_write_estimates_saves_only_postburn_replicates_and_mean(tmp_path):
+    out = tmp_path / "estimates.tsv"
+    values = np.array([[1.0, 2.0], [3.0, 4.0]])
+
+    coal.write_coalescence_estimates(
+        out,
+        [Path("rep0.tsz"), Path("rep1.tsz")],
+        np.array([1]),
+        np.array([0.0, 1.0, 2.0, np.inf]),
+        np.array([False, True, True]),
+        2.0,
+        values,
+        values + 10,
+        values + 20,
+        values + 30,
+        np.array([3.0, 4.0]),
+        np.array([13.0, 14.0]),
+        np.array([23.0, 24.0]),
+        np.array([33.0, 34.0]),
+    )
+
+    rows = [line.split("\t") for line in out.read_text().splitlines()]
+    assert len(rows) == 5
+    assert [row[0] for row in rows[1:]] == [
+        "replicate",
+        "replicate",
+        "posterior_mean",
+        "posterior_mean",
+    ]
+    assert {row[1] for row in rows[1:3]} == {"1"}
+    assert {row[2] for row in rows[1:3]} == {"rep1.tsz"}
+    assert rows[1][6:8] == ["0.5", "1"]
