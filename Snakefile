@@ -318,6 +318,10 @@ for rep in REPLICATES:
 STEP1_TARGETS = [str(STEP1_DIR / f"{chrom}.low_rec.mask.bed") for chrom in CHROMS]
 STEP2_TARGETS = [str(STEP2_DIR / chrom / f"{chrom}.low_access.bed") for chrom in CHROMS]
 STEP5_TARGETS = [str(STEP5_DIR / chrom / f"{rep}.{PAIR_EXT[(chrom, rep)]}") for chrom, rep in PAIRS]
+FILTERED_TS_TARGETS = [
+    str(FILTERED_TS_DIR / chrom / f"{rep}.{PAIR_EXT[(chrom, rep)]}")
+    for chrom, rep in PAIRS
+]
 MERGED_TARGETS = [
     str(MERGED_DIR / f"{BASE_NAME}.combined.{rep}.{REPLICATE_EXT[rep]}")
     for rep in REPLICATES
@@ -775,6 +779,7 @@ PY
 rule step7_summary:
     input:
         fai=str(FAI),
+        filtered=FILTERED_TS_TARGETS,
         targets=MERGED_TARGETS + STEP6_TARGETS,
     output:
         SUMMARY_TARGET
@@ -795,6 +800,10 @@ rule step7_summary:
         mutload_cutoff=MUTLOAD_CUTOFF,
         mutation_rate=MUTATION_RATE if MUTATION_RATE is not None else "null",
         sim_branch="true" if VALIDATION_SIM_BRANCH else "false",
+        filtered_ts_args=" ".join(
+            f'"{FILTERED_TS_DIR / chrom / f"{rep}.{PAIR_EXT[(chrom, rep)]}"}"'
+            for chrom, rep in PAIRS
+        ),
     shell:
         """
         python scripts/pipeline_summary.py \
@@ -802,6 +811,7 @@ rule step7_summary:
           --fai "{input.fai}" \
           --chroms {params.chroms} \
           --replicates {params.replicates} \
+          --filtered-ts {params.filtered_ts_args} \
           --out "{output}" \
           --rec-fraction {params.rec_fraction} \
           --low-access-window {params.low_access_window} \

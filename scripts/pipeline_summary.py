@@ -10,6 +10,13 @@ import subprocess
 from collections import defaultdict
 from pathlib import Path
 
+from argtest_common import (
+    accessible_intervals_from_mu,
+    load_ts,
+    ratemap_from_metadata,
+    tree_covered_accessible_bp,
+)
+
 
 # ---------------------------------------------------------------------------
 # Version stamp
@@ -94,6 +101,16 @@ def parse_args():
         required=True,
         type=Path,
         help="Output HTML path (typically <out-dir>/pipeline_summary.html).",
+    )
+    p.add_argument(
+        "--filtered-ts",
+        required=True,
+        nargs="+",
+        type=Path,
+        help=(
+            "Final filtered per-chromosome tree sequences. Paths must use the "
+            "<chrom>/<rep>.<suffix> layout produced by steps 5/5b."
+        ),
     )
     p.add_argument(
         "--rec-fraction",
@@ -267,13 +284,36 @@ def bar_html(pct: float) -> str:
 # Data collection
 # ---------------------------------------------------------------------------
 
-def collect_retention(chroms, replicates, out_dir, chrom_lengths):
+def index_filtered_ts(paths: list[Path]) -> dict[tuple[str, str], Path]:
+    """Index final tree paths by their pipeline <chrom>/<rep> layout."""
+    indexed = {}
+    for path in paths:
+        key = (path.parent.name, path.stem)
+        if key in indexed:
+            raise ValueError(
+                f"Duplicate final tree sequence for chromosome/replicate {key}: "
+                f"{indexed[key]} and {path}"
+            )
+        indexed[key] = path
+    return indexed
+
+
+def retained_bp_from_final_ts(path: Path) -> float:
+    """Accessible bp with a non-empty genealogy in one final filtered ARG."""
+    ts = load_ts(path)
+    mu = ratemap_from_metadata(ts.metadata or {})
+    accessible = accessible_intervals_from_mu(mu) if mu is not None else None
+    return tree_covered_accessible_bp(ts, accessible)
+
+
+def collect_retention(chroms, replicates, out_dir, chrom_lengths, filtered_ts):
     step1_dir = out_dir / "step1_low_rec"
     step2_dir = out_dir / "step2_low_access"
     step3_dir = out_dir / "step3_mutload"
     step4_mask_dir = out_dir / "step4_masks"
 
     by_num = _fai_num_index(chrom_lengths)
+    final_paths = index_filtered_ts(filtered_ts)
     rows = []
     for chrom in chroms:
         seq_len = lookup_chrom_len(chrom, chrom_lengths, by_num)
@@ -289,7 +329,12 @@ def collect_retention(chroms, replicates, out_dir, chrom_lengths):
             for rep in replicates
         ]
 
-        retained_vals = [seq_len - c for c in combined_vals if seq_len > 0]
+        retained_by_rep = {
+            rep: retained_bp_from_final_ts(final_paths[(chrom, rep)])
+            for rep in replicates
+            if (chrom, rep) in final_paths
+        }
+        retained_vals = list(retained_by_rep.values())
         pct_vals = [100.0 * r / seq_len for r in retained_vals if seq_len > 0]
         mean_pct, _ = _mean_sd(pct_vals)
 
@@ -302,6 +347,7 @@ def collect_retention(chroms, replicates, out_dir, chrom_lengths):
             "s2_pct": 100.0 * s2 / seq_len if seq_len else 0,
             "s3_vals": s3_vals,
             "combined_vals": combined_vals,
+            "retained_by_rep": retained_by_rep,
             "retained_vals": retained_vals,
             "mean_pct": mean_pct,
         })
@@ -349,7 +395,10 @@ def weighted_retained_pct(retention, replicates) -> float:
     length_by_rep: dict[str, float] = defaultdict(float)
     for row in retention:
         chrom_len = float(row["seq_len"])
-        for rep, retained in zip(replicates, row["retained_vals"]):
+        row_by_rep = row.get("retained_by_rep")
+        if row_by_rep is None:
+            row_by_rep = dict(zip(replicates, row["retained_vals"]))
+        for rep, retained in row_by_rep.items():
             retained_by_rep[rep] += float(retained)
             length_by_rep[rep] += chrom_len
 
@@ -360,6 +409,29 @@ def weighted_retained_pct(retention, replicates) -> float:
     ]
     mean_pct, _ = _mean_sd(pct_vals)
     return mean_pct
+
+
+def totals_by_replicate(retention, replicates, key) -> list[float]:
+    """Sum a per-replicate row metric across chromosomes before summarising."""
+    totals = []
+    for rep_i, rep in enumerate(replicates):
+        total = 0.0
+        found = False
+        for row in retention:
+            if key == "retained_vals" and "retained_by_rep" in row:
+                if rep not in row["retained_by_rep"]:
+                    continue
+                value = row["retained_by_rep"][rep]
+            else:
+                values = row[key]
+                if rep_i >= len(values):
+                    continue
+                value = values[rep_i]
+            total += float(value)
+            found = True
+        if found:
+            totals.append(total)
+    return totals
 
 
 # ---------------------------------------------------------------------------
@@ -453,7 +525,13 @@ def main():
     replicates = args.replicates
 
     chrom_lengths = read_fai(args.fai)
-    retention = collect_retention(chroms, replicates, out_dir, chrom_lengths)
+    retention = collect_retention(
+        chroms,
+        replicates,
+        out_dir,
+        chrom_lengths,
+        args.filtered_ts,
+    )
     outliers  = collect_outliers(chroms, replicates, out_dir)
 
     step6_dir = out_dir / "step6_validation"
@@ -483,8 +561,9 @@ def main():
     total_len = sum(r["seq_len"] for r in retention)
     total_s1  = sum(r["s1_bp"] for r in retention)
     total_s2  = sum(r["s2_bp"] for r in retention)
-    all_s3    = [v for r in retention for v in r["s3_vals"]]
-    all_comb  = [v for r in retention for v in r["combined_vals"]]
+    all_s3 = totals_by_replicate(retention, replicates, "s3_vals")
+    all_comb = totals_by_replicate(retention, replicates, "combined_vals")
+    all_retained = totals_by_replicate(retention, replicates, "retained_vals")
     mean_total_pct = weighted_retained_pct(retention, replicates)
 
     for r in retention:
@@ -499,7 +578,8 @@ def main():
             f"<td>{fmt_bp(r['s2_bp'])} ({r['s2_pct']:.1f}%)</td>"
             f"<td>{fmt_meansd(r['s3_vals'])}</td>"
             f"<td>{fmt_meansd(r['combined_vals'])}</td>"
-            f"<td style='color:{color}'>{pct:.1f}%{warn}</td>"
+            f"<td style='color:{color}'>{fmt_meansd(r['retained_vals'])} "
+            f"({pct:.1f}%){warn}</td>"
             f"<td>{bar_html(pct)}</td>"
             f"</tr>"
         )
@@ -514,7 +594,7 @@ def main():
         f"<td>{fmt_bp(total_s2)} ({total_s2_pct:.1f}%)</td>"
         f"<td>{fmt_meansd(all_s3)}</td>"
         f"<td>{fmt_meansd(all_comb)}</td>"
-        f"<td>{mean_total_pct:.1f}%</td>"
+        f"<td>{fmt_meansd(all_retained)} ({mean_total_pct:.1f}%)</td>"
         f"<td>{bar_html(mean_total_pct)}</td>"
         f"</tr>"
     )
@@ -564,15 +644,18 @@ def main():
 
 <h2>Genome retention by chromosome</h2>
 <p class="note">Steps 1–2 masks are replicate-independent.
-Step-3 and combined-mask bp shown as mean ± SD across {len(replicates)} replicates.</p>
+Step-3, combined-mask, and retained bp are shown as mean ± SD across
+{len(replicates)} replicates. Percentages use the full reference length as
+their denominator. Retained bp are measured directly from the final filtered
+ARG and exclude both initially inaccessible/empty regions and pipeline masks.</p>
 <table>
 <thead><tr>
   <th>Chrom</th><th>Length</th>
   <th>Step 1 masked (low-rec)</th>
   <th>Step 2 masked (low-access)</th>
   <th>Step 3 masked (mutload)</th>
-  <th>Total removed (combined)</th>
-  <th>Retained</th><th></th>
+  <th>Pipeline removed (union)</th>
+  <th>Final retained Mb (% of reference)</th><th></th>
 </tr></thead>
 <tbody>
 {"".join(ret_rows)}

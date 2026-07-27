@@ -8,7 +8,13 @@ import pickle
 
 import tskit
 
-from argtest_common import dump_ts, infer_mu_path, load_ts, ratemap_to_metadata
+from argtest_common import (
+    dump_ts,
+    infer_mu_path,
+    load_ts,
+    ratemap_from_metadata,
+    ratemap_to_metadata,
+)
 from trim_regions import complement_intervals, load_mask_intervals
 
 
@@ -38,13 +44,16 @@ def main():
     trimmed = ts.keep_intervals(keep, simplify=False)
     tables = trimmed.dump_tables()
     metadata: dict = {"kept_intervals": [[float(l), float(r)] for l, r in keep]}
-    try:
-        mu_path = infer_mu_path(args.ts)
-        with open(mu_path, "rb") as fh:
-            mu = pickle.load(fh)
+    mu = ratemap_from_metadata(ts.metadata or {})
+    if mu is None:
+        try:
+            mu_path = infer_mu_path(args.ts)
+            with open(mu_path, "rb") as fh:
+                mu = pickle.load(fh)
+        except Exception:
+            mu = None
+    if mu is not None:
         metadata.update(ratemap_to_metadata(mu))
-    except Exception:
-        pass
     tables.metadata_schema = tskit.MetadataSchema({"codec": "json"})
     tables.metadata = metadata
     trimmed = tables.tree_sequence()

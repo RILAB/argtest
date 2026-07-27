@@ -1,6 +1,8 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import sys
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -28,3 +30,49 @@ def test_weighted_retained_pct_uses_chrom_lengths():
     ]
 
     assert ps.weighted_retained_pct(retention, ["1"]) == 10.0
+
+
+def test_retained_bp_from_final_ts_intersects_input_accessibility_and_tree_coverage(
+    tmp_path, monkeypatch
+):
+    class FakeTree:
+        def __init__(self, left, right, num_edges):
+            self.interval = SimpleNamespace(left=left, right=right)
+            self.num_edges = num_edges
+
+    ts = SimpleNamespace(
+        metadata={"mu_position": [0, 10, 20, 30, 40], "mu_rate": [1, 0, 1, 0]},
+        trees=lambda: iter([
+            FakeTree(0, 15, 1),
+            FakeTree(15, 25, 0),
+            FakeTree(25, 40, 1),
+        ]),
+    )
+    mu = SimpleNamespace(
+        position=np.array([0, 10, 20, 30, 40]),
+        rate=np.array([1, 0, 1, 0]),
+    )
+    monkeypatch.setattr(ps, "load_ts", lambda path: ts)
+    monkeypatch.setattr(ps, "ratemap_from_metadata", lambda metadata: mu)
+
+    # Accessible [0,10) contributes 10 bp. Accessible [20,30) overlaps an
+    # empty final tree on [20,25), so only [25,30) contributes another 5 bp.
+    assert ps.retained_bp_from_final_ts(tmp_path / "1.tsz") == 15.0
+
+
+def test_all_row_totals_sum_chromosomes_within_each_replicate():
+    retention = [
+        {
+            "combined_vals": [10, 20],
+            "retained_by_rep": {"1": 80, "2": 70},
+            "retained_vals": [80, 70],
+        },
+        {
+            "combined_vals": [30, 40],
+            "retained_by_rep": {"1": 60, "2": 50},
+            "retained_vals": [60, 50],
+        },
+    ]
+
+    assert ps.totals_by_replicate(retention, ["1", "2"], "combined_vals") == [40, 60]
+    assert ps.totals_by_replicate(retention, ["1", "2"], "retained_vals") == [140, 120]
