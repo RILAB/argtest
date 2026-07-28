@@ -262,6 +262,21 @@ def fmt_meansd(values: list[float], fmt=fmt_bp) -> str:
     return f"{fmt(m)} ± {fmt(sd)}"
 
 
+def fmt_pct_meansd(values: list[float]) -> str:
+    if not values:
+        return "—"
+    mean, sd = _mean_sd(values)
+    if len(values) < 2 or sd < 0.05:
+        return f"{mean:.1f}%"
+    return f"{mean:.1f}% ± {sd:.1f}%"
+
+
+def percentages_of_length(values: list[float], length: float) -> list[float]:
+    if length <= 0:
+        return []
+    return [100.0 * value / length for value in values]
+
+
 def pct_color(pct: float) -> str:
     if pct >= 85:
         return "#27ae60"
@@ -568,6 +583,8 @@ def main():
 
     for r in retention:
         pct = r["mean_pct"]
+        s3_pct_vals = percentages_of_length(r["s3_vals"], r["seq_len"])
+        combined_pct_vals = percentages_of_length(r["combined_vals"], r["seq_len"])
         color = pct_color(pct)
         warn = " <span class='warn'>⚠</span>" if pct < 70 else ""
         ret_rows.append(
@@ -576,8 +593,9 @@ def main():
             f"<td>{fmt_bp(r['seq_len'])}</td>"
             f"<td>{fmt_bp(r['s1_bp'])} ({r['s1_pct']:.1f}%)</td>"
             f"<td>{fmt_bp(r['s2_bp'])} ({r['s2_pct']:.1f}%)</td>"
-            f"<td>{fmt_meansd(r['s3_vals'])}</td>"
-            f"<td>{fmt_meansd(r['combined_vals'])}</td>"
+            f"<td>{fmt_meansd(r['s3_vals'])} ({fmt_pct_meansd(s3_pct_vals)})</td>"
+            f"<td>{fmt_meansd(r['combined_vals'])} "
+            f"({fmt_pct_meansd(combined_pct_vals)})</td>"
             f"<td style='color:{color}'>{fmt_meansd(r['retained_vals'])} "
             f"({pct:.1f}%){warn}</td>"
             f"<td>{bar_html(pct)}</td>"
@@ -586,14 +604,16 @@ def main():
 
     total_s1_pct = 100.0 * total_s1 / total_len if total_len else 0
     total_s2_pct = 100.0 * total_s2 / total_len if total_len else 0
+    all_s3_pct = percentages_of_length(all_s3, total_len)
+    all_comb_pct = percentages_of_length(all_comb, total_len)
     ret_rows.append(
         f"<tr class='total-row'>"
         f"<td>All</td>"
         f"<td>{fmt_bp(total_len)}</td>"
         f"<td>{fmt_bp(total_s1)} ({total_s1_pct:.1f}%)</td>"
         f"<td>{fmt_bp(total_s2)} ({total_s2_pct:.1f}%)</td>"
-        f"<td>{fmt_meansd(all_s3)}</td>"
-        f"<td>{fmt_meansd(all_comb)}</td>"
+        f"<td>{fmt_meansd(all_s3)} ({fmt_pct_meansd(all_s3_pct)})</td>"
+        f"<td>{fmt_meansd(all_comb)} ({fmt_pct_meansd(all_comb_pct)})</td>"
         f"<td>{fmt_meansd(all_retained)} ({mean_total_pct:.1f}%)</td>"
         f"<td>{bar_html(mean_total_pct)}</td>"
         f"</tr>"
@@ -646,15 +666,17 @@ def main():
 <p class="note">Steps 1–2 masks are replicate-independent.
 Step-3, combined-mask, and retained bp are shown as mean ± SD across
 {len(replicates)} replicates. Percentages use the full reference length as
-their denominator. Retained bp are measured directly from the final filtered
-ARG and exclude both initially inaccessible/empty regions and pipeline masks.</p>
+their denominator: each chromosome's full .fai length in chromosome rows, and
+the sum of those lengths in the All row. Retained bp are measured directly
+from the final filtered ARG and exclude both initially inaccessible/empty
+regions and pipeline masks.</p>
 <table>
 <thead><tr>
   <th>Chrom</th><th>Length</th>
-  <th>Step 1 masked (low-rec)</th>
-  <th>Step 2 masked (low-access)</th>
-  <th>Step 3 masked (mutload)</th>
-  <th>Pipeline removed (union)</th>
+  <th>Step 1 masked Mb (% of chromosome)</th>
+  <th>Step 2 masked Mb (% of chromosome)</th>
+  <th>Step 3 masked Mb (% of chromosome)</th>
+  <th>Pipeline removed Mb (% of chromosome; union)</th>
   <th>Final retained Mb (% of reference)</th><th></th>
 </tr></thead>
 <tbody>

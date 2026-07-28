@@ -54,17 +54,29 @@ def _partially_isolated_ts():
     return tables.tree_sequence()
 
 
-def test_connected_pair_quantiles_condition_out_isolated_pair_spans():
+def test_native_pair_quantiles_condition_out_isolated_pair_spans():
     ts = _partially_isolated_ts()
     quantiles = np.linspace(0, 1, 5)
 
-    standard = ts.pair_coalescence_quantiles(quantiles)
-    assert np.isnan(standard[1:-1]).all()
+    result = ts.pair_coalescence_quantiles(quantiles)
+    assert np.isfinite(result).all()
+    assert np.all(np.diff(result) > 0)
+    np.testing.assert_array_equal(result[[0, -1]], [1, 8])
 
-    conditional = coal.connected_pair_coalescence_quantiles(ts, quantiles)
-    assert np.isfinite(conditional).all()
-    assert np.all(np.diff(conditional) > 0)
-    np.testing.assert_array_equal(conditional[[0, -1]], [1, 8])
+
+def test_compute_pair_coal_uses_native_partial_missing_normalisation():
+    ts = _partially_isolated_ts()
+    time_windows = np.array([0.0, 2.0, 4.0, 6.0, 8.0, np.inf])
+
+    pdf, rates = coal.compute_pair_coal(ts, time_windows, tail_cutoff=1e-12)
+
+    expected_pdf = ts.pair_coalescence_counts(
+        time_windows=time_windows,
+        pair_normalise=True,
+    )
+    expected_rates = ts.pair_coalescence_rates(time_windows=time_windows)
+    np.testing.assert_allclose(pdf, expected_pdf)
+    np.testing.assert_allclose(rates, expected_rates, equal_nan=True)
 
 
 def test_replicate_plot_excludes_burnin_values():

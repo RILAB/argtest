@@ -3,6 +3,46 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
+## [v1.9] — 2026-07-27 — native missing-pair coalescence + final-ARG retention
+
+### Added
+- `coalescence_ne_plots_from_ts.py` now offers distinct automatic time-grid
+  modes: `--num-quantiles N` for equal connected-pair coalescence mass and
+  `--num-bins N` for uniform log-spaced bins across the observed time range.
+- Coalescence/Ne runs export the plotted post-burn-in replicate trajectories
+  and posterior means to `{prefix}coalescence-ne-estimates.tsv`, including
+  pair-coalescence mass, log-density, rate, and effective population size.
+- Pipeline summaries now include the exact argtest git version in their footer
+  and show mask/retention values in Mb and as percentages of the corresponding
+  full `.fai` chromosome length.
+
+### Changed
+- Pair-coalescence quantiles, counts, and rates now use the native
+  partial-missing-data normalization from pinned nspope/tskit commit
+  `73d8cd922482475020ae01180cae95bf5abbf067`. The script-level conditional
+  quantile adjustment and `connected_pair_span` scalar rescaling have been
+  removed, so locally isolated samples are handled correctly by tskit for
+  global, spatial-window, and multiple-sample-set calculations.
+- The runtime environment now requires Python >= 3.11 and NumPy >= 2, as
+  required by the pinned tskit development build.
+- Coalescence plots include only post-burn-in replicate trajectories in the
+  displayed posterior ensemble, and input ARG replicates are ordered
+  naturally by numeric index.
+- The example Snakemake configuration now documents the optional `min_samples`
+  step-5b filter.
+
+### Fixed
+- Final retained sequence in `pipeline_summary.html` is measured directly from
+  each filtered ARG as positive-rate accessible sequence with a non-empty local
+  genealogy. It therefore excludes both regions masked in the input ARG and
+  regions removed by the pipeline.
+- Genome-wide Step 3, pipeline-union, and retained Mb are now summed across
+  chromosomes within each replicate before reporting mean +/- SD. Step 3 and
+  pipeline-union columns also report percentages of chromosome length.
+- `trim_regions_single.py` preserves mutation-rate maps already embedded in
+  input tree-sequence metadata, ensuring downstream retention calculations can
+  recover the original accessibility mask.
+
 ## [v1.8] — 2026-07-13 — chromosome-position tree lookup + pipeline hotspot optimizations
 
 ### Added

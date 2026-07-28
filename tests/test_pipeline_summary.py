@@ -32,6 +32,13 @@ def test_weighted_retained_pct_uses_chrom_lengths():
     assert ps.weighted_retained_pct(retention, ["1"]) == 10.0
 
 
+def test_mask_percentages_use_chromosome_length():
+    percentages = ps.percentages_of_length([100, 200], 1000)
+
+    assert percentages == [10.0, 20.0]
+    assert ps.fmt_pct_meansd(percentages) == "15.0% ± 7.1%"
+
+
 def test_retained_bp_from_final_ts_intersects_input_accessibility_and_tree_coverage(
     tmp_path, monkeypatch
 ):
