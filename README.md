@@ -27,6 +27,20 @@ conda env create -f environment.yml
 conda activate argtest
 ```
 
+`tskit` is not installed from conda-forge: `environment.yml` pins it to
+[nspope/tskit commit `73d8cd9`](https://github.com/nspope/tskit/commit/73d8cd922482475020ae01180cae95bf5abbf067)
+and installs it with pip, so the build needs pip, git, and access to GitHub. The
+pinned build is what provides the native partial-missing-data pair-coalescence
+normalization (see [Auxiliary scripts](#auxiliary-scripts)) and it requires
+Python ≥ 3.11 and NumPy ≥ 2. When upgrading from an environment built before
+v1.9, recreate it rather than updating in place, so the conda-forge `tskit` is
+replaced:
+
+```bash
+conda env remove -n argtest
+conda env create -f environment.yml
+```
+
 **Which version to use:** work from the most recent tagged release rather than an
 arbitrary commit on `main`. To check out the latest tag:
 
@@ -275,7 +289,7 @@ Pipeline scripts (called by the Snakefile). Run any with `--help` for arguments,
 - [`validation_plots_from_ts.py`](scripts/validation_plots_from_ts.py) — SINGER-style QC plots (mutational load, diversity, Tajima's D, folded/unfolded SFS) across TS replicates; optional observed-vs-simulated overlays.
 - [`merge_treefiles_by_replicate.py`](scripts/merge_treefiles_by_replicate.py) — concatenate chromosome-specific tree-sequence files by replicate; embedded mutation-rate ratemaps are merged and carried forward.
 - [`export_vcf.py`](scripts/export_vcf.py) — export a `.vcf`/`.vcf.gz` from a (filtered) tree sequence: variable sites only, ploidy-aware genotypes, and samples pruned by `trim_samples` written as missing (`.`) via `isolated_as_missing`. Driven by `emit_vcf`; see [VCF export](#vcf-export).
-- [`pipeline_summary.py`](scripts/pipeline_summary.py) — self-contained HTML report of genome retention, per-individual outlier counts, and embedded validation plots.
+- [`pipeline_summary.py`](scripts/pipeline_summary.py) — self-contained HTML report of genome retention, per-individual outlier counts, and embedded validation plots. Requires `--filtered-ts` (the final per-chromosome tree sequences, in the `<chrom>/<rep>.<suffix>` layout produced by steps 5/5b), which it loads to measure retained sequence directly from each ARG.
 
 ### ⚠️ Warning: summary statistics after sample pruning
 
@@ -285,7 +299,7 @@ Diversity (π), Tajima's D, and SFS in this pipeline are computed with [tskit](h
 
 Scripts not called by the Snakemake pipeline.
 
-- [`coalescence_ne_plots_from_ts.py`](scripts/coalescence_ne_plots_from_ts.py) — pair-coalescence and Ne plots from TS replicates. Choose the time grid with one of `--time-bins-file` (explicit edges), `--num-quantiles N` (equal-coalescence-event bins derived from `pair_coalescence_quantiles` averaged over post-burnin replicates), or `--num-bins N` (uniform log-spaced bins across the observed coalescence-time range). Optional Demes-based coalescent simulations (`--sim N`) produce window-stat and SFS TSVs for observed-vs-sim density plots in `validation_plots_from_ts.py`.
+- [`coalescence_ne_plots_from_ts.py`](scripts/coalescence_ne_plots_from_ts.py) — pair-coalescence and Ne plots from TS replicates. Choose the time grid with one of `--time-bins-file` (explicit edges), `--num-quantiles N` (equal-coalescence-event bins derived from `pair_coalescence_quantiles` averaged over post-burnin replicates), or `--num-bins N` (uniform log-spaced bins across the observed coalescence-time range). Note that `--num-bins` meant equal-coalescence-event bins up to v1.8; that mode is now `--num-quantiles`, so pre-v1.9 commands need renaming to reproduce their old time grid. Optional Demes-based coalescent simulations (`--sim N`) produce window-stat and SFS TSVs for observed-vs-sim density plots in `validation_plots_from_ts.py`.
 
   The environment pins [nspope/tskit commit `73d8cd9`](https://github.com/nspope/tskit/commit/73d8cd922482475020ae01180cae95bf5abbf067), whose pair-coalescence quantiles, counts, and rates normalize over locally non-missing pair-spans. Consequently, sample-isolated intervals are handled natively for global, spatial-window, and multiple-sample-set calculations; no script-level scalar correction is applied.
 - [`compare_trees_html.py`](scripts/compare_trees_html.py) — render one tree index from each of two tree sequences side-by-side into a single HTML file.

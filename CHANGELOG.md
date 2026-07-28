@@ -5,6 +5,29 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
 
 ## [v1.9] — 2026-07-27 — native missing-pair coalescence + final-ARG retention
 
+### Breaking
+- `coalescence_ne_plots_from_ts.py --num-bins N` has changed meaning. Through
+  v1.8 it selected equal-coalescence-mass bins derived from
+  `pair_coalescence_quantiles`; that behaviour is now `--num-quantiles N`, and
+  `--num-bins N` selects uniform log-spaced bins across the observed
+  coalescence-time range. Existing commands using `--num-bins` still run without
+  error but produce a different time grid — rename them to `--num-quantiles` to
+  keep the previous output.
+- `pipeline_summary.py` gained a required `--filtered-ts` argument listing the
+  final per-chromosome tree sequences (in the `<chrom>/<rep>.<suffix>` layout of
+  step 5/5b), since retained sequence is now measured from the ARGs themselves.
+  Standalone invocations must pass it; the Snakefile does so automatically.
+  `step7_summary` consequently declares every filtered per-chromosome tree
+  sequence as an input and loads each one, so it re-runs on existing pipeline
+  output and its runtime and memory now scale with the ARGs rather than with the
+  BED masks alone.
+- `tskit` is no longer installed from conda-forge. `environment.yml` now
+  installs it via pip from pinned nspope/tskit commit
+  `73d8cd922482475020ae01180cae95bf5abbf067`, so building the environment
+  requires pip, git, and access to GitHub. Upgrading an existing environment in
+  place is unreliable — recreate it with `conda env remove -n argtest` followed
+  by `conda env create -f environment.yml`.
+
 ### Added
 - `coalescence_ne_plots_from_ts.py` now offers distinct automatic time-grid
   modes: `--num-quantiles N` for equal connected-pair coalescence mass and
@@ -265,6 +288,11 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
 - `TSK_ERR_BAD_MUTATION_PARENT` in `remove_ancestry`.
 - Normalize mutload by tree-covered accessible bp; metadata schema bugs.
 
+[v1.9]: https://github.com/RILAB/argtest/releases/tag/v1.9
+[v1.8]: https://github.com/RILAB/argtest/releases/tag/v1.8
+[v1.7]: https://github.com/RILAB/argtest/releases/tag/v1.7
+[v1.6]: https://github.com/RILAB/argtest/releases/tag/v1.6
+[v1.5]: https://github.com/RILAB/argtest/releases/tag/v1.5
 [v1.4]: https://github.com/RILAB/argtest/releases/tag/v1.4
 [v1.3]: https://github.com/RILAB/argtest/releases/tag/v1.3
 [v1.2]: https://github.com/RILAB/argtest/releases/tag/v1.2
