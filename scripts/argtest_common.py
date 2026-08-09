@@ -373,15 +373,30 @@ def ratemap_from_metadata(md: dict):
     return msprime.RateMap(position=md["mu_position"], rate=md["mu_rate"])
 
 
-def resolve_mu_rate(ts: tskit.TreeSequence, ts_path: Path, scalar_fallback: float | None = None):
-    """Resolve a mutation rate for `msprime.sim_mutations` from (in order):
-    ts metadata ratemap, *.mut_rate.p sibling file, or a scalar fallback.
-    Returns an msprime.RateMap or float; raises if nothing is available.
+def resolve_mu_rate_with_source(
+    ts: tskit.TreeSequence, ts_path: Path, scalar_fallback: float | None = None
+):
+    """Resolve a mutation rate and report which source supplied it.
+
+    Precedence: ts metadata ratemap, then an exact sibling ``*.mut_rate.p``, then
+    the scalar fallback. Raises ``FileNotFoundError`` if none is available.
+
+    Returns ``(rate, source)`` where ``rate`` is an ``msprime.RateMap`` or float
+    and ``source`` is a JSON-safe dict describing the origin:
+
+        {"kind": "metadata"}
+        {"kind": "sibling",  "path": "<path to the .mut_rate.p>"}
+        {"kind": "scalar",   "rate": <float>}
+
+    The scalar branch replaces a spatially varying map with a flat rate, which
+    silently removes the local-rate correction that the mutation-load outlier
+    test depends on. Callers should record ``source`` so that substitution is
+    visible in pipeline reporting rather than invisible.
     """
     _require_msprime()
     md_rate = ratemap_from_metadata((ts.metadata or {}) if ts.metadata is not None else {})
     if md_rate is not None:
-        return md_rate
+        return md_rate, {"kind": "metadata"}
     try:
         mu_path = infer_mu_path(ts_path)
     except FileNotFoundError:
@@ -390,14 +405,33 @@ def resolve_mu_rate(ts: tskit.TreeSequence, ts_path: Path, scalar_fallback: floa
         with open(mu_path, "rb") as fh:
             obj = pickle.load(fh)
         if isinstance(obj, msprime.RateMap):
-            return obj
+            return obj, {"kind": "sibling", "path": str(mu_path)}
         raise RuntimeError(f"Unrecognized mutation-rate object in {mu_path}: {type(obj)}")
     if scalar_fallback is not None:
-        return float(scalar_fallback)
+        return float(scalar_fallback), {"kind": "scalar", "rate": float(scalar_fallback)}
     raise FileNotFoundError(
         f"No mutation rate available for {ts_path}: ts.metadata has no ratemap, "
         f"no *.mut_rate.p file found, and no --mutation-rate fallback was given."
     )
+
+
+def resolve_mu_rate(ts: tskit.TreeSequence, ts_path: Path, scalar_fallback: float | None = None):
+    """Resolve a mutation rate, discarding the source. See resolve_mu_rate_with_source."""
+    return resolve_mu_rate_with_source(ts, ts_path, scalar_fallback=scalar_fallback)[0]
+
+
+def describe_mu_source(source) -> str:
+    """One-line human-readable rendering of a resolve_mu_rate_with_source dict."""
+    if not source:
+        return "unknown"
+    kind = source.get("kind")
+    if kind == "metadata":
+        return "embedded ratemap"
+    if kind == "sibling":
+        return f"map file {source.get('path')}"
+    if kind == "scalar":
+        return f"FLAT scalar {source.get('rate')} (no local rate correction)"
+    return str(source)
 
 
 def merge_ratemaps(ratemaps: list, offsets: list):

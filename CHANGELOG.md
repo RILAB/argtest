@@ -73,6 +73,19 @@ statistic that changes is the retained-sequence figure in `pipeline_summary.py`
 
 ### Added
 
+- **The mutation-rate source is now recorded and reported.** Resolution order is
+  unchanged (embedded ratemap → exact sibling `*.mut_rate.p` → scalar
+  `mutation_rate`), but step 4 stamps which one it used into the output ARG's
+  `mu_source` metadata, prints it, and warns on stderr when it fell back to the
+  scalar. `pipeline_summary.py` gained a **Mutation-rate source** section that
+  counts sources across the run and flags every ARG that used the flat fallback.
+  Without this, a rate map that fails discovery is silently replaced by a flat
+  rate — which removes the local-rate correction the step-3 outlier test exists
+  to apply, changing outlier calls with no error anywhere.
+- `scripts/check_mu_paths.py` dry-runs mutation-map discovery over a dataset
+  using only `stat` calls (no ARG data loaded, safe on a head node) and exits
+  non-zero if any tree file would fail step 4. Use it before a run; use the
+  summary section above to audit a run after the fact.
 - `scripts/audit_arg_contract.py` and `argtest_common.audit_individual_contract`
   report — **as warnings only** — sample nodes with no individual, duplicate
   normalized individual names, mixed ploidy among represented individuals, and

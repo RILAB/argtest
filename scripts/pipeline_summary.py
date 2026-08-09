@@ -11,6 +11,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from argtest_common import (
+    describe_mu_source,
     accessible_intervals_from_mu,
     load_ts,
     ratemap_from_metadata,
@@ -324,6 +325,82 @@ def retained_bp_from_final_ts(path: Path) -> float:
     return tree_covered_accessible_bp(ts, accessible)
 
 
+def collect_mu_sources(filtered_ts: list[Path]) -> list[dict]:
+    """Report which mutation-rate source step 4 used for each final ARG.
+
+    Reads the ``mu_source`` stamp written by trim_regions_single.py. A "scalar"
+    entry means no mutation map was found and a flat rate was substituted, which
+    removes the local-rate correction the step-3 outlier test depends on — so it
+    is surfaced rather than left silent. ARGs produced before this stamp existed
+    report "unrecorded".
+    """
+    rows = []
+    for path in sorted(filtered_ts, key=lambda p: (p.parent.name, p.stem)):
+        try:
+            metadata = load_ts(path).metadata or {}
+        except Exception as exc:  # noqa: BLE001 - reporting must not abort the summary
+            rows.append({"chrom": path.parent.name, "rep": path.stem,
+                         "kind": "unreadable", "detail": str(exc)})
+            continue
+        source = metadata.get("mu_source")
+        if not source:
+            rows.append({"chrom": path.parent.name, "rep": path.stem,
+                         "kind": "unrecorded",
+                         "detail": "no mu_source stamp (ARG predates this field)"})
+            continue
+        rows.append({"chrom": path.parent.name, "rep": path.stem,
+                     "kind": source.get("kind", "unknown"),
+                     "detail": describe_mu_source(source)})
+    return rows
+
+
+def mu_source_section(mu_sources: list[dict]) -> str:
+    """Render the mutation-rate provenance block, flagging scalar fallbacks."""
+    if not mu_sources:
+        return ""
+    counts: dict[str, int] = {}
+    for row in mu_sources:
+        counts[row["kind"]] = counts.get(row["kind"], 0) + 1
+    total = len(mu_sources)
+
+    order = ["sibling", "metadata", "scalar", "unrecorded", "unreadable"]
+    labels = {
+        "sibling": "mutation map file (<code>*.mut_rate.p</code>)",
+        "metadata": "ratemap embedded in the input ARG",
+        "scalar": "flat scalar <code>mutation_rate</code> fallback",
+        "unrecorded": "not recorded",
+        "unreadable": "could not be read",
+    }
+    items = "".join(
+        f'<div class="config-item"><span>{labels.get(k, k)}:</span> '
+        f'{counts[k]} / {total}</div>'
+        for k in order if k in counts
+    )
+
+    warn = ""
+    fallback = [r for r in mu_sources if r["kind"] == "scalar"]
+    if fallback:
+        listed = ", ".join(f'{r["chrom"]}/{r["rep"]}' for r in fallback[:12])
+        if len(fallback) > 12:
+            listed += f", … (+{len(fallback) - 12} more)"
+        warn = (
+            '<p class="note" style="border-left:4px solid #c33;padding-left:10px">'
+            f'<b>{len(fallback)} of {total}</b> filtered ARGs fell back to the flat '
+            'scalar <code>mutation_rate</code> because no mutation map was found at '
+            'an exact sibling path. A flat rate removes the local mutation-rate '
+            'correction that the step-3 outlier test is designed to apply, so those '
+            'outlier calls are made against a uniform-rate expectation. '
+            f'Affected: {listed}.</p>'
+        )
+    return (
+        "<h2>Mutation-rate source</h2>"
+        '<p class="note">Resolution order is: ratemap embedded in the input ARG, '
+        'then an exact sibling <code>*.mut_rate.p</code>, then the scalar '
+        '<code>mutation_rate</code> config value. Recorded per ARG at step 4.</p>'
+        f'<div class="config-grid">{items}</div>{warn}'
+    )
+
+
 def collect_retention(chroms, replicates, out_dir, chrom_lengths, filtered_ts):
     step1_dir = out_dir / "step1_low_rec"
     step2_dir = out_dir / "step2_low_access"
@@ -549,6 +626,9 @@ def main():
     )
     outliers  = collect_outliers(chroms, replicates, out_dir)
 
+    mu_sources = collect_mu_sources(args.filtered_ts)
+    mu_source_html = mu_source_section(mu_sources)
+
     step6_dir = out_dir / "step6_validation"
     val_html  = validation_section(chroms, out_dir, step6_dir)
 
@@ -698,6 +778,8 @@ Mean ± SD across replicates; bp removed averaged over all chromosomes and repli
 {"".join(outlier_rows)}
 </tbody>
 </table>
+
+{mu_source_html}
 
 {val_html}
 

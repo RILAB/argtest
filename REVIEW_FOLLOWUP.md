@@ -26,6 +26,12 @@ Remaining before tagging v2.0, both requiring the pinned environment and real
 data (see "Also worth doing" at the end):
 
 1. Verify `infer_mu_path` resolves on the real amaranth/admix layout (issue 2).
+   Note the risk is NOT a crash when `mutation_rate` is set — the scalar is a
+   last-resort fallback, so a discovery miss silently substitutes a flat rate and
+   drops step 3's local-rate correction. Run `scripts/check_mu_paths.py`
+   **without** `--mutation-rate` so misses show as MISSING rather than `scalar`.
+   Step 4 now also stamps `mu_source` into each output ARG and the pipeline
+   summary reports it, so a completed run can be audited after the fact.
 2. Benchmark merge peak RSS; revert to incremental concatenation if batching is
    worse (issue 6). Codex flagged that batching *can* raise peak RSS, since it
    holds every input tree sequence at once — treat this as a live possibility.
