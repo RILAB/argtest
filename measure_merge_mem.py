@@ -9,10 +9,10 @@ peak (ru_maxrss). Writes nothing to disk.
 Two concatenation strategies can be measured:
 
     batched      first.concatenate(*rest) in one call, then drop every input
-                 reference before dump_tables. This is what v2.0 ships.
+                 reference before dump_tables. This is what v1.10 ships.
     incremental  merged = merged.concatenate(ts) in a loop. This is v1.9.
 
-v2.0 adopted `batched` on the theory that it avoids materialising a
+v1.10 adopted `batched` on the theory that it avoids materialising a
 progressively larger intermediate, but that was never measured on real data.
 Batching can plausibly be WORSE, since it holds every input tree sequence alive
 simultaneously. Run both and keep whichever wins:
@@ -77,7 +77,7 @@ def parse_args():
     p.add_argument("--glob", default=None,
                    help="Glob for one replicate's per-chromosome files.")
     p.add_argument("--mode", choices=["batched", "incremental"], default="batched",
-                   help="Concatenation strategy (default: batched, as shipped in v2.0).")
+                   help="Concatenation strategy (default: batched, as shipped in v1.10).")
     return p.parse_args()
 
 

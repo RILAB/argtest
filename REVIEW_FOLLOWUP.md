@@ -22,7 +22,7 @@ needs documentation and a pre-release path check, not a revert.
 Suite after the fixes: **90 passed, 1 failed, 5 skipped** — the single failure is
 the environmental tskit-fork check described above, unchanged from baseline.
 
-Remaining before tagging v2.0, both requiring the pinned environment and real
+Remaining before tagging v1.10, both requiring the pinned environment and real
 data (see "Also worth doing" at the end):
 
 1. Verify `infer_mu_path` resolves on the real amaranth/admix layout (issue 2).

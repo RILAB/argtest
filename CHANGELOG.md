@@ -3,14 +3,17 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
-## [v2.0] — unreleased — simplification overhaul: explicit inputs, fewer moving parts
+## [v1.10] — 2026-08-09 — simplification overhaul: explicit inputs, fewer moving parts
 
 A broad simplification pass driven by an independent code review. Net effect is
 roughly 450 fewer lines, one supported implementation per task, and fail-fast
-errors in place of silent fallbacks. The major bump is driven by interface
-removals and new hard failures, not by widespread numeric drift — the one
-statistic that changes is the retained-sequence figure in `pipeline_summary.py`
-(see below), and that change is a correction.
+errors in place of silent fallbacks.
+
+This is a minor bump carrying breaking changes, following the same convention as
+v1.9. **Read the Breaking section before upgrading**: several changes turn
+previously-working configurations into hard failures, and one statistic — the
+retained-sequence figure in `pipeline_summary.py` — changes value, as a
+correction. Existing configs must at minimum rename `suffix_to_strip`.
 
 ### Breaking
 
@@ -49,7 +52,7 @@ statistic that changes is the retained-sequence figure in `pipeline_summary.py`
   mutation map and then the whole sequence; previously it always used the
   mutation map. Both are still intersected with tree-covered spans, so trimmed
   regions are excluded either way — the difference is `mu == 0` sequence that
-  survived step 4 and still carries genealogy, which v1.9 excluded and v2.0
+  survived step 4 and still carries genealogy, which v1.9 excluded and v1.10
   counts. **Reported retained bp increases** for the same ARGs, by an amount
   bounded by the zero-rate fraction of the mutation map (33% of the sequence in
   the bundled realistic example, though the realized delta is smaller since

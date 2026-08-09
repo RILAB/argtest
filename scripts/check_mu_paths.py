@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-"""Dry-run the v2.0 mutation-map discovery over a dataset. Loads no ARG data.
+"""Dry-run the v1.10 mutation-map discovery over a dataset. Loads no ARG data.
 
-v2.0 narrowed ``infer_mu_path`` to exact candidates and made step 4 fail when no
+v1.10 narrowed ``infer_mu_path`` to exact candidates and made step 4 fail when no
 rate resolves, so a layout that worked under v1.9's fuzzy matching can now break.
 This reports, per (chromosome, replicate), whether a map would be found — using
 only ``stat`` calls, so it is safe to run on a head node and needs no ARG data.
@@ -114,7 +114,7 @@ def main():
     print(f"\n{len(rows)} tree file(s): " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
 
     if failures:
-        print(f"\n{len(failures)} file(s) would FAIL step 4 under v2.0.")
+        print(f"\n{len(failures)} file(s) would FAIL step 4 under v1.10.")
         print("Fix by adding a map at one of the exact paths listed above, or by "
               "setting `mutation_rate` in the config.")
         sys.exit(1)
