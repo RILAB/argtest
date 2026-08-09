@@ -3,6 +3,35 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
+## [Unreleased]
+
+### Breaking
+
+- Rename the sample-name normalization setting from `suffix_to_strip` to
+  `name_substring_to_remove`, and the CLI option from `--suffix-to-strip` to
+  `--name-substring-to-remove`. The behavior remains global `str.replace`
+  removal rather than terminal-suffix removal. Existing configs must rename the
+  key; the old key produces a migration error instead of silently using the
+  default.
+
+### Changed
+
+- Document `trim_regions_single.py` as the coordinate-preserving pipeline
+  step-4 filter; the obsolete coordinate-compacting directory CLI is removed.
+- Mutation-load documentation now calls the reference a simulation-based
+  expected load and states that it is estimated by one reproducible, seeded
+  mutation simulation, so it retains simulation variance.
+- Accessibility reporting consistently prefers `kept_intervals`, then the
+  embedded positive-rate mutation map, then the documented whole-sequence
+  fallback.
+- Documentation distinguishes Snakemake-captured job stdout/stderr from
+  per-script completed-run summaries and corrects `trim_samples.py`'s default
+  output to `<ts_parent>/trimmed/<ts_stem>_trimmed.tsz`.
+- The supported individual model allows multiple sample nodes per individual
+  and assesses uniform ploidy only among represented individuals. Strict
+  uniform-ploidy and leaf-sample enforcement remains contingent on a warn-only
+  audit of the real ARG corpus.
+
 ## [v1.9] — 2026-07-27 — native missing-pair coalescence + final-ARG retention
 
 ### Breaking
