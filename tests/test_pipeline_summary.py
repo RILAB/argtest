@@ -1,11 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-import sys
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import pipeline_summary as ps
 

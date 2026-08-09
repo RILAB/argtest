@@ -1,9 +1,7 @@
 from pathlib import Path
-import sys
 
 import tskit
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from argtest_common import (  # noqa: E402
     audit_individual_contract,

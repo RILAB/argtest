@@ -181,7 +181,16 @@ def find_tree_files(ts_dir: Path, pattern: str) -> list[Path]:
 
 
 def optional_mu_ratemap(ts, ts_path: Path):
-    """Resolve an embedded or sibling rate map, allowing only absence to fall back."""
+    """Resolve an embedded or sibling rate map, allowing only absence to fall back.
+
+    Returns None when no map exists, and when msprime is missing — this module
+    treats msprime as an optional dependency, but ``resolve_mu_rate`` requires it
+    and raises ``RuntimeError`` before it can report absence. Every other failure
+    (corrupt pickle, unrecognized object) propagates, so a broken rate map is
+    never silently downgraded to whole-sequence accessibility.
+    """
+    if msprime is None:
+        return None
     try:
         return resolve_mu_rate(ts, ts_path)
     except FileNotFoundError:
@@ -283,7 +292,7 @@ def load_sim_sfs(path: Path, *, folded: bool) -> np.ndarray:
 def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
                   mutation_rate: float,
                   mcmc_thin: int = 1,
-                  sim_branch: bool = False, mu_ratemap=None) -> dict:
+                  sim_branch: bool = False) -> dict:
     """Load all tree sequences and return per-replicate site statistics.
 
     When sim_branch=True, additionally simulate site mutations on each replicate with
@@ -329,8 +338,8 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
         #   2. mu_intervals from *.mut_rate.p — pre-pipeline accessibility (rate > 0)
         #   3. fallback: treat entire sequence as accessible
         kept_intervals = ts.metadata.get("kept_intervals") if ts.metadata else None
-        per_ts_mu = mu_ratemap
-        if per_ts_mu is None and (kept_intervals is None or sim_branch):
+        per_ts_mu = None
+        if kept_intervals is None or sim_branch:
             per_ts_mu = optional_mu_ratemap(ts, ts_path)
 
         if kept_intervals is not None:
@@ -527,7 +536,7 @@ def main():
     pri = collect_stats(
         ts_files, args.window_size, args.burnin_frac, args.mutation_rate,
         mcmc_thin=args.mcmc_thin,
-        sim_branch=args.sim_branch, mu_ratemap=None,
+        sim_branch=args.sim_branch,
     )
     pri_label = args.ts_dir.name if args.ts_dir is not None else ts_files[0].parent.name
 
@@ -542,7 +551,7 @@ def main():
         cmp = collect_stats(
             cmp_files, args.window_size, args.burnin_frac, args.mutation_rate,
             mcmc_thin=args.mcmc_thin,
-            sim_branch=args.sim_branch, mu_ratemap=None,
+            sim_branch=args.sim_branch,
         )
         cmp_label = args.compare.name if args.compare is not None else cmp_files[0].parent.name
 

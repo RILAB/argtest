@@ -1,11 +1,8 @@
 import pickle
 from pathlib import Path
 
-import sys
 import msprime
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import find_low_access_regions as far
 from argtest_common import infer_mu_path

@@ -41,3 +41,18 @@ def test_optional_ratemap_propagates_corrupt_map_error(monkeypatch):
     monkeypatch.setattr(validation, "resolve_mu_rate", corrupt)
     with pytest.raises(RuntimeError, match="bad pickle"):
         validation.optional_mu_ratemap(object(), Path("rep1.tsz"))
+
+
+def test_optional_ratemap_falls_back_when_msprime_is_absent(monkeypatch):
+    """msprime is optional in this module, but resolve_mu_rate requires it.
+
+    Without the guard, `_require_msprime` raises RuntimeError before the helper
+    can report absence, so a non-sim-branch run over ARGs with no kept_intervals
+    would crash instead of falling back to whole-sequence accessibility.
+    """
+    def unreachable(*args, **kwargs):  # pragma: no cover - must not be called
+        raise AssertionError("resolve_mu_rate must not run without msprime")
+
+    monkeypatch.setattr(validation, "msprime", None)
+    monkeypatch.setattr(validation, "resolve_mu_rate", unreachable)
+    assert validation.optional_mu_ratemap(object(), Path("rep1.tsz")) is None

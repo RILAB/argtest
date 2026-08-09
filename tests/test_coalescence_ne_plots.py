@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import numpy as np
 import tskit
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import coalescence_ne_plots_from_ts as coal
 

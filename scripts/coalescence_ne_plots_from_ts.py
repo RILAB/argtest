@@ -28,13 +28,52 @@ from argtest_common import load_ts
 matplotlib.rcParams["figure.dpi"] = 300
 
 
+def _partial_isolation_probe_ts():
+    """Eight equal-span trees in which only one of six sample pairs ever coalesces."""
+    tables = tskit.TableCollection(sequence_length=8)
+    pop = tables.populations.add_row()
+    samples = [
+        tables.nodes.add_row(flags=tskit.NODE_IS_SAMPLE, time=0, population=pop)
+        for _ in range(4)
+    ]
+    for j in range(8):
+        ancestor = tables.nodes.add_row(time=j + 1, population=pop)
+        for sample in samples[:2]:
+            tables.edges.add_row(j, j + 1, ancestor, sample)
+    tables.sort()
+    tables.build_index()
+    return tables.tree_sequence()
+
+
 def require_pinned_tskit():
-    """Fail early when the declared partial-missing-data fork is not active."""
+    """Fail early when the declared partial-missing-data fork is not active.
+
+    Checks the behaviour rather than the version string: stock tskit yields NaN
+    pair-coalescence quantiles when some sample pairs never coalesce, whereas the
+    pinned nspope fork conditions on connected pairs and returns finite values.
+    A version marker such as ``".dev" in tskit.__version__`` proves neither fork
+    identity nor the required semantics. The probe runs on an eight-edge table,
+    so it costs microseconds.
+    """
     required = ("pair_coalescence_rates", "pair_coalescence_quantiles")
     missing = [name for name in required if not hasattr(tskit.TreeSequence, name)]
-    if missing or ".dev" not in tskit.__version__:
+    if missing:
         raise RuntimeError(
-            "coalescence plotting requires the pinned tskit fork from environment.yml"
+            "coalescence plotting requires the pinned tskit fork from "
+            f"environment.yml; installed tskit {tskit.__version__} is missing: "
+            + ", ".join(missing)
+        )
+    quantiles = _partial_isolation_probe_ts().pair_coalescence_quantiles(
+        np.linspace(0, 1, 5)
+    )
+    if not np.all(np.isfinite(quantiles)):
+        raise RuntimeError(
+            "coalescence plotting requires the pinned tskit fork from "
+            f"environment.yml (nspope/tskit); installed tskit {tskit.__version__} "
+            "returns non-finite pair-coalescence quantiles when some sample pairs "
+            "never coalesce, so partial-missing-data normalization is unavailable. "
+            "Recreate the environment: conda env remove -n argtest && "
+            "conda env create -f environment.yml"
         )
 
 

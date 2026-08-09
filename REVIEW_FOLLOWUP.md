@@ -8,6 +8,28 @@ issue 5 was refuted and is withdrawn; the fix for issue 3 was corrected. Both
 corrections are marked inline below. Issue 2 is confirmed **deliberate** — it
 needs documentation and a pre-release path check, not a revert.
 
+**Resolution (2026-08-09):**
+
+| # | State | Notes |
+|---|-------|-------|
+| 1 | **FIXED** | `tests/conftest.py` added; per-file `sys.path` bootstraps removed from 15 modules. Every test file now imports in isolation. |
+| 2 | **NO CODE CHANGE — deliberate** | Documented as breaking in `CHANGELOG.md`. Still needs the real-corpus `infer_mu_path` check below before tagging. |
+| 3 | **FIXED** | `optional_mu_ratemap` returns `None` when `msprime is None`; corrupt-map errors still propagate. Regression test added. |
+| 4 | **FIXED** | `require_pinned_tskit` now runs a behavioural probe instead of matching `".dev"`. |
+| 5 | **WITHDRAWN** | Finding was wrong; current code is correct. |
+| 6 | **OPEN — needs HPC** | Cannot be measured on this machine. |
+
+Suite after the fixes: **90 passed, 1 failed, 5 skipped** — the single failure is
+the environmental tskit-fork check described above, unchanged from baseline.
+
+Remaining before tagging v2.0, both requiring the pinned environment and real
+data (see "Also worth doing" at the end):
+
+1. Verify `infer_mu_path` resolves on the real amaranth/admix layout (issue 2).
+2. Benchmark merge peak RSS; revert to incremental concatenation if batching is
+   worse (issue 6). Codex flagged that batching *can* raise peak RSS, since it
+   holds every input tree sequence at once — treat this as a live possibility.
+
 The single failure (`tests/test_coalescence_ne_plots.py::test_native_pair_quantiles_condition_out_isolated_pair_spans`)
 is **environmental, not a regression** — the test file is unmodified and its body
 is pure tskit. The machine has stock tskit 1.0.0 rather than the pinned

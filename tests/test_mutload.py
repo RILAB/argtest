@@ -5,9 +5,6 @@ import numpy as np
 import pytest
 import tskit
 
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import argtest_common as mc
 import mutload_summary as ms
 import trim_samples as tsamp
