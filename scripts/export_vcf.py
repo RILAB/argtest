@@ -42,15 +42,15 @@ def parse_args():
         help="Contig name written to the VCF CHROM column and ##contig header.",
     )
     p.add_argument(
-        "--suffix-to-strip",
+        "--name-substring-to-remove",
         default="",
-        help='Suffix removed from individual names before use as VCF sample names (default: "").',
+        help='Substring removed globally from individual names before use as VCF sample names (default: "").',
     )
     p.add_argument("--log", type=Path, default=None, help="Optional summary log path.")
     return p.parse_args()
 
 
-def resolve_samples(ts, suffix_to_strip=""):
+def resolve_samples(ts, name_substring_to_remove=""):
     """Decide how to group sample nodes into VCF columns.
 
     Returns ``(individuals, names, ploidy)``: a list of individual ids (or
@@ -70,7 +70,11 @@ def resolve_samples(ts, suffix_to_strip=""):
         if not nodes:
             continue
         individuals.append(ind.id)
-        names.append(get_individual_name(ind, suffix_to_strip=suffix_to_strip))
+        names.append(
+            get_individual_name(
+                ind, name_substring_to_remove=name_substring_to_remove
+            )
+        )
         ploidies.add(len(nodes))
         covered += len(nodes)
 
@@ -85,7 +89,9 @@ def main():
     ts = load_ts(args.ts)
     args.out.parent.mkdir(parents=True, exist_ok=True)
 
-    individuals, names, ploidy = resolve_samples(ts, suffix_to_strip=args.suffix_to_strip)
+    individuals, names, ploidy = resolve_samples(
+        ts, name_substring_to_remove=args.name_substring_to_remove
+    )
 
     opener = gzip.open if str(args.out).endswith(".gz") else open
     with opener(args.out, "wt") as fh:

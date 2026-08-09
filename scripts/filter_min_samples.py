@@ -36,7 +36,7 @@ from pathlib import Path
 import numpy as np
 import tskit
 
-from argtest_common import dump_ts, load_ts, merge_intervals, validate_trimmed_ts
+from argtest_common import dump_ts, load_ts, merge_intervals
 
 
 def _sample_edge_coverage(ts: tskit.TreeSequence):
@@ -260,7 +260,6 @@ def main():
     chrom = args.chrom or args.ts.stem
 
     filtered, dropped, tree_counts, dropped_bp = filter_min_samples(ts, args.min_samples)
-    validate_trimmed_ts(filtered)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     dump_ts(filtered, args.out)

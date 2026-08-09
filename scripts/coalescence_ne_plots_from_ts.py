@@ -21,10 +21,21 @@ os.environ.setdefault("XDG_CACHE_HOME", "/tmp")
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import tskit
 
 from argtest_common import load_ts
 
 matplotlib.rcParams["figure.dpi"] = 300
+
+
+def require_pinned_tskit():
+    """Fail early when the declared partial-missing-data fork is not active."""
+    required = ("pair_coalescence_rates", "pair_coalescence_quantiles")
+    missing = [name for name in required if not hasattr(tskit.TreeSequence, name)]
+    if missing or ".dev" not in tskit.__version__:
+        raise RuntimeError(
+            "coalescence plotting requires the pinned tskit fork from environment.yml"
+        )
 
 
 def parse_args():
@@ -529,6 +540,7 @@ def simulate_window_stats_from_ne(
 
 
 def main():
+    require_pinned_tskit()
     args = parse_args()
     if args.time_adjust <= 0:
         raise ValueError("--time-adjust must be > 0")
@@ -620,8 +632,8 @@ def main():
     ax.set_ylabel("Coalescence density (proportion / log-generation)")
     ax.set_xscale("log")
     pdf_path = args.out_dir / f"{args.prefix}pair-coalescence-pdf.png"
-    plt.savefig(pdf_path)
-    plt.clf()
+    fig.savefig(pdf_path)
+    plt.close(fig)
 
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
     plot_postburn_replicates(ax, plot_breaks, rate_vals, keep_post, **reps_kwargs)
@@ -632,8 +644,8 @@ def main():
     if args.log_rates:
         ax.set_yscale("log")
     rate_path = args.out_dir / f"{args.prefix}pair-coalescence-rates.png"
-    plt.savefig(rate_path)
-    plt.clf()
+    fig.savefig(rate_path)
+    plt.close(fig)
 
     ne_vals = np.full_like(rate_vals, np.nan, dtype=float)
     valid_rates = np.isfinite(rate_vals) & (rate_vals > 0)
@@ -650,8 +662,8 @@ def main():
     if args.log_rates:
         ax.set_yscale("log")
     ne_path = args.out_dir / f"{args.prefix}effective-pop-size.png"
-    plt.savefig(ne_path)
-    plt.clf()
+    fig.savefig(ne_path)
+    plt.close(fig)
 
     estimates_path = write_coalescence_estimates(
         args.out_dir / f"{args.prefix}coalescence-ne-estimates.tsv",

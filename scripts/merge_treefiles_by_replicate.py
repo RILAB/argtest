@@ -198,25 +198,27 @@ def group_tree_files(paths, ts_dir: Path | None = None, layout: str = "flat", ba
 
 def merge_group(paths):
     chrom_paths = sorted(paths, key=lambda item: natural_key(item[0]))
-    chrom, first_path = chrom_paths[0]
-    first_ts = load_ts(first_path)
-    offsets = [0.0]
-    lengths = [float(first_ts.sequence_length)]
-    chroms = [chrom]
-    ratemaps = [ratemap_from_metadata(first_ts.metadata or {})]
-    kept_lists = [(first_ts.metadata or {}).get("kept_intervals")]
-    cumulative = float(first_ts.sequence_length)
-
-    merged = first_ts
-    for chrom, path in chrom_paths[1:]:
-        ts = load_ts(path)
+    tree_sequences = [load_ts(path) for _chrom, path in chrom_paths]
+    offsets = []
+    lengths = []
+    chroms = []
+    ratemaps = []
+    kept_lists = []
+    cumulative = 0.0
+    for (chrom, _path), ts in zip(chrom_paths, tree_sequences):
         offsets.append(cumulative)
         lengths.append(float(ts.sequence_length))
         chroms.append(chrom)
         ratemaps.append(ratemap_from_metadata(ts.metadata or {}))
         kept_lists.append((ts.metadata or {}).get("kept_intervals"))
         cumulative += float(ts.sequence_length)
-        merged = merged.concatenate(ts)
+
+    # The pinned tskit fork accepts all remaining chromosomes in one call. This
+    # avoids materialising a progressively larger intermediate tree sequence at
+    # every chromosome boundary.
+    first_ts, *remaining = tree_sequences
+    merged = first_ts.concatenate(*remaining) if remaining else first_ts
+    del tree_sequences, remaining, first_ts, ts
 
     # tskit's concatenate keeps only the first ts's top-level metadata, so any
     # coordinate-shifted fields (ratemap, kept_intervals) must be re-merged here
@@ -241,8 +243,9 @@ def merge_group(paths):
         extra["kept_intervals"] = merged_kept
 
     if extra:
-        tables = merged.dump_tables()
         existing = merged.metadata if isinstance(merged.metadata, dict) else {}
+        tables = merged.dump_tables()
+        del merged
         tables.metadata_schema = tskit.MetadataSchema({"codec": "json"})
         tables.metadata = {**existing, **extra}
         merged = tables.tree_sequence()

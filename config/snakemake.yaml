@@ -96,15 +96,15 @@ mutload_random_seed: 1
 # and are removed entirely in step 4.
 mutload_fraction: 0.2
 
-# Suffix stripped from sample names before matching individual IDs in steps 3
-# and 5. Set to "" if sample names need no stripping.
-suffix_to_strip: ""
+# Substring removed globally from sample names before matching individual IDs
+# in steps 3 and 5. Set to "" if sample names need no normalization.
+name_substring_to_remove: ""
 
 # Step 5: extra user-supplied sample trimming, applied IN ADDITION to the step-3
 # mutload outliers (e.g. introgressed individuals from TRACE, or any hand-curated
 # list). Both keys apply identically to every (chrom, rep) and use the same
-# sample-ID matching as step 3 (including suffix_to_strip). Leave unset/empty to
-# trim only the mutload outliers.
+# sample-ID matching as step 3 (including name_substring_to_remove). Leave
+# unset/empty to trim only the mutload outliers.
 #   trim_individuals — IDs removed genome-wide. String "id1,id2" or YAML list.
 #   trim_remove_bed  — BED file(s) of per-individual intervals; column 4 holds
 #                      comma-separated sample IDs (or the filename stem if absent).

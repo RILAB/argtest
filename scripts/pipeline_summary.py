@@ -316,8 +316,11 @@ def index_filtered_ts(paths: list[Path]) -> dict[tuple[str, str], Path]:
 def retained_bp_from_final_ts(path: Path) -> float:
     """Accessible bp with a non-empty genealogy in one final filtered ARG."""
     ts = load_ts(path)
-    mu = ratemap_from_metadata(ts.metadata or {})
-    accessible = accessible_intervals_from_mu(mu) if mu is not None else None
+    metadata = ts.metadata or {}
+    accessible = metadata.get("kept_intervals")
+    if accessible is None:
+        mu = ratemap_from_metadata(metadata)
+        accessible = accessible_intervals_from_mu(mu) if mu is not None else None
     return tree_covered_accessible_bp(ts, accessible)
 
 
@@ -410,10 +413,7 @@ def weighted_retained_pct(retention, replicates) -> float:
     length_by_rep: dict[str, float] = defaultdict(float)
     for row in retention:
         chrom_len = float(row["seq_len"])
-        row_by_rep = row.get("retained_by_rep")
-        if row_by_rep is None:
-            row_by_rep = dict(zip(replicates, row["retained_vals"]))
-        for rep, retained in row_by_rep.items():
+        for rep, retained in row["retained_by_rep"].items():
             retained_by_rep[rep] += float(retained)
             length_by_rep[rep] += chrom_len
 
@@ -433,7 +433,7 @@ def totals_by_replicate(retention, replicates, key) -> list[float]:
         total = 0.0
         found = False
         for row in retention:
-            if key == "retained_vals" and "retained_by_rep" in row:
+            if key == "retained_vals":
                 if rep not in row["retained_by_rep"]:
                     continue
                 value = row["retained_by_rep"][rep]

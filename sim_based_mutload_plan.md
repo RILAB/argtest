@@ -3,9 +3,13 @@
 ## Goal
 
 Replace the per-window median mutational-load reference with a per-sample
-expectation drawn from a single mutation simulation on the input ARG. Apply to
+simulation-based expected load drawn from a single seeded mutation simulation on the input ARG. Apply to
 both `scripts/mutload_masks.py` and `scripts/mutload_summary.py`. Keep the
 existing `(1 ± cutoff) * expected` outlier semantics.
+
+“Expected” here means one reproducible simulation estimate, not an analytic
+expectation or a mean over simulations. The estimate therefore retains Monte
+Carlo variance even when the seed makes repeated runs identical.
 
 ## Current behavior
 
@@ -32,8 +36,8 @@ or assembly artifacts, so real outliers can hide.
    Rate may be an `msprime.RateMap` or scalar, matching `--sim-branch` in
    `validation_plots_from_ts.py:362`.
 
-2. **Single-sim expected load** (inline in each script — no shared helper
-   until a third caller appears):
+2. **Single-simulation expected load** (use the shared focused mutation-load
+   helper so masks and summaries cannot drift):
 
    ```python
    sim_ts = msprime.sim_mutations(ts, rate=mu, keep=False, random_seed=seed)
@@ -83,8 +87,8 @@ or assembly artifacts, so real outliers can hide.
   when adding a variance-aware (z-score) cutoff, which is a separate change.
 - **Back-compat `--reference {sim,median}` toggle.** No consumer depends on
   the median path. Replace outright.
-- **Shared helper in `argtest_common.py`.** Three-line inline is enough until
-  a third caller exists.
+- **Analytic or multi-simulation expectation.** The shared helper deliberately
+  retains one seeded simulation and the existing scientific semantics.
 - **User-supplied demography model.** The simulation rides on the input ARG;
   no separate demography needed.
 

@@ -8,14 +8,15 @@ from pathlib import Path
 
 import numpy as np
 
-import msprime
-
 from argtest_common import (
     aggregate_by_individual,
+    build_bp_windows,
+    build_snp_windows,
     load_ts,
     mutational_load,
     resolve_mu_rate,
     sample_names,
+    simulate_expected_load,
 )
 
 
@@ -130,41 +131,11 @@ def parse_args():
         ),
     )
     p.add_argument(
-        "--suffix-to-strip",
+        "--name-substring-to-remove",
         default="",
-        help='Suffix stripped from sample names before display (default: "").',
+        help='Substring removed globally from sample names before display (default: "").',
     )
     return p.parse_args()
-
-
-def build_bp_windows(ts, window_size: float) -> np.ndarray:
-    if window_size <= 0:
-        raise ValueError("--window-size must be > 0")
-    L = float(ts.sequence_length)
-    windows = np.arange(0, L + window_size, window_size, dtype=float)
-    if windows[-1] > L:
-        windows[-1] = L
-    return windows
-
-
-def build_snp_windows(ts, snp_window: int) -> np.ndarray:
-    if snp_window <= 0:
-        raise ValueError("--snp-window must be > 0")
-    positions = np.asarray(ts.sites_position, dtype=float)
-    L = float(ts.sequence_length)
-    if positions.size == 0:
-        return np.array([0.0, L], dtype=float)
-    edges = positions[snp_window::snp_window]
-    return np.concatenate((np.array([0.0]), edges, np.array([L])))
-
-
-def simulate_expected_load(ts, ts_path, windows, names, scalar_rate, seed):
-    # Single-sim per-individual expected load matrix (windows x individuals).
-    mu = resolve_mu_rate(ts, ts_path, scalar_fallback=scalar_rate)
-    sim_ts = msprime.sim_mutations(ts, rate=mu, keep=False, random_seed=seed)
-    expected = mutational_load(sim_ts, windows=windows)
-    expected, _ = aggregate_by_individual(expected, names)
-    return expected
 
 
 class Tee:
@@ -208,7 +179,9 @@ def main():
                 windows = build_snp_windows(ts, args.snp_window)
 
             load = mutational_load(ts, windows=windows)
-            names = sample_names(ts, suffix_to_strip=args.suffix_to_strip)
+            names = sample_names(
+                ts, name_substring_to_remove=args.name_substring_to_remove
+            )
             load, unique_names = aggregate_by_individual(load, names)
 
             body_parts = []
@@ -221,9 +194,11 @@ def main():
             if windows is None:
                 body_parts.append(load_chart_html(load, unique_names, "Mutational load"))
             else:
+                mu = resolve_mu_rate(
+                    ts, ts_path, scalar_fallback=args.mutation_rate
+                )
                 expected = simulate_expected_load(
-                    ts, ts_path, windows, names,
-                    scalar_rate=args.mutation_rate,
+                    ts, windows, names, mutation_rate=mu,
                     seed=args.random_seed,
                 )
                 high = (1 + args.cutoff) * expected

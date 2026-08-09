@@ -260,7 +260,7 @@ Efficiency follow-ups from the read-only review:
   removal segment and expands descendant sample lists per mutation. Rework as a
   single pass over trees/sites with precomputed segment membership, or use
   tskit stats/sample-count primitives where possible.
-- Step 3 computes observed mutational load and then simulated expected load
+- Step 3 computes observed mutational load and then simulation-based expected load
   through the same heavy traversal. Consider an analytic expectation, batched
   simulation, or shared traversal state.
 - `filter_min_samples.py` has avoidable nested interval scans in
@@ -284,12 +284,13 @@ Test follow-ups from the read-only review:
   expected outlier names, mask contents, nonempty merged tree sequences, and
   evidence that downstream rules consumed upstream outputs.
 - Extend VCF export tests for diploid grouping, mixed-ploidy fallback to
-  per-node columns, missing individual metadata fallback, and suffix stripping.
+  per-node columns, missing individual metadata fallback, and name-substring removal.
 - Add `combine_remove_masks.py` tests for missing inputs, comments/blank lines,
   malformed short lines, zero/negative intervals, and empty merged output.
 - Replace tautological/implementation-detail assertions in `tests/test_mutload.py`
-  with structural checks: sample IDs/order, expected sites/mutations,
-  `validate_trimmed_ts`, and mutation-parent integrity.
+  with structural checks: sample IDs/order, expected sites/mutations, valid
+  tree-sequence construction, and mutation-parent integrity. The ineffective
+  `validate_trimmed_ts` compatibility probe is intentionally removed.
 
 ## Open Questions
 

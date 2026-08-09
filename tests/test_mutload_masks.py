@@ -33,7 +33,7 @@ def _make_args(**overrides):
         "fraction": None,
         "mutation_rate": 1.0,
         "random_seed": 1,
-        "suffix_to_strip": "_anchorwave",
+        "name_substring_to_remove": "_anchorwave",
         "outlier_bed": None,
         "masked_bed": None,
         "log": None,
@@ -54,9 +54,9 @@ def test_mutload_masks_writes_outlier_and_empty_masked(tmp_path, monkeypatch):
     # comma-joined entries on one BED row.
     import numpy as np
 
-    def _fake(ts, windows, names, mu=None, seed=None):
+    def _fake(ts, windows, names, mutation_rate=None, seed=None):
         unique = list(dict.fromkeys(names))
-        return np.full((len(windows) - 1, len(unique)), 4.0), unique
+        return np.full((len(windows) - 1, len(unique)), 4.0)
 
     monkeypatch.setattr(mm, "simulate_expected_load", _fake)
     monkeypatch.setattr(
@@ -93,9 +93,9 @@ def test_mutload_masks_outlier_bed_columns(tmp_path, monkeypatch):
 
     # Per-window expected = 4 for both individuals; observed (1, 0) both fall
     # below 0.5*4 so both flag in the single window.
-    def _fake(ts, windows, names, mu=None, seed=None):
+    def _fake(ts, windows, names, mutation_rate=None, seed=None):
         unique = list(dict.fromkeys(names))
-        return np.full((len(windows) - 1, len(unique)), 4.0), unique
+        return np.full((len(windows) - 1, len(unique)), 4.0)
 
     monkeypatch.setattr(mm, "simulate_expected_load", _fake)
     monkeypatch.setattr(
@@ -161,3 +161,7 @@ def test_mutload_masks_requires_rate_when_no_ratemap(tmp_path, monkeypatch):
     )
     with pytest.raises(FileNotFoundError):
         mm.main()
+
+
+def test_bed_bounds_round_outward_without_collapsing_short_window():
+    assert mm.bed_bounds(1.2, 1.8) == (1, 2)

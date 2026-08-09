@@ -25,8 +25,8 @@ def test_collect_outliers_counts_zero_replicates(tmp_path):
 
 def test_weighted_retained_pct_uses_chrom_lengths():
     retention = [
-        {"seq_len": 100, "retained_vals": [100]},
-        {"seq_len": 900, "retained_vals": [0]},
+        {"seq_len": 100, "retained_by_rep": {"1": 100}},
+        {"seq_len": 900, "retained_by_rep": {"1": 0}},
     ]
 
     assert ps.weighted_retained_pct(retention, ["1"]) == 10.0
@@ -65,6 +65,42 @@ def test_retained_bp_from_final_ts_intersects_input_accessibility_and_tree_cover
     # Accessible [0,10) contributes 10 bp. Accessible [20,30) overlaps an
     # empty final tree on [20,25), so only [25,30) contributes another 5 bp.
     assert ps.retained_bp_from_final_ts(tmp_path / "1.tsz") == 15.0
+
+
+def test_retained_bp_prefers_kept_intervals_over_mutation_map(tmp_path, monkeypatch):
+    class FakeTree:
+        def __init__(self, left, right):
+            self.interval = SimpleNamespace(left=left, right=right)
+            self.num_edges = 1
+
+    ts = SimpleNamespace(
+        metadata={
+            "kept_intervals": [[5, 15]],
+            "mu_position": [0, 20],
+            "mu_rate": [1],
+        },
+        trees=lambda: iter([FakeTree(0, 20)]),
+    )
+    monkeypatch.setattr(ps, "load_ts", lambda path: ts)
+
+    assert ps.retained_bp_from_final_ts(tmp_path / "1.tsz") == 10.0
+
+
+def test_retained_bp_uses_tree_coverage_without_accessibility_metadata(
+    tmp_path, monkeypatch
+):
+    class FakeTree:
+        def __init__(self, left, right, num_edges):
+            self.interval = SimpleNamespace(left=left, right=right)
+            self.num_edges = num_edges
+
+    ts = SimpleNamespace(
+        metadata={},
+        trees=lambda: iter([FakeTree(0, 8, 1), FakeTree(8, 20, 0)]),
+    )
+    monkeypatch.setattr(ps, "load_ts", lambda path: ts)
+
+    assert ps.retained_bp_from_final_ts(tmp_path / "1.tsz") == 8.0
 
 
 def test_all_row_totals_sum_chromosomes_within_each_replicate():

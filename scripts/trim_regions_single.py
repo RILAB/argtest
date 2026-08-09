@@ -4,18 +4,17 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import pickle
-
+import msprime
 import tskit
 
 from argtest_common import (
+    complement_intervals,
     dump_ts,
-    infer_mu_path,
+    load_mask_intervals,
     load_ts,
-    ratemap_from_metadata,
     ratemap_to_metadata,
+    resolve_mu_rate,
 )
-from trim_regions import complement_intervals, load_mask_intervals
 
 
 def parse_args():
@@ -25,6 +24,12 @@ def parse_args():
     parser.add_argument("--ts", required=True, type=Path, help="Input tree sequence file.")
     parser.add_argument("--remove", required=True, type=Path, help="BED file with intervals to remove.")
     parser.add_argument("--out", required=True, type=Path, help="Output tree sequence file.")
+    parser.add_argument(
+        "--mutation-rate",
+        type=float,
+        default=None,
+        help="Positive scalar fallback when no embedded or exact sibling rate map exists.",
+    )
     parser.add_argument(
         "--log",
         type=Path,
@@ -43,17 +48,14 @@ def main():
     keep = complement_intervals(masked, ts.sequence_length)
     trimmed = ts.keep_intervals(keep, simplify=False)
     tables = trimmed.dump_tables()
-    metadata: dict = {"kept_intervals": [[float(l), float(r)] for l, r in keep]}
-    mu = ratemap_from_metadata(ts.metadata or {})
-    if mu is None:
-        try:
-            mu_path = infer_mu_path(args.ts)
-            with open(mu_path, "rb") as fh:
-                mu = pickle.load(fh)
-        except Exception:
-            mu = None
-    if mu is not None:
-        metadata.update(ratemap_to_metadata(mu))
+    metadata = dict(ts.metadata) if isinstance(ts.metadata, dict) else {}
+    metadata["kept_intervals"] = [[float(l), float(r)] for l, r in keep]
+    mu = resolve_mu_rate(ts, args.ts, scalar_fallback=args.mutation_rate)
+    if isinstance(mu, float):
+        if mu <= 0:
+            raise ValueError("--mutation-rate must be > 0")
+        mu = msprime.RateMap(position=[0.0, float(ts.sequence_length)], rate=[mu])
+    metadata.update(ratemap_to_metadata(mu))
     tables.metadata_schema = tskit.MetadataSchema({"codec": "json"})
     tables.metadata = metadata
     trimmed = tables.tree_sequence()

@@ -2,12 +2,13 @@ import pickle
 from pathlib import Path
 
 import sys
-from types import SimpleNamespace
+import msprime
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import find_low_access_regions as far
+from argtest_common import infer_mu_path
 
 
 def test_infer_mu_path_uses_parent_chromosome_name(tmp_path):
@@ -17,9 +18,9 @@ def test_infer_mu_path_uses_parent_chromosome_name(tmp_path):
     ts_path.touch()
     mu_path = tmp_path / "chr1.mut_rate.p"
     with open(mu_path, "wb") as fh:
-        pickle.dump(SimpleNamespace(position=[0, 10], rate=[1.0]), fh)
+        pickle.dump(msprime.RateMap(position=[0, 10], rate=[1.0]), fh)
 
-    inferred = far.infer_mu_path(ts_path)
+    inferred = infer_mu_path(ts_path)
     assert inferred == mu_path
 
 
@@ -28,9 +29,9 @@ def test_find_low_access_regions_default_log_goes_under_logs(tmp_path, monkeypat
     ts_dir.mkdir()
     ts_path = ts_dir / "base.chr1.1.trees"
     ts_path.touch()
-    mu_path = ts_dir / "base.chr1.mut_rate.p"
+    mu_path = ts_dir / "base.chr1.1.mut_rate.p"
     with open(mu_path, "wb") as fh:
-        pickle.dump(SimpleNamespace(position=[0, 3, 10], rate=[1.0, 0.0]), fh)
+        pickle.dump(msprime.RateMap(position=[0, 3, 10], rate=[1.0, 0.0]), fh)
     out_bed = tmp_path / "low_access.bed"
 
     monkeypatch.setattr(
@@ -41,10 +42,12 @@ def test_find_low_access_regions_default_log_goes_under_logs(tmp_path, monkeypat
             (),
             {
                 "ts": ts_path,
+                "chrom": "chr1",
                 "window_size": 5.0,
                 "cutoff_bp": 4.0,
                 "out": out_bed,
                 "log": None,
+                "mutation_rate": None,
             },
         )(),
     )
@@ -77,6 +80,7 @@ def test_find_low_access_regions_uses_scalar_mutation_rate_fallback(tmp_path, mo
             (),
             {
                 "ts": ts_path,
+                "chrom": "chr1",
                 "window_size": 5.0,
                 "cutoff_bp": 4.0,
                 "out": out_bed,
@@ -112,6 +116,7 @@ def test_find_low_access_regions_nonpositive_rate_flags_whole_sequence(tmp_path,
             (),
             {
                 "ts": ts_path,
+                "chrom": "chr1",
                 "window_size": 5.0,
                 "cutoff_bp": 4.0,
                 "out": out_bed,
@@ -148,6 +153,7 @@ def test_find_low_access_regions_uses_metadata_ratemap(tmp_path, monkeypatch):
             (),
             {
                 "ts": ts_path,
+                "chrom": "chr1",
                 "window_size": 5.0,
                 "cutoff_bp": 4.0,
                 "out": out_bed,
