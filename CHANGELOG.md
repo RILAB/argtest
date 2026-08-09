@@ -5,9 +5,19 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
 
 ## [v1.10] — 2026-08-09 — simplification overhaul: explicit inputs, fewer moving parts
 
-A broad simplification pass driven by an independent code review. Net effect is
-roughly 450 fewer lines, one supported implementation per task, and fail-fast
-errors in place of silent fallbacks.
+A broad simplification pass driven by an independent code review: one supported
+implementation per task, and fail-fast errors in place of silent fallbacks.
+
+Measured against v1.9 across `scripts/`, the `Snakefile`, and config — excluding
+tests and documentation — this is **205 fewer total lines (−2.6%)** and **263
+fewer logical lines (−4.4%)**, ignoring blanks and comments. Roughly 500 logical
+lines were deleted (two whole modules, eleven dead helpers in `argtest_common`,
+and consolidation across seven scripts) and roughly 240 added back, mostly as
+new diagnostics: the mutation-map checker, the ARG contract audit, mutation-rate
+source reporting, and the pinned-dependency probe. The structural change is
+larger than the line delta suggests — no shared helper retains a test-only
+caller, and there is now a single supported implementation of region trimming
+and of sample trimming.
 
 This is a minor bump carrying breaking changes, following the same convention as
 v1.9. **Read the Breaking section before upgrading**: several changes turn
