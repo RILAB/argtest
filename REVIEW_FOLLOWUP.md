@@ -22,8 +22,8 @@ needs documentation and a pre-release path check, not a revert.
 Suite after the fixes: **90 passed, 1 failed, 5 skipped** — the single failure is
 the environmental tskit-fork check described above, unchanged from baseline.
 
-Remaining before tagging v1.10, both requiring the pinned environment and real
-data (see "Also worth doing" at the end):
+v1.10 was tagged on 2026-08-09 with two items still open. They are tracked in
+`TODO.md` at the repo root; both require the pinned environment and real data:
 
 1. Verify `infer_mu_path` resolves on the real amaranth/admix layout (issue 2).
    Note the risk is NOT a crash when `mutation_rate` is set — the scalar is a
