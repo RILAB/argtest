@@ -3,6 +3,19 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
+## [v1.11] — 2026-08-14 — fail-fast chromosome-name validation
+
+### Added
+
+- Validate every ARG chromosome-directory label against both the HapMap
+  `Chromosome` column and the FASTA-index chromosome names while evaluating the
+  Snakefile. A mismatch now reports all unmatched and available names before
+  the DAG is built or any local/SLURM job is submitted, instead of failing one
+  chromosome at a time in step 1.
+- Document the supported chromosome aliases and validation scope. The workflow
+  has no input VCF; exported VCF contig names are derived from the validated ARG
+  chromosome label and therefore agree by construction.
+
 ## [v1.10] — 2026-08-09 — simplification overhaul: explicit inputs, fewer moving parts
 
 A broad simplification pass driven by an independent code review: one supported
@@ -464,6 +477,8 @@ correction. Existing configs must at minimum rename `suffix_to_strip`.
 - `TSK_ERR_BAD_MUTATION_PARENT` in `remove_ancestry`.
 - Normalize mutload by tree-covered accessible bp; metadata schema bugs.
 
+[v1.11]: https://github.com/RILAB/argtest/releases/tag/v1.11
+[v1.10]: https://github.com/RILAB/argtest/releases/tag/v1.10
 [v1.9]: https://github.com/RILAB/argtest/releases/tag/v1.9
 [v1.8]: https://github.com/RILAB/argtest/releases/tag/v1.8
 [v1.7]: https://github.com/RILAB/argtest/releases/tag/v1.7
