@@ -89,7 +89,7 @@ snakemake --cores 4 --configfile config/snakemake.yaml \
            hapmap=<out-dir>/all.hapmap.tsv \
            fai=<out-dir>/sim.fai \
            tree_pattern="*.trees" \
-           suffix_to_strip="" \
+           name_substring_to_remove="" \
            burnin=0
 ```
 

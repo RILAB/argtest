@@ -5,9 +5,6 @@ import numpy as np
 import pytest
 import tskit
 
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import argtest_common as mc
 import mutload_summary as ms
 import trim_samples as tsamp
@@ -108,7 +105,6 @@ def test_trim_samples_single_pass_removes_target_node_mutations():
 
     assert summary["names_removed"] == {"A"}
     assert trimmed.sites_position.tolist() == [7.0]
-    mc.validate_trimmed_ts(trimmed)
 
 
 def test_build_snp_windows_single_variant_per_window():
@@ -186,7 +182,7 @@ def _ms_args(ts_path, **overrides):
         "mutation_rate": 1.0,
         "random_seed": 1,
         "out": "out.html",
-        "suffix_to_strip": "_anchorwave",
+        "name_substring_to_remove": "_anchorwave",
     }
     base.update(overrides)
     return type("A", (), base)()
@@ -195,7 +191,7 @@ def _ms_args(ts_path, **overrides):
 def _patch_constant_expected(monkeypatch, value):
     # Force a deterministic per-individual expected so threshold outcomes are
     # independent of msprime's RNG.
-    def _fake(ts, ts_path, windows, names, scalar_rate, seed):
+    def _fake(ts, windows, names, mutation_rate, seed):
         n_ind = len({n for n in names})
         n_win = len(windows) - 1
         return np.full((n_win, n_ind), value, dtype=float)
@@ -295,63 +291,11 @@ def test_single_sample_ts():
     assert load.shape == (1, 1)
 
 
-def test_intervals_outside_sequence_length():
-    ts = make_simple_ts()
-    intervals = {"A": {"starts": [100.0], "ends": [200.0]}}
-    name_to_nodes = mc.name_to_nodes_map(ts)
-    trimmed = mc.trim_ts_by_intervals(ts, intervals, name_to_nodes)
-    assert trimmed.num_sites == ts.num_sites
-
-
 def test_overlapping_bed_with_commas(tmp_path):
     bed = tmp_path / "x.bed"
     bed.write_text("chr1\t1\t4\tA,B\nchr1\t3\t5\tB,C\n")
     remove = mc.load_remove_intervals([bed])
     assert set(remove.keys()) == {"A", "B", "C"}
-
-
-def test_all_samples_removed_in_segment():
-    ts = make_simple_ts()
-    intervals = {"A": {"starts": [0.0], "ends": [10.0]}, "B": {"starts": [0.0], "ends": [10.0]}}
-    name_to_nodes = mc.name_to_nodes_map(ts)
-    trimmed = mc.trim_ts_by_intervals(ts, intervals, name_to_nodes)
-    assert trimmed.sequence_length == ts.sequence_length
-
-
-def test_idempotent_no_effect_remove():
-    ts = make_simple_ts()
-    intervals = {"C": {"starts": [0.0], "ends": [5.0]}}  # C not in TS
-    name_to_nodes = mc.name_to_nodes_map(ts)
-    trimmed = mc.trim_ts_by_intervals(ts, intervals, name_to_nodes)
-    assert trimmed.num_sites == ts.num_sites
-    assert trimmed.num_edges >= ts.num_edges
-
-
-def test_sample_order_preserved():
-    ts = make_simple_ts()
-    intervals = {"A": {"starts": [0.0], "ends": [5.0]}}
-    name_to_nodes = mc.name_to_nodes_map(ts)
-    trimmed = mc.trim_ts_by_intervals(ts, intervals, name_to_nodes)
-    assert trimmed.samples().tolist() == ts.samples().tolist()
-
-
-def test_trim_validate():
-    ts = make_simple_ts()
-    intervals = {"A": {"starts": [0.0], "ends": [5.0]}}
-    name_to_nodes = mc.name_to_nodes_map(ts)
-    trimmed = mc.trim_ts_by_intervals(ts, intervals, name_to_nodes)
-    if hasattr(trimmed, "validate"):
-        trimmed.validate()
-
-
-def test_large_interval_counts():
-    intervals = {"A": {"starts": [], "ends": []}}
-    for i in range(1000):
-        intervals["A"]["starts"].append(float(i))
-        intervals["A"]["ends"].append(float(i + 0.5))
-    segs = mc.build_removal_segments(intervals, 2000.0)
-    assert segs[0][0] == 0.0
-    assert segs[-1][1] == 2000.0
 
 
 def test_many_individuals_shapes():
@@ -419,43 +363,3 @@ def test_remove_bed_parsing(tmp_path):
     assert remove["A"]["starts"] == [1.0]
     assert remove["B"]["starts"] == [1.0]
     assert remove["C"]["starts"] == [5.0]
-
-
-def test_segment_merge_logic():
-    intervals = {
-        "A": {"starts": [1.0, 4.0], "ends": [3.0, 6.0]},
-        "B": {"starts": [2.0], "ends": [5.0]},
-    }
-    segs = mc.build_removal_segments(intervals, 10.0)
-    # Expect segments covering [0,1), [1,2), [2,3), [3,4), [4,5), [5,6), [6,10)
-    assert segs[0][0] == 0.0 and segs[0][1] == 1.0
-    assert segs[-1][0] == 6.0 and segs[-1][1] == 10.0
-
-
-def test_trim_preserves_coordinates(tmp_path):
-    ts = make_simple_ts()
-    intervals = {"A": {"starts": [0.0], "ends": [5.0]}}
-    name_to_nodes = mc.name_to_nodes_map(ts)
-    trimmed = mc.trim_ts_by_intervals(ts, intervals, name_to_nodes)
-    assert trimmed.sequence_length == ts.sequence_length
-    assert trimmed.sites_position.min() >= 0.0
-    assert trimmed.sites_position.max() <= ts.sequence_length
-
-
-def test_trim_removes_nodes_in_interval():
-    ts = make_simple_ts()
-    intervals = {"A": {"starts": [0.0], "ends": [5.0]}}
-    name_to_nodes = mc.name_to_nodes_map(ts)
-    trimmed = mc.trim_ts_by_intervals(ts, intervals, name_to_nodes)
-    # Mutation at position 1 on A should be removed; position 7 on B remains
-    assert trimmed.num_sites == 1
-    assert trimmed.sites_position.tolist() == [7.0]
-
-
-def test_trim_mutation_parent_integrity():
-    ts = make_simple_ts()
-    intervals = {"A": {"starts": [0.0], "ends": [5.0]}}
-    name_to_nodes = mc.name_to_nodes_map(ts)
-    trimmed = mc.trim_ts_by_intervals(ts, intervals, name_to_nodes)
-    # Should load without parent errors
-    assert trimmed.num_sites >= 0

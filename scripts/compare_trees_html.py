@@ -4,21 +4,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import tskit
-
-try:
-    import tszip
-except Exception:  # pragma: no cover - optional dependency
-    tszip = None
-
-
-def load_ts(path: Path) -> tskit.TreeSequence:
-    # Load compressed or plain tree sequences.
-    if path.suffix == ".tsz":
-        if tszip is None:
-            raise RuntimeError("tszip is required to load .tsz files")
-        return tszip.load(str(path))
-    return tskit.load(str(path))
+from argtest_common import load_ts
 
 
 def parse_args():

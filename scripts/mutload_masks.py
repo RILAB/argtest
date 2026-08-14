@@ -2,17 +2,20 @@
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 
-import msprime
 import numpy as np
 
 from argtest_common import (
     aggregate_by_individual,
+    build_bp_windows,
+    build_snp_windows,
     load_ts,
     mutational_load,
     resolve_mu_rate,
     sample_names,
+    simulate_expected_load,
 )
 
 
@@ -65,9 +68,9 @@ def parse_args():
         help="Seed for msprime.sim_mutations when computing expected load (default: 1).",
     )
     parser.add_argument(
-        "--suffix-to-strip",
+        "--name-substring-to-remove",
         default="",
-        help="Suffix removed from sample names before grouping to individuals.",
+        help="Substring removed globally from sample names before grouping to individuals.",
     )
     parser.add_argument("--outlier-bed", required=True, type=Path, help="Output outlier BED path.")
     parser.add_argument(
@@ -98,29 +101,9 @@ def parse_args():
     return args
 
 
-def build_bp_windows(ts, window_size: float) -> np.ndarray:
-    sequence_length = float(ts.sequence_length)
-    windows = np.arange(0, sequence_length + window_size, window_size, dtype=float)
-    if windows[-1] > sequence_length:
-        windows[-1] = sequence_length
-    return windows
-
-
-def build_snp_windows(ts, snp_window: int) -> np.ndarray:
-    positions = np.asarray(ts.sites_position, dtype=float)
-    sequence_length = float(ts.sequence_length)
-    if positions.size == 0:
-        return np.array([0.0, sequence_length], dtype=float)
-    edges = positions[snp_window::snp_window]
-    return np.concatenate((np.array([0.0]), edges, np.array([sequence_length])))
-
-
-def simulate_expected_load(ts, windows, names, mu, seed):
-    # Single-sim expected per-individual load matrix (windows x individuals).
-    sim_ts = msprime.sim_mutations(ts, rate=mu, keep=False, random_seed=seed)
-    expected = mutational_load(sim_ts, windows=windows)
-    expected, unique = aggregate_by_individual(expected, names)
-    return expected, unique
+def bed_bounds(left: float, right: float) -> tuple[int, int]:
+    """Return conservative integer BED bounds for a floating-point window."""
+    return math.floor(left), math.ceil(right)
 
 
 def main():
@@ -139,15 +122,15 @@ def main():
         windows = build_snp_windows(ts, args.snp_window)
 
     load = mutational_load(ts, windows=windows)
-    names = sample_names(ts, suffix_to_strip=args.suffix_to_strip)
+    names = sample_names(
+        ts, name_substring_to_remove=args.name_substring_to_remove
+    )
     load, unique_names = aggregate_by_individual(load, names)
 
     mu = resolve_mu_rate(ts, args.ts, scalar_fallback=args.mutation_rate)
-    expected, expected_names = simulate_expected_load(
-        ts, windows, names, mu=mu, seed=args.random_seed
+    expected = simulate_expected_load(
+        ts, windows, names, mutation_rate=mu, seed=args.random_seed
     )
-    if expected_names != unique_names:
-        raise RuntimeError("Sim and observed individual orderings disagree")
 
     high = (1 + args.cutoff) * expected
     low = (1 - args.cutoff) * expected
@@ -161,8 +144,7 @@ def main():
         for w in range(load.shape[0]):
             if not masked_window_mask[w]:
                 continue
-            start = int(windows[w])
-            end = int(windows[w + 1])
+            start, end = bed_bounds(windows[w], windows[w + 1])
             masked_lines.append(
                 f"{args.chrom}\t{start}\t{end}\t{outlier_fractions[w]:.3f}\t{int(outlier_mask[w].sum())}\t{load.shape[1]}"
             )
@@ -179,8 +161,7 @@ def main():
         names_col = ",".join(unique_names[i] for i in idx)
         obs_col = ",".join(f"{load[w, i]:.3f}" for i in idx)
         exp_col = ",".join(f"{expected[w, i]:.3f}" for i in idx)
-        start = int(windows[w])
-        end = int(windows[w + 1])
+        start, end = bed_bounds(windows[w], windows[w + 1])
         outlier_lines.append(
             f"{args.chrom}\t{start}\t{end}\t{names_col}\t{obs_col}\t{exp_col}"
         )

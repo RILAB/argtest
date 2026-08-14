@@ -9,7 +9,7 @@ import numpy as np
 
 from argtest_common import (
     accessible_intervals_from_mu,
-    infer_mu_path,
+    build_bp_windows,
     load_ts,
     overlap_lengths,
     resolve_mu_rate,
@@ -31,6 +31,11 @@ def parse_args():
         required=True,
         type=Path,
         help="Tree sequence file (.tsz, .ts, .trees) used to infer sequence length and mutation map.",
+    )
+    p.add_argument(
+        "--chrom",
+        required=True,
+        help="Chromosome label written in BED column 1.",
     )
     p.add_argument(
         "--window-size",
@@ -93,21 +98,19 @@ def main():
     mu = resolve_mu_rate(
         first_ts,
         ts_path,
-        scalar_fallback=getattr(args, "mutation_rate", None),
+        scalar_fallback=args.mutation_rate,
     )
-    windows = np.arange(0, sequence_length + args.window_size, args.window_size, dtype=float)
-    if windows[-1] > sequence_length:
-        windows[-1] = sequence_length
+    windows = build_bp_windows(first_ts, args.window_size)
     acc_bp = overlap_lengths(accessible_intervals_for_rate(mu, sequence_length), windows)
 
     out_path = args.out or default_out_path(ts_path, args.window_size, args.cutoff_bp)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     lines = []
-    chrom = ts_path.stem
     for i in range(len(windows) - 1):
         if acc_bp[i] >= args.cutoff_bp:
             continue
         lines.append(
-            f"{chrom}\t{int(windows[i])}\t{int(windows[i + 1])}\t{float(acc_bp[i]):.3f}"
+            f"{args.chrom}\t{int(windows[i])}\t{int(windows[i + 1])}\t{float(acc_bp[i]):.3f}"
         )
     out_path.write_text("\n".join(lines) + ("\n" if lines else ""))
     n_bad = int(np.sum(acc_bp < args.cutoff_bp))
@@ -117,15 +120,12 @@ def main():
     print(summary, file=sys.stderr)
 
     # Write a simple log
-    log_path = getattr(args, "log", None) or default_log_path(out_path)
-    try:
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(log_path, "w") as fh:
-            fh.write("# find_low_access_regions summary\n")
-            fh.write(f"out_path={out_path}\n")
-            fh.write(summary + "\n")
-    except Exception:
-        print(f"WARNING: failed to write log to {log_path}", file=sys.stderr)
+    log_path = args.log or default_log_path(out_path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "w") as fh:
+        fh.write("# find_low_access_regions summary\n")
+        fh.write(f"out_path={out_path}\n")
+        fh.write(summary + "\n")
 
 
 if __name__ == "__main__":

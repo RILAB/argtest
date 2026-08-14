@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import argparse
-import sys
+import math
 from pathlib import Path
 
 from argtest_common import merge_intervals
@@ -19,7 +19,7 @@ def parse_args():
         nargs="+",
         required=True,
         type=Path,
-        help="Input BED files. Missing files are ignored.",
+        help="Input BED files. Missing or malformed inputs are errors; empty files are valid.",
     )
     parser.add_argument(
         "--log",
@@ -33,20 +33,28 @@ def parse_args():
 def read_intervals(path: Path):
     intervals = []
     if not path.exists():
-        print(f"WARNING: input BED not found, skipping: {path}", file=sys.stderr)
-        return intervals
+        raise FileNotFoundError(f"Input BED not found: {path}")
     with open(path, "r") as fh:
-        for line in fh:
+        for line_number, line in enumerate(fh, start=1):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
             parts = line.split()
             if len(parts) < 3:
-                continue
-            start = float(parts[1])
-            end = float(parts[2])
+                raise ValueError(
+                    f"Malformed BED row in {path} at line {line_number}: "
+                    "expected at least 3 fields"
+                )
+            try:
+                start = float(parts[1])
+                end = float(parts[2])
+            except ValueError as exc:
+                raise ValueError(
+                    f"Malformed BED coordinates in {path} at line {line_number}: "
+                    f"{parts[1]!r}, {parts[2]!r}"
+                ) from exc
             if end > start:
-                intervals.append([start, end])
+                intervals.append([math.floor(start), math.ceil(end)])
     return intervals
 
 

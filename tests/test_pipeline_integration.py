@@ -6,13 +6,11 @@ import pickle
 import subprocess
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
+import msprime
 import pytest
 import tskit
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from argtest_common import load_ts
 
@@ -85,7 +83,7 @@ def make_tree_sequence(outlier_name: str, length: int = 4000) -> tskit.TreeSeque
 
 
 def write_mut_rate_map(path: Path):
-    mu = SimpleNamespace(
+    mu = msprime.RateMap(
         position=[0, 800, 3000, 4000],
         rate=[1.0, 0.0, 1.0],
     )
@@ -160,7 +158,7 @@ def build_dataset(root: Path) -> dict[str, Path]:
         # mutload masking everything. Outlier-detection accuracy is covered by
         # the unit tests in tests/test_mutload_masks.py.
         "mutload_cutoff": 2.0,
-        "suffix_to_strip": "_anchorwave",
+        "name_substring_to_remove": "_anchorwave",
         "allow_missing_replicates": False,
         "base_name": "demo",
         "out_dir": str(out_dir),

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import pickle
 import re
 from pathlib import Path
 import warnings
@@ -22,26 +21,32 @@ except ImportError:
     msprime = None
 
 from argtest_common import (
+    build_bp_windows,
     accessible_intervals_from_mu,
-    infer_mu_path,
     load_ts,
     mutational_load,
-    ratemap_from_metadata,
+    resolve_mu_rate,
     tree_covered_accessible_bp,
 )
 
 matplotlib.rcParams["figure.dpi"] = 300
 
 
-def parse_args():
+def parse_args(argv=None):
     p = argparse.ArgumentParser(
         description=(
             "Generate SINGER-style validation/diagnostic plots from a set of tree sequences."
         )
     )
-    p.add_argument(
+    source = p.add_mutually_exclusive_group(required=True)
+    source.add_argument(
+        "--ts",
+        nargs="+",
+        type=Path,
+        help="Tree-sequence files in replicate order.",
+    )
+    source.add_argument(
         "--ts-dir",
-        required=True,
         type=Path,
         help="Directory containing tree sequence files (.tsz, .ts, .trees).",
     )
@@ -109,7 +114,8 @@ def parse_args():
             "unused when --sim-branch is not set."
         ),
     )
-    p.add_argument(
+    comparison = p.add_mutually_exclusive_group()
+    comparison.add_argument(
         "--compare",
         type=Path,
         default=None,
@@ -118,6 +124,12 @@ def parse_args():
             "(e.g. pre- vs post-pipeline). Uses the same --pattern, --window-size, "
             "--burnin-frac, and --mutation-rate as the primary directory."
         ),
+    )
+    comparison.add_argument(
+        "--compare-ts",
+        nargs="+",
+        type=Path,
+        help="Second set of tree-sequence files in replicate order.",
     )
     p.add_argument(
         "--sim-branch",
@@ -139,7 +151,7 @@ def parse_args():
             "MCMC iteration is computed as replicate_id * mcmc_thin (default: 1)."
         ),
     )
-    return p.parse_args()
+    return p.parse_args(argv)
 
 
 def natural_sort_key(text: str):
@@ -168,39 +180,21 @@ def find_tree_files(ts_dir: Path, pattern: str) -> list[Path]:
     return files
 
 
-def _try_mu_ratemap(ts_files: list[Path]):
-    """Return a RateMap from ts metadata (preferred) or nearest *.mut_rate.p file, or None."""
-    if not ts_files:
+def optional_mu_ratemap(ts, ts_path: Path):
+    """Resolve an embedded or sibling rate map, allowing only absence to fall back.
+
+    Returns None when no map exists, and when msprime is missing — this module
+    treats msprime as an optional dependency, but ``resolve_mu_rate`` requires it
+    and raises ``RuntimeError`` before it can report absence. Every other failure
+    (corrupt pickle, unrecognized object) propagates, so a broken rate map is
+    never silently downgraded to whole-sequence accessibility.
+    """
+    if msprime is None:
         return None
     try:
-        mu = ratemap_from_metadata(load_ts(ts_files[0]).metadata or {})
-        if mu is not None:
-            return mu
-    except Exception:
-        pass
-    try:
-        mu_path = infer_mu_path(ts_files[0])
-        with open(mu_path, "rb") as fh:
-            return pickle.load(fh)
-    except Exception:
+        return resolve_mu_rate(ts, ts_path)
+    except FileNotFoundError:
         return None
-
-
-def _try_sibling_mu_ratemap(ts_path: Path):
-    """Return the nearest sibling *.mut_rate.p RateMap-like object, or None."""
-    try:
-        mu_path = infer_mu_path(ts_path)
-        with open(mu_path, "rb") as fh:
-            return pickle.load(fh)
-    except Exception:
-        return None
-
-
-def genome_windows(sequence_length: float, window_size: float) -> np.ndarray:
-    windows = np.arange(0, float(sequence_length) + float(window_size), float(window_size), dtype=float)
-    if windows[-1] > float(sequence_length):
-        windows[-1] = float(sequence_length)
-    return windows
 
 
 def accessible_per_window(stat_windows: np.ndarray, kept_intervals: list) -> np.ndarray:
@@ -298,7 +292,7 @@ def load_sim_sfs(path: Path, *, folded: bool) -> np.ndarray:
 def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
                   mutation_rate: float,
                   mcmc_thin: int = 1,
-                  sim_branch: bool = False, mu_ratemap=None) -> dict:
+                  sim_branch: bool = False) -> dict:
     """Load all tree sequences and return per-replicate site statistics.
 
     When sim_branch=True, additionally simulate site mutations on each replicate with
@@ -321,8 +315,6 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
     sim_afs_folded_vals = [] if sim_branch else None
     n_samples = None
 
-    sibling_mu_ratemap = None if mu_ratemap is not None else _try_sibling_mu_ratemap(ts_files[0])
-
     parsed_rep_ids = [extract_replicate_id(p) for p in ts_files]
     replicate_ids = np.array(
         [rid if rid is not None else i for i, rid in enumerate(parsed_rep_ids)],
@@ -333,7 +325,7 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
         ts = load_ts(ts_path)
         # tskit requires windows[-1] == sequence_length exactly, so each replicate
         # gets its own window grid.
-        rep_windows = genome_windows(ts.sequence_length, window_size)
+        rep_windows = build_bp_windows(ts.sequence_length, window_size)
         if n_samples is None:
             n_samples = ts.num_samples
         elif ts.num_samples != n_samples:
@@ -345,13 +337,11 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
         #   1. kept_intervals metadata (written by trim_regions_single) — exact post-pipeline mask
         #   2. mu_intervals from *.mut_rate.p — pre-pipeline accessibility (rate > 0)
         #   3. fallback: treat entire sequence as accessible
-        per_ts_mu = mu_ratemap
-        if per_ts_mu is None:
-            per_ts_mu = ratemap_from_metadata(ts.metadata or {})
-        if per_ts_mu is None:
-            per_ts_mu = sibling_mu_ratemap
-
         kept_intervals = ts.metadata.get("kept_intervals") if ts.metadata else None
+        per_ts_mu = None
+        if kept_intervals is None or sim_branch:
+            per_ts_mu = optional_mu_ratemap(ts, ts_path)
+
         if kept_intervals is not None:
             acc_intervals = np.asarray(kept_intervals, dtype=float)
         elif per_ts_mu is not None:
@@ -457,7 +447,7 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
         sim_div_vals = [a[:min_n_windows] for a in sim_div_vals]
         sim_td_vals = [a[:min_n_windows] for a in sim_td_vals]
         sim_s_vals = [a[:min_n_windows] for a in sim_s_vals]
-    stat_windows = genome_windows(min(seq_lengths), window_size)
+    stat_windows = build_bp_windows(min(seq_lengths), window_size)
 
     n_files = len(ts_files)
     burnin = int(np.floor(n_files * burnin_frac))
@@ -536,7 +526,7 @@ def main():
     args = parse_args()
     if args.mcmc_thin <= 0:
         raise ValueError("--mcmc-thin must be > 0.")
-    ts_files = find_tree_files(args.ts_dir, args.pattern)
+    ts_files = list(args.ts) if args.ts is not None else find_tree_files(args.ts_dir, args.pattern)
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     if args.sim_branch:
@@ -546,20 +536,24 @@ def main():
     pri = collect_stats(
         ts_files, args.window_size, args.burnin_frac, args.mutation_rate,
         mcmc_thin=args.mcmc_thin,
-        sim_branch=args.sim_branch, mu_ratemap=None,
+        sim_branch=args.sim_branch,
     )
-    pri_label = args.ts_dir.name
+    pri_label = args.ts_dir.name if args.ts_dir is not None else ts_files[0].parent.name
 
     cmp = None
     cmp_label = None
-    if args.compare is not None:
-        cmp_files = find_tree_files(args.compare, args.pattern)
+    if args.compare is not None or args.compare_ts is not None:
+        cmp_files = (
+            list(args.compare_ts)
+            if args.compare_ts is not None
+            else find_tree_files(args.compare, args.pattern)
+        )
         cmp = collect_stats(
             cmp_files, args.window_size, args.burnin_frac, args.mutation_rate,
             mcmc_thin=args.mcmc_thin,
-            sim_branch=args.sim_branch, mu_ratemap=None,
+            sim_branch=args.sim_branch,
         )
-        cmp_label = args.compare.name
+        cmp_label = args.compare.name if args.compare is not None else cmp_files[0].parent.name
 
     # Color / style scheme:
     #   black = observed site stats, firebrick = sim overlay (only with --sim-branch)
@@ -604,8 +598,8 @@ def main():
     ax.set_ylabel("Derived mutations / base")
     ax.legend()
     load_path = args.out_dir / f"{args.prefix}mutational-load.png"
-    plt.savefig(load_path)
-    plt.clf()
+    fig.savefig(load_path)
+    plt.close(fig)
 
     # ------------------------------------------------------------------ #
     # Mutational load trace across replicates
@@ -629,8 +623,8 @@ def main():
     ax.set_ylabel("Derived mutations / base in each sample")
     ax.legend()
     trace_path = args.out_dir / f"{args.prefix}mutational-load-trace.png"
-    plt.savefig(trace_path)
-    plt.clf()
+    fig.savefig(trace_path)
+    plt.close(fig)
 
     # ------------------------------------------------------------------ #
     # Diversity: site-vs-sim scatter (only meaningful with --sim-branch)
@@ -648,8 +642,8 @@ def main():
         ax.set_ylabel("Simulated diversity per window (sim)")
         ax.legend()
         div_scatter_path = args.out_dir / f"{args.prefix}diversity-scatter.png"
-        plt.savefig(div_scatter_path)
-        plt.clf()
+        fig.savefig(div_scatter_path)
+        plt.close(fig)
 
     # ------------------------------------------------------------------ #
     # Diversity skyline
@@ -674,8 +668,8 @@ def main():
     ax.set_ylabel("Diversity")
     ax.legend(fontsize=7)
     div_skyline_path = args.out_dir / f"{args.prefix}diversity-skyline.png"
-    plt.savefig(div_skyline_path)
-    plt.clf()
+    fig.savefig(div_skyline_path)
+    plt.close(fig)
 
     # ------------------------------------------------------------------ #
     # Diversity trace across replicates
@@ -696,8 +690,8 @@ def main():
     ax.set_ylabel("Genome-wide diversity")
     ax.legend()
     div_trace_path = args.out_dir / f"{args.prefix}diversity-trace.png"
-    plt.savefig(div_trace_path)
-    plt.clf()
+    fig.savefig(div_trace_path)
+    plt.close(fig)
 
     # ------------------------------------------------------------------ #
     # Segregating sites: site-vs-sim scatter (only with --sim-branch)
@@ -715,8 +709,8 @@ def main():
         ax.set_ylabel("Simulated segregating sites / base (sim)")
         ax.legend()
         s_scatter_path = args.out_dir / f"{args.prefix}segsites-scatter.png"
-        plt.savefig(s_scatter_path)
-        plt.clf()
+        fig.savefig(s_scatter_path)
+        plt.close(fig)
 
     # ------------------------------------------------------------------ #
     # Segregating sites skyline
@@ -741,8 +735,8 @@ def main():
     ax.set_ylabel("Segregating sites / base")
     ax.legend(fontsize=7)
     s_skyline_path = args.out_dir / f"{args.prefix}segsites-skyline.png"
-    plt.savefig(s_skyline_path)
-    plt.clf()
+    fig.savefig(s_skyline_path)
+    plt.close(fig)
 
     # ------------------------------------------------------------------ #
     # Segregating sites trace
@@ -763,8 +757,8 @@ def main():
     ax.set_ylabel("Genome-wide segregating sites / base")
     ax.legend()
     s_trace_path = args.out_dir / f"{args.prefix}segsites-trace.png"
-    plt.savefig(s_trace_path)
-    plt.clf()
+    fig.savefig(s_trace_path)
+    plt.close(fig)
 
     # ------------------------------------------------------------------ #
     # Tajima's D: site-vs-sim scatter (only with --sim-branch)
@@ -782,8 +776,8 @@ def main():
         ax.set_ylabel("Simulated Tajima's D per window (sim)")
         ax.legend()
         td_scatter_path = args.out_dir / f"{args.prefix}tajima-d-scatter.png"
-        plt.savefig(td_scatter_path)
-        plt.clf()
+        fig.savefig(td_scatter_path)
+        plt.close(fig)
 
     # ------------------------------------------------------------------ #
     # Tajima's D skyline
@@ -808,8 +802,8 @@ def main():
     ax.set_ylabel("Tajima's D")
     ax.legend(fontsize=7)
     td_skyline_path = args.out_dir / f"{args.prefix}tajima-d-skyline.png"
-    plt.savefig(td_skyline_path)
-    plt.clf()
+    fig.savefig(td_skyline_path)
+    plt.close(fig)
 
     # ------------------------------------------------------------------ #
     # Tajima's D trace
@@ -830,8 +824,8 @@ def main():
     ax.set_ylabel("Genome-wide Tajima's D")
     ax.legend()
     td_trace_path = args.out_dir / f"{args.prefix}tajima-d-trace.png"
-    plt.savefig(td_trace_path)
-    plt.clf()
+    fig.savefig(td_trace_path)
+    plt.close(fig)
 
     # ------------------------------------------------------------------ #
     # Site SFS (with optional sim overlay) — unfolded and folded
@@ -874,8 +868,8 @@ def main():
                         context=f"frequency-spectrum-{_suffix}")
         ax.legend(fontsize=7)
         _plot_path = args.out_dir / f"{args.prefix}frequency-spectrum-{_suffix}.png"
-        plt.savefig(_plot_path)
-        plt.clf()
+        fig.savefig(_plot_path)
+        plt.close(fig)
         if _suffix == "unfolded":
             sfs_unfolded_path = _plot_path
         else:
@@ -906,8 +900,8 @@ def main():
             ax.set_ylabel("Density")
             ax.legend()
             sim_pi_density_path = args.out_dir / f"{args.prefix}diversity-density-vs-sim.png"
-            plt.savefig(sim_pi_density_path)
-            plt.clf()
+            fig.savefig(sim_pi_density_path)
+            plt.close(fig)
 
         if obs_td.size and sim_td.size:
             fig, ax = plt.subplots(1, 1, figsize=(6, 4), constrained_layout=True)
@@ -920,8 +914,8 @@ def main():
             ax.set_ylabel("Density")
             ax.legend()
             sim_td_density_path = args.out_dir / f"{args.prefix}tajima-d-density-vs-sim.png"
-            plt.savefig(sim_td_density_path)
-            plt.clf()
+            fig.savefig(sim_td_density_path)
+            plt.close(fig)
 
     sim_sfs_unfolded_plot_path = None
     sim_sfs_folded_plot_path = None
@@ -947,8 +941,8 @@ def main():
                             context=f"frequency-spectrum-vs-sim-{_suffix}")
             ax.legend()
             _plot_path = args.out_dir / f"{args.prefix}frequency-spectrum-vs-sim-{_suffix}.png"
-            plt.savefig(_plot_path)
-            plt.clf()
+            fig.savefig(_plot_path)
+            plt.close(fig)
             if _suffix == "unfolded":
                 sim_sfs_unfolded_plot_path = _plot_path
             else:
@@ -960,6 +954,7 @@ def main():
     summary_path = args.out_dir / f"{args.prefix}summary.txt"
     summary_path.write_text(
         "\n".join([
+            f"ts_files={','.join(str(path) for path in ts_files)}",
             f"ts_dir={args.ts_dir}",
             f"pattern={args.pattern}",
             f"n_files={pri['n_files']}",
@@ -972,6 +967,7 @@ def main():
             f"mutation_rate={args.mutation_rate}",
             f"sim_branch={args.sim_branch}",
             f"compare_dir={args.compare}",
+            f"compare_files={','.join(str(path) for path in cmp_files) if cmp else ''}",
             f"n_files_compare={cmp['n_files'] if cmp else 'n/a'}",
             f"sim_tsv={args.sim}",
             f"sim_sfs_tsv={args.sim_sfs}",

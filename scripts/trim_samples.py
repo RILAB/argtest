@@ -14,7 +14,6 @@ from argtest_common import (
     load_ts,
     merge_intervals,
     name_to_nodes_map,
-    validate_trimmed_ts,
 )
 
 
@@ -75,9 +74,9 @@ def parse_args():
         help="Output tree sequence path (default: results/<ts_stem>_trimmed.tsz).",
     )
     p.add_argument(
-        "--suffix-to-strip",
+        "--name-substring-to-remove",
         default="",
-        help='Suffix removed from sample names before matching (default: "").',
+        help='Substring removed globally from sample names before matching (default: "").',
     )
     p.add_argument(
         "--log",
@@ -222,7 +221,7 @@ def _filter_trimmed_sample_mutations(tables, ts, merged_by_node) -> None:
     )
 
 
-def trim_samples_single_pass(ts, remove_intervals, suffix_to_strip=""):
+def trim_samples_single_pass(ts, remove_intervals, name_substring_to_remove=""):
     """Remove the ancestry of each named individual over its intervals, in a
     single pass.
 
@@ -236,7 +235,9 @@ def trim_samples_single_pass(ts, remove_intervals, suffix_to_strip=""):
     Returns ``(trimmed_ts, summary)`` where summary has names_removed,
     intervals_applied and sample_nodes_removed counts.
     """
-    name_to_nodes = name_to_nodes_map(ts, suffix_to_strip=suffix_to_strip)
+    name_to_nodes = name_to_nodes_map(
+        ts, name_substring_to_remove=name_substring_to_remove
+    )
     seq_len = float(ts.sequence_length)
 
     # Map each target node -> its removal intervals (collected across names),
@@ -356,9 +357,10 @@ def main():
         raise SystemExit("ERROR: provide --individuals and/or --remove")
 
     trimmed_ts, summary = trim_samples_single_pass(
-        ts, remove_intervals, suffix_to_strip=args.suffix_to_strip
+        ts,
+        remove_intervals,
+        name_substring_to_remove=args.name_substring_to_remove,
     )
-    validate_trimmed_ts(trimmed_ts)
 
     if args.out:
         out_path = Path(args.out)
@@ -366,6 +368,7 @@ def main():
         # Default output to a sibling trimmed/ directory with a trimmed suffix.
         default_out_dir.mkdir(parents=True, exist_ok=True)
         out_path = default_out_dir / f"{ts_path.stem}_trimmed.tsz"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     dump_ts(trimmed_ts, out_path)
 
     # Summary to stdout/stderr and optional log

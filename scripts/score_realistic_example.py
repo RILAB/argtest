@@ -35,6 +35,8 @@ from pathlib import Path
 
 import tskit
 
+from argtest_common import merge_intervals
+
 
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__,
@@ -59,19 +61,6 @@ def load_bed(path: Path):
                 continue
             rows.append(line.split("\t"))
     return rows
-
-
-def merge_intervals(intervals):
-    if not intervals:
-        return []
-    intervals = sorted((float(l), float(r)) for l, r in intervals)
-    merged = [intervals[0]]
-    for l, r in intervals[1:]:
-        if l <= merged[-1][1]:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], r))
-        else:
-            merged.append((l, r))
-    return merged
 
 
 def total_bp(intervals):
@@ -150,9 +139,9 @@ def score_mutation_masked(gt, out_dir):
     rows = []
     for entry in gt["chromosomes"]:
         chrom = entry["chrom"]
-        gt_prune = merge_intervals(
+        gt_prune = merge_intervals([
             (pi["left"], pi["right"]) for pi in entry["prune_intervals"]
-        )
+        ])
         gt_total = total_bp(gt_prune)
         all_intervals = []
         for rep_i in range(gt["n_reps"]):

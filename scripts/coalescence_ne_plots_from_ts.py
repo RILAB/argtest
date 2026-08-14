@@ -21,10 +21,60 @@ os.environ.setdefault("XDG_CACHE_HOME", "/tmp")
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import tskit
 
 from argtest_common import load_ts
 
 matplotlib.rcParams["figure.dpi"] = 300
+
+
+def _partial_isolation_probe_ts():
+    """Eight equal-span trees in which only one of six sample pairs ever coalesces."""
+    tables = tskit.TableCollection(sequence_length=8)
+    pop = tables.populations.add_row()
+    samples = [
+        tables.nodes.add_row(flags=tskit.NODE_IS_SAMPLE, time=0, population=pop)
+        for _ in range(4)
+    ]
+    for j in range(8):
+        ancestor = tables.nodes.add_row(time=j + 1, population=pop)
+        for sample in samples[:2]:
+            tables.edges.add_row(j, j + 1, ancestor, sample)
+    tables.sort()
+    tables.build_index()
+    return tables.tree_sequence()
+
+
+def require_pinned_tskit():
+    """Fail early when the declared partial-missing-data fork is not active.
+
+    Checks the behaviour rather than the version string: stock tskit yields NaN
+    pair-coalescence quantiles when some sample pairs never coalesce, whereas the
+    pinned nspope fork conditions on connected pairs and returns finite values.
+    A version marker such as ``".dev" in tskit.__version__`` proves neither fork
+    identity nor the required semantics. The probe runs on an eight-edge table,
+    so it costs microseconds.
+    """
+    required = ("pair_coalescence_rates", "pair_coalescence_quantiles")
+    missing = [name for name in required if not hasattr(tskit.TreeSequence, name)]
+    if missing:
+        raise RuntimeError(
+            "coalescence plotting requires the pinned tskit fork from "
+            f"environment.yml; installed tskit {tskit.__version__} is missing: "
+            + ", ".join(missing)
+        )
+    quantiles = _partial_isolation_probe_ts().pair_coalescence_quantiles(
+        np.linspace(0, 1, 5)
+    )
+    if not np.all(np.isfinite(quantiles)):
+        raise RuntimeError(
+            "coalescence plotting requires the pinned tskit fork from "
+            f"environment.yml (nspope/tskit); installed tskit {tskit.__version__} "
+            "returns non-finite pair-coalescence quantiles when some sample pairs "
+            "never coalesce, so partial-missing-data normalization is unavailable. "
+            "Recreate the environment: conda env remove -n argtest && "
+            "conda env create -f environment.yml"
+        )
 
 
 def parse_args():
@@ -529,6 +579,7 @@ def simulate_window_stats_from_ne(
 
 
 def main():
+    require_pinned_tskit()
     args = parse_args()
     if args.time_adjust <= 0:
         raise ValueError("--time-adjust must be > 0")
@@ -620,8 +671,8 @@ def main():
     ax.set_ylabel("Coalescence density (proportion / log-generation)")
     ax.set_xscale("log")
     pdf_path = args.out_dir / f"{args.prefix}pair-coalescence-pdf.png"
-    plt.savefig(pdf_path)
-    plt.clf()
+    fig.savefig(pdf_path)
+    plt.close(fig)
 
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
     plot_postburn_replicates(ax, plot_breaks, rate_vals, keep_post, **reps_kwargs)
@@ -632,8 +683,8 @@ def main():
     if args.log_rates:
         ax.set_yscale("log")
     rate_path = args.out_dir / f"{args.prefix}pair-coalescence-rates.png"
-    plt.savefig(rate_path)
-    plt.clf()
+    fig.savefig(rate_path)
+    plt.close(fig)
 
     ne_vals = np.full_like(rate_vals, np.nan, dtype=float)
     valid_rates = np.isfinite(rate_vals) & (rate_vals > 0)
@@ -650,8 +701,8 @@ def main():
     if args.log_rates:
         ax.set_yscale("log")
     ne_path = args.out_dir / f"{args.prefix}effective-pop-size.png"
-    plt.savefig(ne_path)
-    plt.clf()
+    fig.savefig(ne_path)
+    plt.close(fig)
 
     estimates_path = write_coalescence_estimates(
         args.out_dir / f"{args.prefix}coalescence-ne-estimates.tsv",

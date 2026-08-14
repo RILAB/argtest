@@ -1,12 +1,9 @@
 import gzip
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import tskit
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import export_vcf
 
@@ -42,7 +39,11 @@ def _run(ts, tmp_path, out_name="out.vcf"):
     ts.dump(ts_path)
     out_path = tmp_path / out_name
     args = SimpleNamespace(
-        ts=ts_path, out=out_path, chrom="chr1", suffix_to_strip="", log=None
+        ts=ts_path,
+        out=out_path,
+        chrom="chr1",
+        name_substring_to_remove="",
+        log=None,
     )
     orig = export_vcf.parse_args
     export_vcf.parse_args = lambda: args

@@ -1,9 +1,11 @@
-# Per-sample (per-node) trim granularity — design notes (deferred)
+# Per-sample (per-node) trim granularity — superseded design notes
 
 Planning notes for project todo **#6** ("Make `trim_samples.py` removal
-granularity explicitly per-sample (per-node), robust to ploidy"). Deferred —
-this is a bigger change than a quick edit. Verified against the code on
-2026-06-26.
+granularity explicitly per-sample (per-node), robust to ploidy"). The current
+contract instead keeps per-individual detection and removal, pooling multiple
+sample nodes belonging to a represented individual. Uniform ploidy and leaf
+samples remain audit/evidence-gated assumptions. The historical alternatives
+below are retained for context. Verified against the code on 2026-06-26.
 
 ## Goal
 
@@ -49,7 +51,7 @@ the individual (= the whole diploid), silently.
    - test per sample node (no pooling) so an individual haplotype can be flagged
      and trimmed. Likely wants a config knob to select pooled vs per-node mode.
 
-3. **`suffix_to_strip` / `get_individual_name` interaction:** ensure `#hap`
+3. **`name_substring_to_remove` / `get_individual_name` interaction:** ensure `#hap`
    parsing happens *after* suffix stripping so the two don't collide.
 
 ## Backward-compatibility requirement

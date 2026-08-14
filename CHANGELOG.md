@@ -3,6 +3,182 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
+## [v1.10] — 2026-08-09 — simplification overhaul: explicit inputs, fewer moving parts
+
+A broad simplification pass driven by an independent code review: one supported
+implementation per task, and fail-fast errors in place of silent fallbacks.
+
+Measured against v1.9 across `scripts/`, the `Snakefile`, and config — excluding
+tests and documentation — this is **205 fewer total lines (−2.6%)** and **263
+fewer logical lines (−4.4%)**, ignoring blanks and comments. Roughly 500 logical
+lines were deleted (two whole modules, eleven dead helpers in `argtest_common`,
+and consolidation across seven scripts) and roughly 240 added back, mostly as
+new diagnostics: the mutation-map checker, the ARG contract audit, mutation-rate
+source reporting, and the pinned-dependency probe. The structural change is
+larger than the line delta suggests — no shared helper retains a test-only
+caller, and there is now a single supported implementation of region trimming
+and of sample trimming.
+
+This is a minor bump carrying breaking changes, following the same convention as
+v1.9. **Read the Breaking section before upgrading**: several changes turn
+previously-working configurations into hard failures, and one statistic — the
+retained-sequence figure in `pipeline_summary.py` — changes value, as a
+correction. Existing configs must at minimum rename `suffix_to_strip`.
+
+### Breaking
+
+- Rename the sample-name normalization setting from `suffix_to_strip` to
+  `name_substring_to_remove`, and the CLI option from `--suffix-to-strip` to
+  `--name-substring-to-remove`. The behavior remains global `str.replace`
+  removal rather than terminal-suffix removal. Existing configs must rename the
+  key; the old key produces a migration error instead of silently using the
+  default.
+- **Step 4 now requires a resolvable mutation rate.** `trim_regions_single.py`
+  always embeds a rate map, so it fails when none of an embedded map, an exact
+  sibling `*.mut_rate.p`, or the new `--mutation-rate` scalar is available.
+  Previously the map was optional and the step silently produced output without
+  rate metadata. The Snakefile forwards the config `mutation_rate` when set; a
+  run with no mutation-rate source anywhere must now set one.
+- **Mutation-map discovery accepts only exact paths.** `infer_mu_path` tries
+  `<ts_stem>.mut_rate.p` and `<parent_dir_name>.mut_rate.p`, beside the treefile
+  and one directory above it. The trailing-replicate/numeric-suffix base
+  derivation and the directory-wide `*.mut_rate.p` glob are gone, as is the
+  resulting "Ambiguous mutation maps" error — a missing map now reports every
+  path tried. Datasets that relied on a broad shared base name (for example a
+  single `amaranth.mut_rate.p` serving `amaranth.1`…`amaranth.16`) must supply
+  per-chromosome or per-replicate files, or set a scalar `mutation_rate`.
+- `resolve_mu_rate` no longer rebuilds a `RateMap` from any pickled object that
+  happens to expose `.position` and `.rate`. Pickles must contain an
+  `msprime.RateMap`.
+- `find_low_access_regions.py` gained a **required** `--chrom`. It previously
+  wrote `ts_path.stem` into BED column 1, which is the *replicate* ID under the
+  nested `<chrom>/<rep>.<suffix>` layout the pipeline uses.
+- `combine_remove_masks.py` now fails on bad input instead of skipping it: a
+  missing input BED raises `FileNotFoundError`, and a non-blank, non-comment row
+  with fewer than three fields or non-numeric coordinates raises `ValueError`
+  with file and line context. Empty BED files remain valid.
+- **`pipeline_summary.py` retained-sequence accounting changed.** The accessible
+  set is now `kept_intervals`, falling back to the embedded positive-rate
+  mutation map and then the whole sequence; previously it always used the
+  mutation map. Both are still intersected with tree-covered spans, so trimmed
+  regions are excluded either way — the difference is `mu == 0` sequence that
+  survived step 4 and still carries genealogy, which v1.9 excluded and v1.10
+  counts. **Reported retained bp increases** for the same ARGs, by an amount
+  bounded by the zero-rate fraction of the mutation map (33% of the sequence in
+  the bundled realistic example, though the realized delta is smaller since
+  step 2 masks most low-accessibility windows). This is a correction, not a
+  redefinition: `kept_intervals` is what the pipeline actually retained, and it
+  is what `validation_plots_from_ts.py` already used — the two now agree.
+- `coalescence_ne_plots_from_ts.py` refuses to start unless the pinned
+  nspope/tskit fork is active, rather than silently producing wrong
+  partial-missing-data normalization on stock tskit.
+- Removed `scripts/trim_regions.py` (the coordinate-*compacting* directory CLI)
+  and `scripts/trim_samples_chunked.py`. `trim_regions_single.py` is the single
+  supported, coordinate-preserving step-4 filter; its `load_mask_intervals` and
+  `complement_intervals` helpers moved to `argtest_common`.
+- `argtest_common` lost eleven helpers with no live callers:
+  `validate_trimmed_ts`, `assert_sample_ids_preserved`, `trim_ts_by_intervals`,
+  `build_removal_segments`, `build_segments_with_drop_nodes`, `infer_mu_base`,
+  `build_shared_mask`, `and_ratemaps_binary`, `collapse_masked_intervals`,
+  `collapse_masked_and_low_access_windows`, and `ratemap_from_keep_intervals`.
+  `mutational_load` also dropped its unused `remove_intervals` /
+  `name_to_nodes` parameters.
+
+### Added
+
+- **The mutation-rate source is now recorded and reported.** Resolution order is
+  unchanged (embedded ratemap → exact sibling `*.mut_rate.p` → scalar
+  `mutation_rate`), but step 4 stamps which one it used into the output ARG's
+  `mu_source` metadata, prints it, and warns on stderr when it fell back to the
+  scalar. `pipeline_summary.py` gained a **Mutation-rate source** section that
+  counts sources across the run and flags every ARG that used the flat fallback.
+  Without this, a rate map that fails discovery is silently replaced by a flat
+  rate — which removes the local-rate correction the step-3 outlier test exists
+  to apply, changing outlier calls with no error anywhere.
+- `scripts/check_mu_paths.py` dry-runs mutation-map discovery over a dataset
+  using only `stat` calls (no ARG data loaded, safe on a head node) and exits
+  non-zero if any tree file would fail step 4. Use it before a run; use the
+  summary section above to audit a run after the fact.
+- `scripts/audit_arg_contract.py` and `argtest_common.audit_individual_contract`
+  report — **as warnings only** — sample nodes with no individual, duplicate
+  normalized individual names, mixed ploidy among represented individuals, and
+  sample nodes used as edge parents. Pipeline behavior does not depend on the
+  result. This is the evidence-gathering step before any of those conditions
+  becomes an error.
+- `validation_plots_from_ts.py` accepts explicit `--ts FILE [FILE ...]` and
+  `--compare-ts FILE [FILE ...]` file lists, mutually exclusive with the
+  directory-plus-glob forms.
+- `trim_regions_single.py` gained `--mutation-rate` as a positive scalar
+  fallback.
+- Tests for the individual/ploidy audit (`tests/test_individual_contract.py`)
+  and for validation-plot argument handling (`tests/test_validation_plots.py`).
+
+### Fixed
+
+- Step 2 wrote the replicate ID rather than the chromosome into BED column 1
+  under the nested input layout (see the required `--chrom` above).
+- Step 4 replaced a tree sequence's top-level metadata wholesale; unrelated
+  provenance fields are now preserved and only `kept_intervals` and the rate map
+  are overwritten.
+- `find_low_access_regions.py` and `trim_samples.py` did not create the output
+  parent directory when given an explicit `--out`, so standalone runs into a
+  fresh tree failed. (Pipeline runs were unaffected — Snakemake pre-creates
+  output parents.)
+- `validate_trimmed_ts` never actually validated anything: its `check_index`
+  fallback could not obtain an index, returned early, and emitted a misleading
+  "skipped check_index" warning on every normal step-5 and step-5b job. It has
+  been deleted rather than repaired; malformed tables still fail when
+  `tables.tree_sequence()` constructs the result.
+
+### Performance
+
+- `merge_replicates` concatenates all chromosomes of a replicate in a single
+  `concatenate(*remaining)` call instead of rebuilding a progressively larger
+  intermediate at every chromosome boundary, and releases the merged tree
+  sequence before reconstructing metadata. Peak RSS on real data has not yet
+  been measured on the pinned environment.
+- `mutational_load` iterates the input tree sequence directly. It previously
+  called `keep_intervals([(0, sequence_length)], simplify=False)` on the
+  supported path, copying and reindexing the entire tree sequence without
+  changing it.
+- `hapmap_low_rec_mask.py` parses the HapMap once per invocation instead of
+  twice, halving I/O for the per-chromosome rule.
+- Step 6 invokes the validation script with explicit file arguments, removing
+  the `/tmp` staging directories, symlink loops, and inline Python map lookup
+  from the rule.
+- Plotting scripts close figures with `plt.close(fig)` rather than `plt.clf()`,
+  so pyplot no longer retains every cleared figure for the life of the process.
+
+### Changed
+
+- BED interval bounds are rounded outward: `floor(start)` / `ceil(end)` instead
+  of truncation with `int()`, so a mask never loses covered sequence to inward
+  truncation. In practice this is close to a no-op — `int()` already equals
+  `floor()` for non-negative coordinates, so **start positions never change**,
+  and ends move by at most 1 bp only where a window edge is non-integral. That
+  requires `--snp-window` mode (whose edges are site positions) *and* an ARG with
+  non-integral site positions, i.e. a continuous-genome msprime simulation.
+  Discrete-genome and SINGER-derived ARGs produce byte-identical output.
+- Duplicated helpers are consolidated in `argtest_common`: base-pair window
+  construction, SNP window construction, and the seeded simulation-based
+  expected-load calculation each have one implementation. The HTML tree-view
+  scripts and `score_realistic_example.py` now import the shared `load_ts` and
+  `merge_intervals` instead of carrying private copies.
+- Mutation-load documentation calls the reference a **simulation-based expected
+  load** and states that it is estimated from one reproducible, seeded mutation
+  simulation, so it carries simulation variance and is not an analytic
+  expectation.
+- Documentation distinguishes Snakemake-captured job stdout/stderr from
+  per-script completed-run summaries and corrects `trim_samples.py`'s default
+  output to `<ts_parent>/trimmed/<ts_stem>_trimmed.tsz`.
+- README gained a "Supported input assumptions" section. The supported
+  individual model allows multiple sample nodes per individual and assesses
+  uniform ploidy only among **represented** individuals (individual-table rows
+  with no sample nodes are ignored). Strict uniform-ploidy and leaf-sample
+  enforcement, and removal of the VCF one-column-per-node fallback, remain
+  contingent on the warn-only audit passing against the real amaranth/admix
+  corpus.
+
 ## [v1.9] — 2026-07-27 — native missing-pair coalescence + final-ARG retention
 
 ### Breaking

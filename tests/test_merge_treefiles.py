@@ -1,10 +1,7 @@
 from pathlib import Path
 
-import sys
 import tskit
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import merge_treefiles_by_replicate as merger
 
@@ -79,6 +76,40 @@ def test_merge_group_concatenates_sequence_length(tmp_path, monkeypatch):
     assert [chrom for chrom, _ in ordered] == ["chr2", "chr10"]
     assert merged.sequence_length == 12
     assert merged.num_sites == 2
+
+
+def test_merge_group_batches_concatenation(tmp_path, monkeypatch):
+    paths = []
+    loaded = []
+    for chrom, length in [("chr1", 3), ("chr2", 4), ("chr3", 5)]:
+        path = tmp_path / f"base.{chrom}.1.trees"
+        ts = make_simple_ts(length=length, site_pos=1)
+        ts.dump(path)
+        paths.append((chrom, path))
+        loaded.append(ts)
+
+    calls = []
+
+    class TrackingTS:
+        def __init__(self, ts):
+            self._ts = ts
+
+        def __getattr__(self, name):
+            return getattr(self._ts, name)
+
+        def concatenate(self, *others):
+            calls.append(len(others))
+            return self._ts.concatenate(*(other._ts for other in others))
+
+    loaded_by_path = {path: ts for (_chrom, path), ts in zip(paths, loaded)}
+    monkeypatch.setattr(
+        merger, "load_ts", lambda path: TrackingTS(loaded_by_path[path])
+    )
+
+    merged, _ = merger.merge_group(paths)
+
+    assert calls == [2]
+    assert merged.sequence_length == 12
 
 
 def test_main_writes_combined_file(tmp_path, monkeypatch):

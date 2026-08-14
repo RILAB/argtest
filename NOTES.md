@@ -27,4 +27,6 @@ Use this module for internal script imports rather than duplicating the helpers.
 `trim_samples.py` matches sample/individual IDs exactly against the tree sequence's internal individual names as produced by `argtest_common.get_individual_name()` (prefers `individual.metadata['id']` when present, otherwise a synthetic `ind<id>` name).
 
 - Matching is **exact** and **case-sensitive**.
-- `--suffix-to-strip` (default `""`) is removed via simple string replacement before matching; provide names that match the post-stripping individual names.
+- `--name-substring-to-remove` (default `""`) is removed via global string replacement before matching; provide names that match the normalized individual names. Despite replacing the former `--suffix-to-strip` option, the operation is not suffix-specific: every occurrence is removed.
+
+Per-individual analyses may pool multiple sample nodes for one individual (for example, two nodes for a diploid). Uniform ploidy is assessed only among represented individuals; individual-table rows with no sample nodes are ignored. The stricter uniform-ploidy and leaf-sample contract remains audit/evidence-gated until it has been checked on the real input corpus.

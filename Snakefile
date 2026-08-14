@@ -96,7 +96,14 @@ ALLOW_MISSING_REPLICATES = bool(config.get("allow_missing_replicates", False))
 BURNIN = int(config.get("burnin", 0))
 if BURNIN < 0:
     raise WorkflowError("burnin must be >= 0")
-SUFFIX_TO_STRIP = str(config.get("suffix_to_strip", "_anchorwave"))
+if "suffix_to_strip" in config:
+    raise WorkflowError(
+        "Configuration key 'suffix_to_strip' was renamed to "
+        "'name_substring_to_remove'; update your config and rerun."
+    )
+NAME_SUBSTRING_TO_REMOVE = str(
+    config.get("name_substring_to_remove", "_anchorwave")
+)
 
 HAPMAP = Path(cfg_required("hapmap")).expanduser().resolve()
 FAI = Path(cfg_required("fai")).expanduser().resolve()
@@ -181,7 +188,7 @@ VCF_REPS_REQUESTED = (
 #   trim_remove_bed  — one or more BED files of per-individual intervals
 #                      (col 4 = comma-separated sample IDs; path or list of paths)
 # Sample-ID matching follows the same rules as the step-3 outlier BED, including
-# suffix_to_strip. Leave unset to trim only the mutload outliers.
+# name_substring_to_remove. Leave unset to trim only the mutload outliers.
 _TRIM_IND_CFG = config.get("trim_individuals", None)
 if isinstance(_TRIM_IND_CFG, (list, tuple)):
     _TRIM_IND_CFG = ",".join(str(i) for i in _TRIM_IND_CFG)
@@ -524,6 +531,7 @@ rule step2_low_access:
         """
         python scripts/find_low_access_regions.py \
           --ts "{input}" \
+          --chrom "{wildcards.chrom}" \
           --window-size {params.window_size} \
           --cutoff-bp {params.cutoff_bp} \
           {params.mutation_rate_arg} \
@@ -549,7 +557,7 @@ rule step3_mutload_masks:
         window_arg=MUTLOAD_WINDOW_ARG,
         cutoff=MUTLOAD_CUTOFF,
         fraction_arg=MUTLOAD_FRACTION_ARG,
-        suffix_to_strip=SUFFIX_TO_STRIP,
+        name_substring_to_remove=NAME_SUBSTRING_TO_REMOVE,
         mutation_rate_arg=MUTATION_RATE_ARG,
         seed=lambda wildcards: mutload_seed_for(wildcards.chrom, wildcards.rep),
     shell:
@@ -564,7 +572,7 @@ rule step3_mutload_masks:
           {params.fraction_arg} \
           --random-seed {params.seed} \
           {params.mutation_rate_arg} \
-          --suffix-to-strip "{params.suffix_to_strip}" \
+          --name-substring-to-remove "{params.name_substring_to_remove}" \
           --log "{log}"
         """
 
@@ -609,12 +617,15 @@ rule step4_trim_regions_single:
         ext="|".join(re.escape(s.lstrip(".")) for s in VALID_SUFFIXES),
     log:
         str(LOG_DIR / "step4_trim" / "{chrom}" / "{rep}.{ext}.log")
+    params:
+        mutation_rate_arg=MUTATION_RATE_ARG,
     shell:
         """
         python scripts/trim_regions_single.py \
           --ts "{input.ts}" \
           --remove "{input.mask_bed}" \
           --out "{output}" \
+          {params.mutation_rate_arg} \
           --log "{log}"
         """
 
@@ -637,7 +648,7 @@ rule step5_trim_samples_single:
     log:
         str(LOG_DIR / "step5" / "{chrom}" / "{rep}.{ext}.log")
     params:
-        suffix_to_strip=SUFFIX_TO_STRIP,
+        name_substring_to_remove=NAME_SUBSTRING_TO_REMOVE,
         extra_remove=TRIM_REMOVE_ARG,
         individuals_arg=TRIM_INDIVIDUALS_ARG,
     shell:
@@ -648,7 +659,7 @@ rule step5_trim_samples_single:
           {params.extra_remove} \
           {params.individuals_arg} \
           --out "{output}" \
-          --suffix-to-strip "{params.suffix_to_strip}" \
+          --name-substring-to-remove "{params.name_substring_to_remove}" \
           --log "{log}"
         """
 
@@ -742,14 +753,14 @@ if EMIT_VCF:
         log:
             str(LOG_DIR / "vcf" / "{chrom}" / "{rep}.log")
         params:
-            suffix_to_strip=SUFFIX_TO_STRIP,
+            name_substring_to_remove=NAME_SUBSTRING_TO_REMOVE,
         shell:
             """
             python scripts/export_vcf.py \
               --ts "{input}" \
               --out "{output}" \
               --chrom "{wildcards.chrom}" \
-              --suffix-to-strip "{params.suffix_to_strip}" \
+              --name-substring-to-remove "{params.name_substring_to_remove}" \
               --log "{log}"
             """
 
@@ -794,44 +805,8 @@ if RUN_VALIDATION:
             sim_branch_flag="--sim-branch" if VALIDATION_SIM_BRANCH else "",
         shell:
             """
-            cleaned_stage_root="$(mktemp -d /tmp/argtest-step6-cleaned.XXXXXX)"
-            original_stage_root="$(mktemp -d /tmp/argtest-step6-original.XXXXXX)"
-            trap 'rm -rf "$cleaned_stage_root" "$original_stage_root"' EXIT
-
-            cleaned_stage="$cleaned_stage_root/{wildcards.chrom}"
-            original_stage="$original_stage_root/{wildcards.chrom}"
-            mkdir -p "$cleaned_stage" "$original_stage"
-
-            for f in {input.cleaned:q}; do
-              ln -s "$(realpath "$f")" "$cleaned_stage/$(basename "$f")"
-            done
-
-            original_files=({input.original:q})
-            for f in "${{original_files[@]}}"; do
-              ln -s "$(realpath "$f")" "$original_stage/$(basename "$f")"
-            done
-
-            if [ "${{#original_files[@]}}" -gt 0 ]; then
-              mu_path="$(python - "${{original_files[0]}}" <<'PY'
-from pathlib import Path
-import sys
-sys.path.insert(0, "scripts")
-from argtest_common import infer_mu_path
-try:
-    print(infer_mu_path(Path(sys.argv[1])))
-except Exception:
-    print("")
-PY
-)"
-              if [ -n "$mu_path" ] && [ -f "$mu_path" ]; then
-                ln -s "$mu_path" "$original_stage_root/$(basename "$mu_path")" || true
-                ln -s "$mu_path" "$original_stage/$(basename "$mu_path")" || true
-              fi
-            fi
-
             python scripts/validation_plots_from_ts.py \
-              --ts-dir "$cleaned_stage" \
-              --pattern "*" \
+              --ts {input.cleaned:q} \
               --burnin-frac 0 \
               --window-size {params.window_size} \
               {params.mutation_rate_arg} \
@@ -839,8 +814,7 @@ PY
               {params.sim_branch_flag} \
               >> "{log}" 2>&1
             python scripts/validation_plots_from_ts.py \
-              --ts-dir "$original_stage" \
-              --pattern "*" \
+              --ts {input.original:q} \
               --burnin-frac 0 \
               --window-size {params.window_size} \
               {params.mutation_rate_arg} \

@@ -1,15 +1,11 @@
 import pickle
 from pathlib import Path
-from types import SimpleNamespace
 
-import sys
+import msprime
 import tskit
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import find_low_access_regions as finder
-import trim_regions as tr
 
 
 def make_simple_ts(length=10, site_pos=1):
@@ -32,9 +28,9 @@ def test_find_low_access_regions_writes_bed(tmp_path, monkeypatch):
     ts_dir.mkdir()
     ts_path = ts_dir / "base.chr1.1.trees"
     ts.dump(ts_path)
-    mu_path = ts_dir / "base.chr1.mut_rate.p"
+    mu_path = ts_dir / "base.chr1.1.mut_rate.p"
     with open(mu_path, "wb") as fh:
-        pickle.dump(SimpleNamespace(position=[0, 3, 10], rate=[1.0, 0.0]), fh)
+        pickle.dump(msprime.RateMap(position=[0, 3, 10], rate=[1.0, 0.0]), fh)
 
     out_bed = tmp_path / "low_access.bed"
     monkeypatch.setattr(
@@ -45,10 +41,12 @@ def test_find_low_access_regions_writes_bed(tmp_path, monkeypatch):
             (),
             {
                 "ts": ts_path,
+                "chrom": "chr1",
                 "window_size": 5.0,
                 "cutoff_bp": 4.0,
                 "out": out_bed,
                 "log": None,
+                "mutation_rate": None,
             },
         )(),
     )
@@ -56,38 +54,34 @@ def test_find_low_access_regions_writes_bed(tmp_path, monkeypatch):
 
     assert out_bed.exists()
     assert out_bed.read_text().strip().splitlines() == [
-        "base.chr1.1\t0\t5\t3.000",
-        "base.chr1.1\t5\t10\t0.000",
+        "chr1\t0\t5\t3.000",
+        "chr1\t5\t10\t0.000",
     ]
 
 
-def test_trim_regions_applies_bed_mask(tmp_path, monkeypatch):
-    ts = make_simple_ts(length=10, site_pos=5)
-    ts_dir = tmp_path / "trees"
-    ts_dir.mkdir()
-    ts_path = ts_dir / "base.chr1.1.trees"
+def test_find_low_access_regions_creates_output_parent(tmp_path, monkeypatch):
+    ts = make_simple_ts(length=10)
+    ts_path = tmp_path / "replicate.trees"
     ts.dump(ts_path)
-    bed = tmp_path / "mask.bed"
-    bed.write_text("chr1\t2\t4\n")
+    out_bed = tmp_path / "new" / "nested" / "low_access.bed"
 
     monkeypatch.setattr(
-        tr,
+        finder,
         "parse_args",
         lambda: type(
             "A",
             (),
             {
-                "ts_dir": ts_dir,
-                "remove": bed,
-                "out_dir": tmp_path / "trimmed",
-                "pattern": "*",
+                "ts": ts_path,
+                "chrom": "chr7",
+                "window_size": 5.0,
+                "cutoff_bp": 4.0,
+                "out": out_bed,
                 "log": None,
+                "mutation_rate": 1.0,
             },
         )(),
     )
-    tr.main()
+    finder.main()
 
-    out = tmp_path / "trimmed" / "base.chr1.1.trimmed.mask.trees"
-    assert out.exists()
-    trimmed = tskit.load(out)
-    assert trimmed.sequence_length == 8
+    assert out_bed.exists()

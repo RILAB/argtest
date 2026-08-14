@@ -1,19 +1,39 @@
 #!/usr/bin/env python
 """Measure peak RSS of the merge_replicates step on one replicate.
 
-Faithfully mirrors merge_treefiles_by_replicate.merge_group: load all chroms
-for a replicate, sequentially concatenate, then run the metadata-rebuild path
-(which calls dump_tables -> another full copy). Reports RSS at each stage plus
-the process peak (ru_maxrss). Writes nothing to disk.
+Mirrors merge_treefiles_by_replicate.merge_group: load all chroms for a
+replicate, concatenate, then run the metadata-rebuild path (which calls
+dump_tables -> another full copy). Reports RSS at each stage plus the process
+peak (ru_maxrss). Writes nothing to disk.
 
-Usage:
-    python measure_merge_mem.py [REP] [GLOB]
-        REP   replicate id to test            (default: 0)
-        GLOB  glob with a single {rep} field  (default: admix layout below)
+Two concatenation strategies can be measured:
+
+    batched      first.concatenate(*rest) in one call, then drop every input
+                 reference before dump_tables. This is what v1.10 ships.
+    incremental  merged = merged.concatenate(ts) in a loop. This is v1.9.
+
+v1.10 adopted `batched` on the theory that it avoids materialising a
+progressively larger intermediate, but that was never measured on real data.
+Batching can plausibly be WORSE, since it holds every input tree sequence alive
+simultaneously. Run both and keep whichever wins:
+
+    python measure_merge_mem.py --mode incremental --rep 0 --glob '...'
+    python measure_merge_mem.py --mode batched     --rep 0 --glob '...'
+
+Each mode must run as its OWN process — ru_maxrss is a high-water mark and never
+decreases, so measuring both in one process reports only the larger.
+
+On the cluster, per AGENTS.md, submit rather than running on the head node:
+    HPC_MEM=192G ~/.claude/bin/hpc_run 'python measure_merge_mem.py --mode batched'
+
+Legacy positional form (REP, GLOB) is still accepted.
 """
+import argparse
 import glob
+import re
 import resource
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, "scripts")
@@ -38,14 +58,35 @@ def peak_gb() -> float:
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6  # kB -> GB
 
 
+def natural_key(path: str):
+    """Order chromosome paths numerically without assuming a fixed layout depth."""
+    parts = re.split(r"(\d+)", str(path))
+    return [int(p) if p.isdigit() else p.lower() for p in parts]
+
+
+def parse_args():
+    # Legacy positional form: measure_merge_mem.py [REP] [GLOB]
+    argv = sys.argv[1:]
+    if argv and not argv[0].startswith("-"):
+        rep = argv[0]
+        pattern = argv[1] if len(argv) > 1 else None
+        return argparse.Namespace(rep=rep, glob=pattern, mode="batched")
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--rep", default="0", help="Replicate id to test (default: 0).")
+    p.add_argument("--glob", default=None,
+                   help="Glob for one replicate's per-chromosome files.")
+    p.add_argument("--mode", choices=["batched", "incremental"], default="batched",
+                   help="Concatenation strategy (default: batched, as shipped in v1.10).")
+    return p.parse_args()
+
+
 def main() -> None:
-    rep = sys.argv[1] if len(sys.argv) > 1 else "0"
-    pattern = sys.argv[2] if len(sys.argv) > 2 else f"admix/combined.*/trees/combined.*.{rep}.tsz"
+    args = parse_args()
+    rep = args.rep
+    pattern = args.glob or f"admix/combined.*/trees/combined.*.{rep}.tsz"
 
-    def chrom_num(p: str) -> int:
-        return int(Path(p).parts[1].split(".")[1])
-
-    paths = sorted(glob.glob(pattern), key=chrom_num)
+    paths = sorted(glob.glob(pattern), key=natural_key)
     if not paths:
         sys.exit(f"No files matched: {pattern}")
     print(f"{len(paths)} chroms for replicate {rep}\n")
@@ -57,26 +98,40 @@ def main() -> None:
         ts = load_ts(Path(p))
         tseqs.append(ts)
         tot_nbytes += ts.nbytes
-        print(f"{Path(p).parts[1]:<14}{ts.sequence_length/1e6:>8.1f}"
+        print(f"{Path(p).parent.name[:13]:<14}{ts.sequence_length/1e6:>8.1f}"
               f"{ts.num_samples:>9}{ts.num_edges:>14,}{ts.nbytes/1e9:>12.2f}")
     print(f"\nwhole-genome table size (sum nbytes): {tot_nbytes/1e9:.2f} GB")
     print(f"RSS after loading all {len(paths)} chroms:      {rss_gb():.2f} GB")
 
-    merged = tseqs[0]
-    for ts in tseqs[1:]:
-        merged = merged.concatenate(ts)
-    print(f"RSS after sequential concatenate:     {rss_gb():.2f} GB"
-          f"   (merged nbytes={merged.nbytes/1e9:.2f} GB)")
-
+    # Collect the small per-chromosome metadata BEFORE concatenating, so the
+    # batched mode can drop every input reference immediately afterwards.
     offsets, cum = [], 0.0
     for ts in tseqs:
         offsets.append(cum)
         cum += float(ts.sequence_length)
-    extra: dict = {}
     ratemaps = [ratemap_from_metadata(ts.metadata or {}) for ts in tseqs]
+    kept = [(ts.metadata or {}).get("kept_intervals") for ts in tseqs]
+
+    t0 = time.perf_counter()
+    if args.mode == "batched":
+        first, *rest = tseqs
+        merged = first.concatenate(*rest) if rest else first
+        # Starred unpacking binds independent references to every element, so all
+        # four names must go for the inputs to actually be freed.
+        del tseqs, rest, first, ts
+    else:
+        merged = tseqs[0]
+        for ts in tseqs[1:]:
+            merged = merged.concatenate(ts)
+        del tseqs, ts
+    concat_s = time.perf_counter() - t0
+    print(f"RSS after {args.mode} concatenate ({concat_s:6.1f}s): {rss_gb():.2f} GB"
+          f"   (merged nbytes={merged.nbytes/1e9:.2f} GB)")
+    # Uses the ratemaps/kept collected before concatenation — the input tree
+    # sequences are gone by now, which is the whole point of the batched mode.
+    extra: dict = {}
     if all(m is not None for m in ratemaps):
         extra.update(ratemap_to_metadata(merge_ratemaps(ratemaps, offsets)))
-    kept = [(ts.metadata or {}).get("kept_intervals") for ts in tseqs]
     if all(k is not None for k in kept):
         mk: list = []
         for off, iv in zip(offsets, kept):
