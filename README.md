@@ -159,7 +159,11 @@ Optional keys (all have sensible defaults):
 
 ### File naming and what must match
 
-The pipeline derives the chromosome label, the replicate ID, and (optionally) the mutation map from your directory layout and filenames. Two of these must line up with the *contents* of your input files; getting them wrong is the most common setup failure (`KeyError: Chromosome '<label>' not found in <file>` at step 1, or a "could not infer mutation map" error at step 3/6).
+The pipeline derives the chromosome label, the replicate ID, and (optionally) the mutation map from your directory layout and filenames. Two of these must line up with the *contents* of your input files; getting them wrong is a common setup failure.
+
+**Startup chromosome validation.** During Snakefile evaluation, before the DAG is built or any local/SLURM job is submitted, the pipeline checks every chromosome label discovered from the ARG directory layout against both the HapMap `Chromosome` column and the first column of the `.fai`. If a label cannot be resolved, the workflow stops once with a `Chromosome naming mismatch detected before job execution` error that lists all unmatched pipeline chromosomes and the available reference names. For example, ARG directories named `chrom1` through `chrom10` do not match HapMap/FAI names `1` through `10` under the aliases described below, so the complete mismatch is reported at startup instead of failing later in ten separate step-1 jobs.
+
+The workflow has no input VCF whose chromosome names need an independent check. When `emit_vcf: true`, each output VCF's `CHROM` value and contig header are generated from the already-validated ARG chromosome-directory label, so the ARG-derived output VCF label agrees by construction. The startup check therefore covers **ARG directory labels ↔ HapMap ↔ FAI**; it does not inspect chromosome metadata embedded inside a tree sequence.
 
 - **Chromosome label** — the name of each chromosome subdirectory directly under `root_dir` (e.g. `chr1` in `<root>/chr1/...`; see the layout diagrams above). This one string is written as the BED chromosome column **and** is the key looked up in your hapmap and `.fai`. Keep it short and chromosome-like (`1`, `chr1`); **do not embed run descriptions in the directory name** — a directory called `chr.10.combined.snp.te.sorted` becomes the label verbatim and will not match a normal hapmap. (If your treefiles sit one level deeper, e.g. `chrN/trees/`, set `tree_subdir` rather than pushing `root_dir` down or lengthening the chromosome directory name.)
 

@@ -225,6 +225,20 @@ def test_snakemake_dry_run(tmp_path):
 
 
 @pytest.mark.skipif(not SNK_AVAILABLE, reason=SNK_SKIP_REASON)
+def test_snakemake_fails_at_startup_for_reference_chrom_mismatch(tmp_path):
+    dataset = build_dataset(tmp_path)
+    (dataset["tree_root"] / "chr1").rename(dataset["tree_root"] / "chrom1")
+
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        run_snakemake(REPO_ROOT, dataset["config"], "-n")
+
+    output = exc_info.value.stdout + exc_info.value.stderr
+    assert "Chromosome naming mismatch detected before job execution" in output
+    assert "unmatched pipeline chromosomes: chrom1" in output
+    assert "available reference chromosomes: chr1, chr2" in output
+
+
+@pytest.mark.skipif(not SNK_AVAILABLE, reason=SNK_SKIP_REASON)
 def test_snakemake_ratemap_only_validation_sim_branch_dry_run(tmp_path):
     dataset = build_dataset(tmp_path)
     with open(dataset["config"], "a") as fh:

@@ -264,8 +264,83 @@ def discover_tree_files():
     return chrom_to_rep
 
 
+def _strip_chrom_prefix(chrom):
+    """Strip the pipeline's optional base-name prefix from a chromosome name."""
+    return chrom.split(".", 1)[1] if "." in chrom else chrom
+
+
+def _resolve_reference_chrom(chrom, available):
+    """Match a discovered chromosome using the same aliases as step 1."""
+    if chrom in available:
+        return chrom
+    bare = _strip_chrom_prefix(chrom)
+    for candidate in (bare, f"chr_{bare}", f"chr{bare}"):
+        if candidate in available:
+            return candidate
+    return None
+
+
+def _hapmap_chroms(path):
+    chroms = set()
+    with path.open() as fh:
+        for line_number, line in enumerate(fh, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            chrom = line.split("\t", 1)[0].strip()
+            if chrom == "Chromosome":
+                continue
+            if not chrom:
+                raise WorkflowError(f"Empty chromosome name in HapMap {path}, line {line_number}")
+            chroms.add(chrom)
+    return chroms
+
+
+def _fai_chroms(path):
+    chroms = set()
+    with path.open() as fh:
+        for line_number, line in enumerate(fh, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            fields = line.split("\t")
+            if len(fields) < 2:
+                raise WorkflowError(f"Invalid FAI line in {path}, line {line_number}: {line}")
+            chroms.add(fields[0])
+    return chroms
+
+
+def validate_reference_chromosomes(chroms):
+    """Fail during workflow startup if step-1 references cannot serve all inputs."""
+    references = {
+        "HapMap": (HAPMAP, _hapmap_chroms(HAPMAP)),
+        "FAI": (FAI, _fai_chroms(FAI)),
+    }
+    problems = []
+    for label, (path, available) in references.items():
+        missing = [chrom for chrom in chroms if _resolve_reference_chrom(chrom, available) is None]
+        if missing:
+            shown = ", ".join(sorted(available, key=natural_key)[:20]) or "<none>"
+            if len(available) > 20:
+                shown += ", ..."
+            problems.append(
+                f"- {label} {path}\n"
+                f"  unmatched pipeline chromosomes: {', '.join(missing)}\n"
+                f"  available reference chromosomes: {shown}"
+            )
+    if problems:
+        raise WorkflowError(
+            "Chromosome naming mismatch detected before job execution.\n"
+            + "\n".join(problems)
+            + "\nMake the chromosome directory names match the HapMap/FAI names. "
+            "Supported aliases are a dotted base-name prefix (for example maize.10), "
+            "plus chr10 and chr_10 forms."
+        )
+
+
 CHROM_TO_REP = discover_tree_files()
 CHROMS = sorted(CHROM_TO_REP.keys(), key=natural_key)
+validate_reference_chromosomes(CHROMS)
 REPLICATE_UNION = sorted(
     {rep for reps in CHROM_TO_REP.values() for rep in reps.keys()},
     key=natural_key,
