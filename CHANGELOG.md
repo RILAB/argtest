@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
-## [Unreleased]
+## [v1.12] — 2026-08-19 — documented coalescence plotting, no `--time-adjust`
 
 ### Breaking
 
