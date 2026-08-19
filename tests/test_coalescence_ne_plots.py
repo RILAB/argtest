@@ -105,7 +105,6 @@ def test_write_estimates_saves_only_postburn_replicates_and_mean(tmp_path):
         np.array([1]),
         np.array([0.0, 1.0, 2.0, np.inf]),
         np.array([False, True, True]),
-        2.0,
         values,
         values + 10,
         values + 20,
@@ -126,4 +125,4 @@ def test_write_estimates_saves_only_postburn_replicates_and_mean(tmp_path):
     ]
     assert {row[1] for row in rows[1:3]} == {"1"}
     assert {row[2] for row in rows[1:3]} == {"rep1.tsz"}
-    assert rows[1][6:8] == ["0.5", "1"]
+    assert rows[1][4:6] == ["1", "2"]

@@ -3,6 +3,32 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
+## [Unreleased]
+
+### Breaking
+
+- Remove `--time-adjust` from `coalescence_ne_plots_from_ts.py`. Plot time axes
+  are always in generations, so the axis labels drop "Adjusted" and the
+  `adjusted_time_left` / `adjusted_time_right` columns and the `time_adjust`
+  line are gone from `coalescence-ne-estimates.tsv` and `summary.txt`.
+  Convert to calendar time downstream if needed.
+
+### Fixed
+
+- `coalescence_ne_plots_from_ts.py --help` (and argument-error reporting) now
+  works without the pinned tskit fork installed: arguments are parsed before
+  the fork probe runs, instead of the probe aborting the run first.
+
+### Changed
+
+- Correct two `coalescence_ne_plots_from_ts.py` help strings that hard-coded
+  the simulation defaults (1 Mb sequence, 50 Kb windows) as if they were fixed;
+  they point at `--sim-length` and `--sim-window-size`.
+- Document every `coalescence_ne_plots_from_ts.py` option in the README, in a
+  new [Coalescence and Ne plots](README.md#coalescence-and-ne-plots) section
+  covering the time-grid modes, estimation and plotting flags, the Demes
+  simulation flags, and every output file with the estimates-TSV columns.
+
 ## [v1.11] — 2026-08-14 — fail-fast chromosome-name validation
 
 ### Added

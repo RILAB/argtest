@@ -109,7 +109,8 @@ def parse_args():
         default=None,
         help=(
             "File of explicit time-bin edges (one per line) defining the "
-            "coalescence time grid. Mutually exclusive with --num-bins."
+            "coalescence time grid. Mutually exclusive with --num-quantiles "
+            "and --num-bins."
         ),
     )
     p.add_argument(
@@ -163,15 +164,6 @@ def parse_args():
         ),
     )
     p.add_argument(
-        "--time-adjust",
-        type=float,
-        default=1.0,
-        help=(
-            "Divide plotted time-axis values by this factor (e.g. generations "
-            "per year) to convert to calendar time (default: 1.0)."
-        ),
-    )
-    p.add_argument(
         "--log-rates",
         action="store_true",
         help="Use log y-axis for pair-coalescence-rates and Ne plots.",
@@ -187,8 +179,9 @@ def parse_args():
         type=int,
         default=0,
         help=(
-            "Number of 1 Mb coalescent simulations to run under a Demes model built from "
-            "the inferred Ne trajectory (default: 0 = no simulations)."
+            "Number of coalescent simulations to run under a Demes model built from "
+            "the inferred Ne trajectory, each of --sim-length bp "
+            "(default: 0 = no simulations)."
         ),
     )
     p.add_argument(
@@ -205,7 +198,7 @@ def parse_args():
         type=Path,
         default=None,
         help=(
-            "Output TSV path for simulated 50 Kb window statistics. "
+            "Output TSV path for simulated --sim-window-size window statistics. "
             "Default: <out-dir>/<prefix>sim-window-stats.tsv"
         ),
     )
@@ -408,7 +401,6 @@ def write_coalescence_estimates(
     postburn_indices: np.ndarray,
     time_windows: np.ndarray,
     keep_mask: np.ndarray,
-    time_adjust: float,
     pdf_mass: np.ndarray,
     pdf_density: np.ndarray,
     rates: np.ndarray,
@@ -428,8 +420,6 @@ def write_coalescence_estimates(
         "bin_index",
         "time_left",
         "time_right",
-        "adjusted_time_left",
-        "adjusted_time_right",
         "pair_coalescence_mass",
         "pair_coalescence_log_density",
         "pair_coalescence_rate",
@@ -454,8 +444,6 @@ def write_coalescence_estimates(
                 str(j),
                 f"{left[j]:.10g}",
                 f"{right[j]:.10g}",
-                f"{left[j] / time_adjust:.10g}",
-                f"{right[j] / time_adjust:.10g}",
                 f"{mass_values[j]:.10g}",
                 f"{density_values[j]:.10g}",
                 f"{rate_values[j]:.10g}",
@@ -579,10 +567,9 @@ def simulate_window_stats_from_ne(
 
 
 def main():
-    require_pinned_tskit()
+    # parse_args() first so --help and CLI errors work without the pinned fork.
     args = parse_args()
-    if args.time_adjust <= 0:
-        raise ValueError("--time-adjust must be > 0")
+    require_pinned_tskit()
     if args.sim < 0:
         raise ValueError("--sim must be >= 0")
     if args.sim > 0 and (args.mu is None or args.mu <= 0):
@@ -625,7 +612,6 @@ def main():
     finite_mask = finite_interval_mask(time_windows)
     keep_mask = plottable_interval_mask(time_windows)
     breaks = time_windows[:-1][keep_mask]
-    plot_breaks = breaks / args.time_adjust
 
     pdf_vals = []
     rate_vals = []
@@ -664,10 +650,10 @@ def main():
 
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
     plot_postburn_replicates(
-        ax, plot_breaks, pdf_density, keep_post, **reps_kwargs
+        ax, breaks, pdf_density, keep_post, **reps_kwargs
     )
-    ax.step(plot_breaks, mean_pdf, **mean_kwargs)
-    ax.set_xlabel("Adjusted generations in past")
+    ax.step(breaks, mean_pdf, **mean_kwargs)
+    ax.set_xlabel("Generations in past")
     ax.set_ylabel("Coalescence density (proportion / log-generation)")
     ax.set_xscale("log")
     pdf_path = args.out_dir / f"{args.prefix}pair-coalescence-pdf.png"
@@ -675,9 +661,9 @@ def main():
     plt.close(fig)
 
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    plot_postburn_replicates(ax, plot_breaks, rate_vals, keep_post, **reps_kwargs)
-    ax.step(plot_breaks, mean_rates, **mean_kwargs)
-    ax.set_xlabel("Adjusted generations in past")
+    plot_postburn_replicates(ax, breaks, rate_vals, keep_post, **reps_kwargs)
+    ax.step(breaks, mean_rates, **mean_kwargs)
+    ax.set_xlabel("Generations in past")
     ax.set_ylabel("Pair coalescence rate")
     ax.set_xscale("log")
     if args.log_rates:
@@ -691,11 +677,11 @@ def main():
     ne_vals[valid_rates] = 1.0 / (2.0 * rate_vals[valid_rates])
     mean_ne = safe_nanmean(ne_vals[keep_post], axis=0)
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    plot_postburn_replicates(ax, plot_breaks, ne_vals, keep_post, **reps_kwargs)
-    ax.step(plot_breaks, mean_ne, **mean_kwargs)
+    plot_postburn_replicates(ax, breaks, ne_vals, keep_post, **reps_kwargs)
+    ax.step(breaks, mean_ne, **mean_kwargs)
     if args.year is not None:
         ax.axvline(args.year, color="red", linestyle="--", linewidth=1.2)
-    ax.set_xlabel("Adjusted generations in past")
+    ax.set_xlabel("Generations in past")
     ax.set_ylabel("Estimated Ne = 1 / (2 * coal. rate)")
     ax.set_xscale("log")
     if args.log_rates:
@@ -710,7 +696,6 @@ def main():
         keep_post,
         time_windows,
         keep_mask,
-        args.time_adjust,
         pdf_vals,
         pdf_density,
         rate_vals,
@@ -757,7 +742,6 @@ def main():
                 f"num_quantiles={args.num_quantiles}",
                 f"num_bins={args.num_bins}",
                 f"time_windows={time_windows.tolist()}",
-                f"time_adjust={args.time_adjust}",
                 f"year_marker={args.year}",
                 f"tail_cutoff={args.tail_cutoff}",
                 f"simulations={args.sim}",
