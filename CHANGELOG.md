@@ -13,6 +13,14 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
   line are gone from `coalescence-ne-estimates.tsv` and `summary.txt`.
   Convert to calendar time downstream if needed.
 
+### Added
+
+- Boundary tests for `mutload_masks.py --fraction` covering an outlier fraction
+  below, exactly equal to, and above the threshold. The comparison is strict
+  (`fraction > threshold`), so a window whose outlier fraction exactly equals
+  `--fraction` is deliberately *not* masked; the equality test fails if that
+  `>` is ever changed to `>=`.
+
 ### Fixed
 
 - `coalescence_ne_plots_from_ts.py --help` (and argument-error reporting) now
@@ -21,6 +29,11 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
 
 ### Changed
 
+- `pipeline_summary.py` now streams BED and FAI files line by line through a
+  shared `iter_data_lines` helper instead of `read_text().splitlines()`, so
+  whole-genome masks are no longer held in memory in full. Blank and `#`
+  comment lines are skipped for FAI input too, which previously would have
+  raised on a commented FAI.
 - Correct two `coalescence_ne_plots_from_ts.py` help strings that hard-coded
   the simulation defaults (1 Mb sequence, 50 Kb windows) as if they were fixed;
   they point at `--sim-length` and `--sim-window-size`.

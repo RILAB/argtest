@@ -157,11 +157,22 @@ def parse_args():
 # BED / FAI helpers
 # ---------------------------------------------------------------------------
 
+def iter_data_lines(path: Path):
+    """Stream a BED/FAI-like file line by line, skipping blanks and comments.
+
+    Masks and outlier BEDs can be large, so these files are never read whole.
+    """
+    with path.open() as handle:
+        for line in handle:
+            line = line.rstrip("\n")
+            if not line or line.startswith("#"):
+                continue
+            yield line
+
+
 def read_fai(path: Path) -> dict[str, int]:
     lengths = {}
-    for line in path.read_text().splitlines():
-        if not line:
-            continue
+    for line in iter_data_lines(path):
         parts = line.split("\t")
         lengths[parts[0]] = int(parts[1])
     return lengths
@@ -193,9 +204,7 @@ def bed_bp(path: Path) -> int:
     if not path.exists():
         return 0
     total = 0
-    for line in path.read_text().splitlines():
-        if not line or line.startswith("#"):
-            continue
+    for line in iter_data_lines(path):
         parts = line.split("\t")
         if len(parts) < 3:
             continue
@@ -208,9 +217,7 @@ def parse_outlier_bed(path: Path) -> list[tuple[int, int, list[str]]]:
     rows = []
     if not path.exists():
         return rows
-    for line in path.read_text().splitlines():
-        if not line or line.startswith("#"):
-            continue
+    for line in iter_data_lines(path):
         parts = line.split("\t")
         if len(parts) < 4:
             continue

@@ -160,5 +160,81 @@ def test_mutload_masks_requires_rate_when_no_ratemap(tmp_path, monkeypatch):
         mm.main()
 
 
+def _run_one_window_half_outlier(tmp_path, monkeypatch, fraction):
+    """Run main() on a single window where exactly 1 of 2 individuals is an outlier.
+
+    Observed load is (1, 0); expected is faked as (1, 4) with cutoff 0.5, so
+    node0 sits inside [0.5, 1.5] and node1 falls below 2.0. The window's outlier
+    fraction is therefore exactly 0.5, which is what makes it a boundary case
+    for --fraction.
+    """
+    import numpy as np
+
+    ts = make_simple_ts()
+    ts_path = tmp_path / "1.trees"
+    ts.dump(ts_path)
+    outlier = tmp_path / "outliers.bed"
+    masked = tmp_path / "masked.bed"
+
+    def _fake(ts, windows, names, mutation_rate=None, seed=None):
+        unique = list(dict.fromkeys(names))
+        expected = np.empty((len(windows) - 1, len(unique)))
+        expected[:, 0] = 1.0
+        expected[:, 1] = 4.0
+        return expected
+
+    monkeypatch.setattr(mm, "simulate_expected_load", _fake)
+    monkeypatch.setattr(
+        mm,
+        "parse_args",
+        lambda: _make_args(
+            ts=ts_path,
+            outlier_bed=outlier,
+            masked_bed=masked,
+            cutoff=0.5,
+            fraction=fraction,
+        ),
+    )
+    mm.main()
+    return outlier.read_text(), masked.read_text()
+
+
+def test_fraction_masks_window_when_outlier_fraction_is_above_threshold(
+    tmp_path, monkeypatch
+):
+    outlier_text, masked_text = _run_one_window_half_outlier(
+        tmp_path, monkeypatch, fraction=0.4
+    )
+
+    # 0.5 > 0.4, so the whole window is masked: chrom, start, end, fraction,
+    # outlier count, individual count.
+    assert masked_text.strip().split("\t") == ["chr1", "0", "10", "0.500", "1", "2"]
+    # A masked window is dropped from the per-individual outlier BED.
+    assert outlier_text.strip() == ""
+
+
+def test_fraction_keeps_window_when_outlier_fraction_equals_threshold(
+    tmp_path, monkeypatch
+):
+    outlier_text, masked_text = _run_one_window_half_outlier(
+        tmp_path, monkeypatch, fraction=0.5
+    )
+
+    # The comparison is strict (fraction > threshold), so equality does NOT mask.
+    assert masked_text.strip() == ""
+    assert outlier_text.strip().split("\t")[3] == "node1"
+
+
+def test_fraction_keeps_window_when_outlier_fraction_is_below_threshold(
+    tmp_path, monkeypatch
+):
+    outlier_text, masked_text = _run_one_window_half_outlier(
+        tmp_path, monkeypatch, fraction=0.6
+    )
+
+    assert masked_text.strip() == ""
+    assert outlier_text.strip().split("\t")[3] == "node1"
+
+
 def test_bed_bounds_round_outward_without_collapsing_short_window():
     assert mm.bed_bounds(1.2, 1.8) == (1, 2)
