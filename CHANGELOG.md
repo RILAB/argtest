@@ -3,6 +3,46 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
+## [Unreleased]
+
+### Added
+
+- Plot-data dumps from `validation_plots_from_ts.py`. Every figure the HTML
+  summary embeds is now also written as a tab-separated table, one file per plot
+  axis: `windows.tsv` (per-window diversity, Tajima's D and segregating sites,
+  observed and expected with their 95 % bounds), `samples.tsv` (per-sample
+  mutational load) and `sfs.tsv` (folded and unfolded frequency spectra). A
+  `dataset` column keeps a `--compare` run's second series in the same file.
+  The paths are recorded in `summary.txt`.
+- New pipeline step 6b, `genomewide_expected_vs_observed.py`, plotting expected
+  versus observed π and Tajima's D for every window of every chromosome in one
+  panel per statistic, coloured by the length-weighted mean recombination rate
+  of each window from the HapMap map. It reads the step-6 `windows.tsv` dumps,
+  so it never reloads an ARG. Outputs land in
+  `step6_validation/genomewide/{original,cleaned}/` together with the pooled
+  `genomewide-windows.tsv` behind them, and the panels are embedded in
+  `pipeline_summary.html` above the per-chromosome grid. Requires
+  `validation_sim_branch`; without a simulated expectation the plots are
+  skipped rather than written blank. Windows the recombination map does not
+  cover are drawn grey rather than as zero-rate.
+
+### Fixed
+
+- `step7_summary` no longer loads each final filtered ARG twice. The retention
+  table and the mutation-rate provenance block now share one pass
+  (`scan_filtered_ts`), roughly halving step 7's wall time. On a 12-chromosome ×
+  100-replicate run each pass costs about an hour, so the doubled work was
+  overrunning the SLURM time limit and failing the whole pipeline at the last
+  rule. An ARG that cannot be read is now reported under "could not be read"
+  and omitted from the retention table instead of aborting the summary.
+- `config/snakemake.yaml` sets explicit `resources:` for `step7_summary`
+  (12 h) and `step6b_genomewide_scatter`. Step 7 previously fell through to the
+  profile's 1-hour default, which killed it by `TIMEOUT` on large runs while the
+  Snakemake log reported only a non-zero exit code and an empty rule log.
+- `step6_validation_plots` constrains its `{chrom}` wildcard to the validation
+  chromosomes. Unconstrained, it also matched `genomewide/<variant>` and was
+  ambiguous with step 6b for the genome-wide sentinel file.
+
 ## [v1.12] — 2026-08-19 — documented coalescence plotting, no `--time-adjust`
 
 ### Breaking

@@ -227,3 +227,10 @@ resources:
   step5_trim_samples_single: {mem_mb: 8000,   time: "04:00:00"}
   merge_replicates:          {mem_mb: 200000, time: "16:00:00", partition: high}
   step6_validation_plots:    {mem_mb: 180000, time: "48:00:00", partition: high}
+  # step6b only reads the step-6 windows.tsv dumps, so it is light regardless of
+  # genome size; the default 01:00:00 is ample.
+  step6b_genomewide_scatter: {mem_mb: 8000,   time: "01:00:00"}
+  # step7 reads every final filtered ARG once (~3 s each for a 20 MB .tsz), so its
+  # wall time scales with n_chroms x n_replicates. 1200 ARGs runs over an hour,
+  # which the 01:00:00 profile default silently turns into a SLURM TIMEOUT.
+  step7_summary:             {mem_mb: 8000,   time: "12:00:00"}

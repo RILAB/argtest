@@ -468,6 +468,7 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
         "n_files": n_files,
         "n_samples": n_samples,
         "seq_lengths": np.array(seq_lengths),
+        "windows": stat_windows,
         "coord": coord,
         "keep_idx": keep_idx,
         "replicate_ids": replicate_ids,
@@ -520,6 +521,93 @@ def collect_stats(ts_files: list[Path], window_size: float, burnin_frac: float,
             "q_sim_afs_folded": safe_nanquantile(sim_afs_folded_vals[:, keep_post], [0.025, 0.975], axis=-1),
         })
     return out
+
+
+# ---------------------------------------------------------------------------
+# Plot-data dumps
+#
+# Every figure this script draws is also written out as a tab-separated table so
+# the numbers behind a plot can be re-checked, re-plotted, or pooled across
+# chromosomes without reloading the ARGs (the genome-wide expected-vs-observed
+# plots are built from windows.tsv). One file per *axis* rather than one per
+# figure: plots that share an x-axis share a table, and a `dataset` column keeps
+# the --compare series in the same file as the primary one.
+# ---------------------------------------------------------------------------
+
+# Series written to windows.tsv, as (column suffix, key in the stats dict).
+# Missing keys (the sim/expected ones without --sim-branch) become empty cells.
+_WINDOW_SERIES = [
+    ("pi",         "mean_site_div", "mean_sim_div", "q_sim_div"),
+    ("tajimas_d",  "mean_site_td",  "mean_sim_td",  "q_sim_td"),
+    ("segsites",   "mean_site_s",   "mean_sim_s",   "q_sim_s"),
+]
+
+
+def _fmt(value) -> str:
+    """One TSV cell: empty for NaN/None so downstream parsers see a true gap."""
+    if value is None:
+        return ""
+    value = float(value)
+    return "" if not np.isfinite(value) else repr(value)
+
+
+def write_window_data(path: Path, datasets: list[tuple[str, dict]]) -> None:
+    """Per-window table: the diversity / Tajima's D / segregating-sites plots."""
+    header = ["dataset", "window_start", "window_end", "window_mid"]
+    for name, _obs, _exp, _q in _WINDOW_SERIES:
+        header += [f"obs_{name}", f"exp_{name}", f"exp_{name}_lo", f"exp_{name}_hi"]
+    lines = ["\t".join(header)]
+    for label, st in datasets:
+        edges = st["windows"]
+        for i, mid in enumerate(st["coord"]):
+            row = [label, _fmt(edges[i]), _fmt(edges[i + 1]), _fmt(mid)]
+            for _name, obs_key, exp_key, q_key in _WINDOW_SERIES:
+                row.append(_fmt(st[obs_key][i]) if obs_key in st else "")
+                row.append(_fmt(st[exp_key][i]) if exp_key in st else "")
+                if q_key in st:
+                    row += [_fmt(st[q_key][0][i]), _fmt(st[q_key][1][i])]
+                else:
+                    row += ["", ""]
+            lines.append("\t".join(row))
+    path.write_text("\n".join(lines) + "\n")
+
+
+def write_sample_data(path: Path, datasets: list[tuple[str, dict]]) -> None:
+    """Per-sample table: the mutational-load-by-sample plot."""
+    lines = ["\t".join(["dataset", "sample", "obs_load", "obs_load_lo", "obs_load_hi",
+                        "exp_load", "exp_load_lo", "exp_load_hi"])]
+    for label, st in datasets:
+        for i in range(st["mean_load"].size):
+            row = [label, str(i), _fmt(st["mean_load"][i]),
+                   _fmt(st["q_load"][0][i]), _fmt(st["q_load"][1][i])]
+            if "mean_sim_load" in st:
+                row += [_fmt(st["mean_sim_load"][i]),
+                        _fmt(st["q_sim_load"][0][i]), _fmt(st["q_sim_load"][1][i])]
+            else:
+                row += ["", "", ""]
+            lines.append("\t".join(row))
+    path.write_text("\n".join(lines) + "\n")
+
+
+def write_sfs_data(path: Path, datasets: list[tuple[str, dict]]) -> None:
+    """Frequency-axis table: the folded and unfolded frequency-spectrum plots.
+
+    Frequency bin 0 is dropped to match the plots, which start at 1 because the
+    zero bin counts invariant sites.
+    """
+    lines = ["\t".join(["dataset", "folding", "frequency", "obs_count_per_base",
+                        "exp_count_per_base", "exp_lo", "exp_hi"])]
+    for label, st in datasets:
+        for folding in ("unfolded", "folded"):
+            obs = st[f"mean_site_afs_{folding}"]
+            exp = st.get(f"mean_sim_afs_{folding}")
+            q = st.get(f"q_sim_afs_{folding}")
+            for i in range(1, obs.size):
+                row = [label, folding, str(i), _fmt(obs[i]),
+                       _fmt(exp[i]) if exp is not None else ""]
+                row += [_fmt(q[0][i]), _fmt(q[1][i])] if q is not None else ["", ""]
+                lines.append("\t".join(row))
+    path.write_text("\n".join(lines) + "\n")
 
 
 def main():
@@ -949,6 +1037,17 @@ def main():
                 sim_sfs_folded_plot_path = _plot_path
 
     # ------------------------------------------------------------------ #
+    # Plot data
+    # ------------------------------------------------------------------ #
+    datasets = [(pri_label, pri)] + ([(cmp_label, cmp)] if cmp is not None else [])
+    windows_data_path = args.out_dir / f"{args.prefix}windows.tsv"
+    samples_data_path = args.out_dir / f"{args.prefix}samples.tsv"
+    sfs_data_path = args.out_dir / f"{args.prefix}sfs.tsv"
+    write_window_data(windows_data_path, datasets)
+    write_sample_data(samples_data_path, datasets)
+    write_sfs_data(sfs_data_path, datasets)
+
+    # ------------------------------------------------------------------ #
     # Summary
     # ------------------------------------------------------------------ #
     summary_path = args.out_dir / f"{args.prefix}summary.txt"
@@ -991,6 +1090,9 @@ def main():
             f"frequency_spectrum_vs_sim_folded_plot={sim_sfs_folded_plot_path}",
             f"diversity_density_vs_sim_plot={sim_pi_density_path}",
             f"tajima_d_density_vs_sim_plot={sim_td_density_path}",
+            f"window_data={windows_data_path}",
+            f"sample_data={samples_data_path}",
+            f"sfs_data={sfs_data_path}",
         ]) + "\n"
     )
 
@@ -1004,6 +1106,8 @@ def main():
               sim_pi_density_path, sim_td_density_path]:
         if p is not None:
             print(f"Wrote: {p}")
+    for p in [windows_data_path, samples_data_path, sfs_data_path]:
+        print(f"Wrote: {p}")
     print(f"Wrote: {summary_path}")
 
 

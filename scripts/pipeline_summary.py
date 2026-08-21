@@ -307,24 +307,8 @@ def bar_html(pct: float) -> str:
 # Data collection
 # ---------------------------------------------------------------------------
 
-def index_filtered_ts(paths: list[Path]) -> dict[tuple[str, str], Path]:
-    """Index final tree paths by their pipeline <chrom>/<rep> layout."""
-    indexed = {}
-    for path in paths:
-        key = (path.parent.name, path.stem)
-        if key in indexed:
-            raise ValueError(
-                f"Duplicate final tree sequence for chromosome/replicate {key}: "
-                f"{indexed[key]} and {path}"
-            )
-        indexed[key] = path
-    return indexed
-
-
-def retained_bp_from_final_ts(path: Path) -> float:
-    """Accessible bp with a non-empty genealogy in one final filtered ARG."""
-    ts = load_ts(path)
-    metadata = ts.metadata or {}
+def retained_bp_from_metadata(ts, metadata: dict) -> float:
+    """Accessible bp with a non-empty genealogy in one already-loaded ARG."""
     accessible = metadata.get("kept_intervals")
     if accessible is None:
         mu = ratemap_from_metadata(metadata)
@@ -332,7 +316,61 @@ def retained_bp_from_final_ts(path: Path) -> float:
     return tree_covered_accessible_bp(ts, accessible)
 
 
-def collect_mu_sources(filtered_ts: list[Path]) -> list[dict]:
+def retained_bp_from_final_ts(path: Path) -> float:
+    """Accessible bp with a non-empty genealogy in one final filtered ARG."""
+    ts = load_ts(path)
+    return retained_bp_from_metadata(ts, ts.metadata or {})
+
+
+def mu_source_row(chrom: str, rep: str, metadata: dict) -> dict:
+    """One mutation-rate provenance row from an ARG's metadata."""
+    source = metadata.get("mu_source")
+    if not source:
+        return {"chrom": chrom, "rep": rep, "kind": "unrecorded",
+                "detail": "no mu_source stamp (ARG predates this field)"}
+    return {"chrom": chrom, "rep": rep, "kind": source.get("kind", "unknown"),
+            "detail": describe_mu_source(source)}
+
+
+def scan_filtered_ts(paths: list[Path]) -> dict[tuple[str, str], dict]:
+    """Load each final filtered ARG exactly ONCE, keyed by <chrom>/<rep>.
+
+    The retention table and the mutation-rate provenance block both read from
+    these files. Loading each one twice doubled step 7's wall time, which on a
+    12-chromosome x 100-replicate run is the difference between finishing and
+    being killed by the SLURM time limit — a 20 MB .tsz costs ~2 s to
+    decompress plus ~1 s to walk its trees, so 1200 ARGs is ~1 h per pass.
+
+    An ARG that cannot be read is recorded with retained_bp=None rather than
+    aborting the summary; it is then absent from the retention table and
+    counted under "could not be read" in the mutation-rate section.
+    """
+    scanned: dict[tuple[str, str], dict] = {}
+    for path in sorted(paths, key=lambda p: (p.parent.name, p.stem)):
+        chrom, rep = path.parent.name, path.stem
+        key = (chrom, rep)
+        if key in scanned:
+            raise ValueError(
+                f"Duplicate final tree sequence for chromosome/replicate {key}: "
+                f"{scanned[key]['path']} and {path}"
+            )
+        try:
+            ts = load_ts(path)
+        except Exception as exc:  # noqa: BLE001 - reporting must not abort the summary
+            scanned[key] = {"path": path, "retained_bp": None,
+                            "mu_row": {"chrom": chrom, "rep": rep,
+                                       "kind": "unreadable", "detail": str(exc)}}
+            continue
+        metadata = ts.metadata or {}
+        scanned[key] = {
+            "path": path,
+            "retained_bp": retained_bp_from_metadata(ts, metadata),
+            "mu_row": mu_source_row(chrom, rep, metadata),
+        }
+    return scanned
+
+
+def collect_mu_sources(scanned: dict[tuple[str, str], dict]) -> list[dict]:
     """Report which mutation-rate source step 4 used for each final ARG.
 
     Reads the ``mu_source`` stamp written by trim_regions_single.py. A "scalar"
@@ -341,24 +379,7 @@ def collect_mu_sources(filtered_ts: list[Path]) -> list[dict]:
     is surfaced rather than left silent. ARGs produced before this stamp existed
     report "unrecorded".
     """
-    rows = []
-    for path in sorted(filtered_ts, key=lambda p: (p.parent.name, p.stem)):
-        try:
-            metadata = load_ts(path).metadata or {}
-        except Exception as exc:  # noqa: BLE001 - reporting must not abort the summary
-            rows.append({"chrom": path.parent.name, "rep": path.stem,
-                         "kind": "unreadable", "detail": str(exc)})
-            continue
-        source = metadata.get("mu_source")
-        if not source:
-            rows.append({"chrom": path.parent.name, "rep": path.stem,
-                         "kind": "unrecorded",
-                         "detail": "no mu_source stamp (ARG predates this field)"})
-            continue
-        rows.append({"chrom": path.parent.name, "rep": path.stem,
-                     "kind": source.get("kind", "unknown"),
-                     "detail": describe_mu_source(source)})
-    return rows
+    return [scanned[key]["mu_row"] for key in sorted(scanned)]
 
 
 def mu_source_section(mu_sources: list[dict]) -> str:
@@ -408,14 +429,13 @@ def mu_source_section(mu_sources: list[dict]) -> str:
     )
 
 
-def collect_retention(chroms, replicates, out_dir, chrom_lengths, filtered_ts):
+def collect_retention(chroms, replicates, out_dir, chrom_lengths, scanned):
     step1_dir = out_dir / "step1_low_rec"
     step2_dir = out_dir / "step2_low_access"
     step3_dir = out_dir / "step3_mutload"
     step4_mask_dir = out_dir / "step4_masks"
 
     by_num = _fai_num_index(chrom_lengths)
-    final_paths = index_filtered_ts(filtered_ts)
     rows = []
     for chrom in chroms:
         seq_len = lookup_chrom_len(chrom, chrom_lengths, by_num)
@@ -432,9 +452,9 @@ def collect_retention(chroms, replicates, out_dir, chrom_lengths, filtered_ts):
         ]
 
         retained_by_rep = {
-            rep: retained_bp_from_final_ts(final_paths[(chrom, rep)])
+            rep: scanned[(chrom, rep)]["retained_bp"]
             for rep in replicates
-            if (chrom, rep) in final_paths
+            if scanned.get((chrom, rep), {}).get("retained_bp") is not None
         }
         retained_vals = list(retained_by_rep.values())
         pct_vals = [100.0 * r / seq_len for r in retained_vals if seq_len > 0]
@@ -589,6 +609,51 @@ def plot_img(uri: str | None, label: str) -> str:
     )
 
 
+GENOMEWIDE_PLOTS = [
+    ("diversity-expected-vs-observed-by-rec.png",
+     "Diversity (pi): expected vs observed, coloured by recombination rate"),
+    ("tajima-d-expected-vs-observed-by-rec.png",
+     "Tajima's D: expected vs observed, coloured by recombination rate"),
+]
+
+
+def genomewide_section(step6_dir) -> str:
+    """Whole-genome expected-vs-observed panels, pooled over all chromosomes.
+
+    Distinct from the per-chromosome scatters below: every window from every
+    chromosome lands in one panel, coloured by that window's recombination rate,
+    so a rate-dependent departure from the 1:1 line is visible as colour
+    structure rather than as a difference between chromosome blocks.
+    """
+    gw_dir = step6_dir / "genomewide"
+    if not gw_dir.exists():
+        return ""
+    orig_dir = gw_dir / "original"
+    cln_dir = gw_dir / "cleaned"
+    if not orig_dir.exists() and not cln_dir.exists():
+        return ""
+
+    parts = ['<h2>Genome-wide expected vs observed</h2>',
+             '<p class="note">All windows from all chromosomes pooled. Colour is the '
+             'length-weighted mean recombination rate of each window from the '
+             'HapMap map; grey points are windows the map does not cover. Points '
+             'off the dashed 1:1 line are windows where the ARG-simulated '
+             'expectation and the observed statistic disagree — a colour gradient '
+             'across that spread indicates the disagreement depends on '
+             'recombination rate. The underlying values are in '
+             '<code>step6_validation/genomewide/&lt;variant&gt;/genomewide-windows.tsv</code>. '
+             'Requires <code>sim_branch</code>; without it there is no expectation '
+             'to plot.</p>',
+             '<div class="chrom-block"><div class="plot-grid">']
+    for label, col_dir in [("Original", orig_dir), ("Cleaned", cln_dir)]:
+        parts.append(f'<div class="plot-col"><h3>{label}</h3>')
+        for fname, plabel in GENOMEWIDE_PLOTS:
+            parts.append(plot_img(img_b64(col_dir / fname), plabel))
+        parts.append("</div>")
+    parts.append("</div></div>")
+    return "\n".join(parts)
+
+
 def validation_section(chroms, out_dir, step6_dir) -> str:
     if not step6_dir.exists():
         return ""
@@ -624,19 +689,23 @@ def main():
     replicates = args.replicates
 
     chrom_lengths = read_fai(args.fai)
+    # One pass over the final ARGs feeds both the retention table and the
+    # mutation-rate provenance block (see scan_filtered_ts).
+    scanned = scan_filtered_ts(args.filtered_ts)
     retention = collect_retention(
         chroms,
         replicates,
         out_dir,
         chrom_lengths,
-        args.filtered_ts,
+        scanned,
     )
     outliers  = collect_outliers(chroms, replicates, out_dir)
 
-    mu_sources = collect_mu_sources(args.filtered_ts)
+    mu_sources = collect_mu_sources(scanned)
     mu_source_html = mu_source_section(mu_sources)
 
     step6_dir = out_dir / "step6_validation"
+    gw_html   = genomewide_section(step6_dir)
     val_html  = validation_section(chroms, out_dir, step6_dir)
 
     mu_str = args.mutation_rate if args.mutation_rate not in (None, "null") else "—"
@@ -788,6 +857,7 @@ Mean ± SD across replicates; bp removed averaged over all chromosomes and repli
 
 {mu_source_html}
 
+{gw_html}
 {val_html}
 
 </div>

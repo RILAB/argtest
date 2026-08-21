@@ -233,6 +233,7 @@ STEP5B_DIR = OUT_DIR / "step5b_min_samples"
 FILTERED_TS_DIR = STEP5B_DIR if FILTER_MIN_SAMPLES else STEP5_DIR
 MERGED_DIR = OUT_DIR / "combined"
 STEP6_DIR = OUT_DIR / "step6_validation"
+GENOMEWIDE_DIR = STEP6_DIR / "genomewide"
 VCF_DIR = OUT_DIR / "vcf"
 LOG_DIR = OUT_DIR / "logs"
 
@@ -419,6 +420,14 @@ STEP6_TARGETS = (
     if RUN_VALIDATION
     else []
 )
+# Step 6b pools every chromosome's windows.tsv into one expected-vs-observed
+# panel per statistic, so it is keyed by pipeline variant, not by chromosome.
+GENOMEWIDE_VARIANTS = ["original", "cleaned"]
+STEP6B_TARGETS = (
+    [str(GENOMEWIDE_DIR / variant / "done.txt") for variant in GENOMEWIDE_VARIANTS]
+    if RUN_VALIDATION
+    else []
+)
 
 if EMIT_VCF:
     if VCF_REPS_REQUESTED is None:
@@ -475,7 +484,7 @@ def ts_input_for_pair_ext(wildcards):
 
 rule all:
     input:
-        MERGED_TARGETS + STEP6_TARGETS + VCF_TARGETS + [SUMMARY_TARGET]
+        MERGED_TARGETS + STEP6_TARGETS + STEP6B_TARGETS + VCF_TARGETS + [SUMMARY_TARGET]
 
 
 rule step1_low_rec_masks:
@@ -787,7 +796,15 @@ if RUN_VALIDATION:
             cleaned=step6_inputs_for_chrom,
             original=step6_original_inputs_for_chrom,
         output:
-            str(STEP6_DIR / "{chrom}" / "done.txt")
+            done=str(STEP6_DIR / "{chrom}" / "done.txt"),
+            # The per-window / per-sample / per-frequency tables behind every
+            # plot. Declared (not just written) so step6b can depend on them.
+            cleaned_windows=str(STEP6_DIR / "{chrom}" / "cleaned" / "windows.tsv"),
+            cleaned_samples=str(STEP6_DIR / "{chrom}" / "cleaned" / "samples.tsv"),
+            cleaned_sfs=str(STEP6_DIR / "{chrom}" / "cleaned" / "sfs.tsv"),
+            original_windows=str(STEP6_DIR / "{chrom}" / "original" / "windows.tsv"),
+            original_samples=str(STEP6_DIR / "{chrom}" / "original" / "samples.tsv"),
+            original_sfs=str(STEP6_DIR / "{chrom}" / "original" / "sfs.tsv"),
         threads: res_threads("step6_validation_plots")
         resources:
             mem_mb=res_mem_mb("step6_validation_plots"),
@@ -795,6 +812,10 @@ if RUN_VALIDATION:
             slurm_partition=res_partition("step6_validation_plots"),
             # See merge_replicates: 1 unit of the shared `hi_mem_jobs` cap.
             hi_mem_jobs=1,
+        # Without this, {chrom} also matches "genomewide/<variant>" and this rule
+        # becomes ambiguous with step6b for the genome-wide sentinel file.
+        wildcard_constraints:
+            chrom="|".join(re.escape(c) for c in VALIDATION_CHROMS),
         log:
             str(LOG_DIR / "step6" / "{chrom}.log")
         params:
@@ -821,6 +842,39 @@ if RUN_VALIDATION:
               --out-dir "{params.original_out}" \
               {params.sim_branch_flag} \
               >> "{log}" 2>&1
+            touch "{output.done}"
+            """
+
+
+    rule step6b_genomewide_scatter:
+        input:
+            windows=lambda wildcards: [
+                str(STEP6_DIR / chrom / wildcards.variant / "windows.tsv")
+                for chrom in VALIDATION_CHROMS
+            ],
+            hapmap=str(HAPMAP),
+            fai=str(FAI),
+        output:
+            str(GENOMEWIDE_DIR / "{variant}" / "done.txt")
+        threads: res_threads("step6b_genomewide_scatter")
+        resources:
+            mem_mb=res_mem_mb("step6b_genomewide_scatter"),
+            time=res_time("step6b_genomewide_scatter"),
+            slurm_partition=res_partition("step6b_genomewide_scatter"),
+        wildcard_constraints:
+            variant="|".join(re.escape(v) for v in GENOMEWIDE_VARIANTS),
+        log:
+            str(LOG_DIR / "step6b" / "{variant}.log")
+        params:
+            out_dir=lambda wildcards: str(GENOMEWIDE_DIR / wildcards.variant),
+        shell:
+            """
+            python scripts/genomewide_expected_vs_observed.py \
+              --windows {input.windows:q} \
+              --hapmap "{input.hapmap}" \
+              --fai "{input.fai}" \
+              --out-dir "{params.out_dir}" \
+              >> "{log}" 2>&1
             touch "{output}"
             """
 
@@ -829,7 +883,7 @@ rule step7_summary:
     input:
         fai=str(FAI),
         filtered=FILTERED_TS_TARGETS,
-        targets=MERGED_TARGETS + STEP6_TARGETS,
+        targets=MERGED_TARGETS + STEP6_TARGETS + STEP6B_TARGETS,
     output:
         SUMMARY_TARGET
     threads: res_threads("step7_summary")
