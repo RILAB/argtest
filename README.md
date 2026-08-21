@@ -292,7 +292,7 @@ Intermediate filenames include both chromosome and replicate information so they
 
 Pipeline scripts (called by the Snakefile). Run any with `--help` for arguments, defaults, and examples.
 
-- [`hapmap_low_rec_mask.py`](scripts/hapmap_low_rec_mask.py) — per-chromosome BED of the bottom `--rec-fraction` of HapMap recombination-rate intervals.
+- [`hapmap_low_rec_mask.py`](scripts/hapmap_low_rec_mask.py) — per-chromosome BED of the bottom `--rec-fraction` of HapMap recombination-rate intervals. Chromosome names are matched symmetrically across the two common conventions: `1`, `chr1`, `chr_1` and `Chr-1` all resolve to each other in either direction, and a pipeline base-name prefix (`combined.1`, `amaranth.16`) is stripped from the query first. An exact match always wins, and a file holding two spellings of the same chromosome is an error rather than a coin flip.
 - [`find_low_access_regions.py`](scripts/find_low_access_regions.py) — BED of low-accessibility windows, computed from a tree sequence's inferred mutation map.
 - [`mutload_summary.py`](scripts/mutload_summary.py) — interactive HTML diagnostic for the mutload step: per-individual residual load after window-level pruning (ASCII bar chart, red highlight on individuals still outside the cutoff band, lineage table of flagged counts).
 - [`mutload_masks.py`](scripts/mutload_masks.py) — outlier and mutation-masked BED files for one tree sequence (pipeline step 3).

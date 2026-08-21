@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import csv
 import math
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -101,20 +102,53 @@ def _strip_prefix(chrom):
     return chrom.split(".", 1)[1] if "." in chrom else chrom
 
 
-def _resolve_chrom(chrom, available):
+# 'chr', 'chr_' and 'chr-' are all in use as chromosome-name prefixes.
+_CHR_PREFIX_RE = re.compile(r"^chr[_-]?", re.IGNORECASE)
+
+
+def _canonical_chrom(name):
+    """Drop a 'chr'/'chr_'/'chr-' prefix so the two naming conventions compare equal.
+
+    Deliberately does NOT strip a base-name prefix: that is applied to the
+    QUERY only (see _resolve_chrom). Applying it to the available names as well
+    would reduce an unrelated contig like 'chrUn_random.1' to '1' and collide it
+    with 'chr1'.
+    """
+    return _CHR_PREFIX_RE.sub("", name).casefold()
+
+
+def _resolve_chrom(chrom, available, source=None):
     """Resolve a pipeline chrom name against available names (a dict or set).
 
-    Tries the full name, the suffix after the first dot, then common 'chr'-
-    prefixed variants of that suffix. Returns the matching key or None. Used for
-    both the hapmap and the FAI so a 'chr'-prefixed map (e.g. 'chr1') still
-    matches pipeline chrom names like 'combined.1'.
+    Matching is symmetric in the 'chr' prefix: '1', 'chr1', 'chr_1' and 'Chr-1'
+    all resolve to each other in either direction, so a bare-numeric map matches
+    'chr'-prefixed pipeline chroms just as a 'chr'-prefixed map matches bare
+    ones. Pipeline names may additionally carry a base-name prefix
+    ('amaranth.1', 'combined.1'), which is stripped from the query.
+
+    An exact match always wins, so a file that uses one convention consistently
+    is never reinterpreted. Returns the matching key, or None if nothing matches.
+
+    Raises ValueError if two different available names resolve to the same
+    chromosome (e.g. a map holding both '1' and 'chr1'): picking one silently
+    would attach the wrong recombination map or the wrong sequence length, and
+    which one you got would depend on iteration order. Pass `source` (a path or
+    description) to name the offending file in that error.
     """
     if chrom in available:
         return chrom
-    bare = _strip_prefix(chrom)
-    for candidate in (bare, f"chr_{bare}", f"chr{bare}"):
-        if candidate in available:
-            return candidate
+    for query in (chrom, _strip_prefix(chrom)):
+        target = _canonical_chrom(query)
+        matches = sorted({key for key in available if _canonical_chrom(key) == target})
+        if len(matches) > 1:
+            where = f" in {source}" if source else ""
+            raise ValueError(
+                f"Chromosome {chrom!r} matches more than one entry{where} "
+                f"({', '.join(repr(m) for m in matches)}). Rename them so only one "
+                f"spelling of each chromosome is present."
+            )
+        if matches:
+            return matches[0]
     return None
 
 
@@ -128,7 +162,7 @@ def main():
     # parsed map instead of scanning a large HapMap file twice per rule.
     hapmap = load_hapmap(args.hapmap)
     if args.chrom is not None:
-        hapmap_key = _resolve_chrom(args.chrom, hapmap)
+        hapmap_key = _resolve_chrom(args.chrom, hapmap, source=args.hapmap)
         if hapmap_key is None:
             raise KeyError(f"Chromosome {args.chrom!r} not found in {args.hapmap}")
         hapmap = {args.chrom: hapmap[hapmap_key]}
@@ -136,7 +170,7 @@ def main():
     total_written = 0
     per_chrom = {}
     for chrom, rows in sorted(hapmap.items()):
-        fai_chrom = _resolve_chrom(chrom, fai)
+        fai_chrom = _resolve_chrom(chrom, fai, source=args.fai)
         if fai_chrom is None:
             raise KeyError(f"Chromosome {chrom!r} not found in {args.fai}")
         intervals = build_intervals(rows, fai[fai_chrom])

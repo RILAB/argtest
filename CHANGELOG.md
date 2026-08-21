@@ -48,6 +48,16 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
   `Unknown resources entry 'step6b_genomewide_scatter'`. The integration-test
   configs carry no `resources:` block, which is why the test suite did not catch
   it; a test now dry-runs the shipped resource keys.
+- Chromosome-name resolution (`_resolve_chrom`, shared by step 1 and step 6b) is
+  now symmetric in the `chr` prefix. It previously mapped `combined.1` to `1` and
+  `1` to `chr1`, but not `chr1` to `1`, so a dataset with `chrN` chromosome
+  directories and a bare-numeric recombination map silently dropped every window
+  with a warning. `chr`, `chr_` and `chr-` are all recognised, case-insensitively,
+  in both directions. An exact match still wins, so a file using one convention
+  consistently is never reinterpreted; a file holding two spellings of the same
+  chromosome now raises instead of picking one by iteration order, naming the
+  offending file. Only the query has its base-name prefix stripped, so an
+  unrelated contig such as `chrUn_random.1` is not collapsed onto `chr1`.
 - The step-6b panels no longer claim to be genome-wide when they are not. Step 6b
   can only pool the chromosomes step 6 ran on, and `validation_first_chrom_only`
   defaults to true, so the default report was captioned "All windows from all

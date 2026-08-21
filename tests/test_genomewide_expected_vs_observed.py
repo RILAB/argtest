@@ -283,12 +283,12 @@ def test_partial_run_warns_on_stderr_and_titles_the_plot(tmp_path, monkeypatch, 
         "primary\t0\t100\t50\t0.1\t0.2\t\t\t-1\t-2\t\t\t\t\t\t",
         "primary\t100\t200\t150\t0.3\t0.25\t\t\t-0.5\t-1\t\t\t\t\t\t",
     ])
-    # Map and FAI are keyed by the chromosome directory name itself; unlike
-    # "combined.1", a bare "chr1" has no numeric suffix to strip.
+    # Bare-numeric map and FAI against a "chr1" window directory: resolution
+    # works in this direction too.
     hapmap = tmp_path / "map.tsv"
-    hapmap.write_text("Chromosome\tPosition\tRate\tMap\nchr1\t0\t1.0\t0.0\n")
+    hapmap.write_text("Chromosome\tPosition\tRate\tMap\n1\t0\t1.0\t0.0\n")
     fai = tmp_path / "ref.fai"
-    fai.write_text("chr1\t200\n")
+    fai.write_text("1\t200\n")
     out_dir = tmp_path / "out"
     monkeypatch.setattr(sys, "argv", [
         "genomewide_expected_vs_observed.py",
@@ -303,3 +303,30 @@ def test_partial_run_warns_on_stderr_and_titles_the_plot(tmp_path, monkeypatch, 
     assert "NOT genome-wide" in err
     assert "chr2" in err and "chr3" in err
     assert (out_dir / "diversity-expected-vs-observed-by-rec.png").exists()
+
+
+def test_chr_prefixed_windows_resolve_against_a_bare_numeric_map(tmp_path):
+    """A "chrN" chromosome directory with a bare-numeric map must not be dropped.
+
+    Step 6b takes its chromosome name from the window directory, which follows
+    the pipeline's naming; the map and FAI come from the reference and may use
+    the other convention. Before resolution was symmetric this combination
+    warned and silently discarded every window.
+    """
+    path = tmp_path / "chr2" / "cleaned" / "windows.tsv"
+    _write_windows_tsv(path, ["primary\t0\t100\t50\t0.1\t0.2\t\t\t-1\t-2\t\t\t\t\t\t"])
+
+    pooled = gw.collect([path], {"2": [(0, 3.0)]}, {"2": 100})
+
+    assert [e["chrom"] for e in pooled] == ["chr2"]
+    assert pooled[0]["rec_rate_cm_per_mb"] == pytest.approx(3.0)
+
+
+def test_two_spellings_of_one_chromosome_in_the_map_are_not_guessed(tmp_path):
+    """Silently picking one would attach the wrong recombination map."""
+    path = tmp_path / "combined.1" / "cleaned" / "windows.tsv"
+    _write_windows_tsv(path, ["primary\t0\t100\t50\t0.1\t0.2\t\t\t-1\t-2\t\t\t\t\t\t"])
+
+    with pytest.raises(ValueError, match="matches more than one entry"):
+        gw.collect([path], {"1": [(0, 1.0)], "chr1": [(0, 9.0)]}, {"1": 100},
+                   hapmap_path="map.tsv")

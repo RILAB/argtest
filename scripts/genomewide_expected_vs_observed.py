@@ -164,8 +164,12 @@ def mean_rate_per_window(
     return out
 
 
-def collect(windows_paths, hapmap, fai) -> list[dict]:
-    """Pool every window from every chromosome, annotated with its map rate."""
+def collect(windows_paths, hapmap, fai, hapmap_path=None, fai_path=None) -> list[dict]:
+    """Pool every window from every chromosome, annotated with its map rate.
+
+    hapmap_path / fai_path are only used to name the source file if a chromosome
+    turns out to be spelled two different ways within one of them.
+    """
     pooled = []
     for path in sorted(windows_paths, key=lambda p: p.parent.parent.name):
         chrom = path.parent.parent.name
@@ -174,8 +178,8 @@ def collect(windows_paths, hapmap, fai) -> list[dict]:
             print(f"NOTE: {path} has no data rows; skipping.", file=sys.stderr)
             continue
 
-        hap_key = _resolve_chrom(chrom, hapmap)
-        fai_key = _resolve_chrom(chrom, fai)
+        hap_key = _resolve_chrom(chrom, hapmap, source=hapmap_path)
+        fai_key = _resolve_chrom(chrom, fai, source=fai_path)
         if hap_key is None or fai_key is None:
             print(
                 f"WARNING: no recombination map ({hap_key is None}) or FAI length "
@@ -302,7 +306,8 @@ def main():
 
     hapmap = load_hapmap(args.hapmap)
     fai = load_fai(args.fai)
-    pooled = collect(args.windows, hapmap, fai)
+    pooled = collect(args.windows, hapmap, fai,
+                     hapmap_path=args.hapmap, fai_path=args.fai)
     if not pooled:
         raise RuntimeError(
             "No windows could be pooled: none of the windows.tsv inputs had rows "
