@@ -223,6 +223,24 @@ def test_snakemake_dry_run(tmp_path):
 
 
 @pytest.mark.skipif(not SNK_AVAILABLE, reason=SNK_SKIP_REASON)
+def test_snakemake_chr_directories_resolve_against_bare_numeric_references(tmp_path):
+    """Startup must use the same symmetric chromosome aliases as steps 1 and 6b."""
+    dataset = build_dataset(tmp_path)
+    dataset["hapmap"].write_text(
+        dataset["hapmap"].read_text().replace("chr1", "1").replace("chr2", "2")
+    )
+    dataset["fai"].write_text(
+        dataset["fai"].read_text().replace("chr1", "1").replace("chr2", "2")
+    )
+
+    result = run_snakemake(REPO_ROOT, dataset["config"], "-n", "-p")
+
+    assert "rule all" in result.stdout
+    assert "step1_low_rec_masks" in result.stdout
+    assert "--chrom chr1" in result.stdout
+
+
+@pytest.mark.skipif(not SNK_AVAILABLE, reason=SNK_SKIP_REASON)
 def test_snakemake_fails_at_startup_for_reference_chrom_mismatch(tmp_path):
     dataset = build_dataset(tmp_path)
     (dataset["tree_root"] / "chr1").rename(dataset["tree_root"] / "chrom1")

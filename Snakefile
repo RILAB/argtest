@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from snakemake.exceptions import WorkflowError
+from scripts.hapmap_low_rec_mask import _resolve_chrom
 
 
 VALID_SUFFIXES = {".ts", ".trees", ".tsz"}
@@ -273,20 +274,14 @@ def discover_tree_files():
     return chrom_to_rep
 
 
-def _strip_chrom_prefix(chrom):
-    """Strip the pipeline's optional base-name prefix from a chromosome name."""
-    return chrom.split(".", 1)[1] if "." in chrom else chrom
-
-
-def _resolve_reference_chrom(chrom, available):
-    """Match a discovered chromosome using the same aliases as step 1."""
-    if chrom in available:
-        return chrom
-    bare = _strip_chrom_prefix(chrom)
-    for candidate in (bare, f"chr_{bare}", f"chr{bare}"):
-        if candidate in available:
-            return candidate
-    return None
+def _resolve_reference_chrom(chrom, available, source):
+    """Match a discovered chromosome using the exact resolver used by step 1."""
+    try:
+        return _resolve_chrom(chrom, available, source=source)
+    except ValueError as exc:
+        # Present reference-name ambiguity as a workflow configuration error,
+        # consistent with the other fail-fast checks in this section.
+        raise WorkflowError(str(exc)) from exc
 
 
 def _hapmap_chroms(path):
@@ -327,7 +322,11 @@ def validate_reference_chromosomes(chroms):
     }
     problems = []
     for label, (path, available) in references.items():
-        missing = [chrom for chrom in chroms if _resolve_reference_chrom(chrom, available) is None]
+        missing = [
+            chrom
+            for chrom in chroms
+            if _resolve_reference_chrom(chrom, available, path) is None
+        ]
         if missing:
             shown = ", ".join(sorted(available, key=natural_key)[:20]) or "<none>"
             if len(available) > 20:
@@ -343,7 +342,7 @@ def validate_reference_chromosomes(chroms):
             + "\n".join(problems)
             + "\nMake the chromosome directory names match the HapMap/FAI names. "
             "Supported aliases are a dotted base-name prefix (for example maize.10), "
-            "plus chr10 and chr_10 forms."
+            "plus case-insensitive chr10, chr_10, and chr-10 forms in either direction."
         )
 
 
