@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
-## [Unreleased]
+## [v1.13] — 2026-08-21 — genome-wide expected-vs-observed, plot-data dumps, step-7 timeout fix
 
 ### Added
 
@@ -58,6 +58,9 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
   chromosome now raises instead of picking one by iteration order, naming the
   offending file. Only the query has its base-name prefix stripped, so an
   unrelated contig such as `chrUn_random.1` is not collapsed onto `chr1`.
+  The Snakefile's startup check (`validate_reference_chromosomes`) had a third
+  copy of this logic and now calls the shared resolver, so a `chrN`/bare-numeric
+  mismatch no longer aborts the run at parse time before the fixed steps execute.
 - The step-6b panels no longer claim to be genome-wide when they are not. Step 6b
   can only pool the chromosomes step 6 ran on, and `validation_first_chrom_only`
   defaults to true, so the default report was captioned "All windows from all
