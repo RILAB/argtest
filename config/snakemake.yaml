@@ -170,6 +170,11 @@ run_validation: true
 
 # If true, run validation plots only for the first chromosome (faster for
 # quick QC checks). Set false to run for all chromosomes.
+#
+# NOTE: this also limits step 6b. Step 6b can only pool the windows step 6
+# produced, so with this set to true its "expected vs observed" panels cover ONE
+# chromosome, not the genome. The plots and the HTML summary both label that
+# explicitly, but set this to false if you want a genuinely genome-wide result.
 validation_first_chrom_only: true
 
 # Window size in bp for step-6 diversity, Tajima's D, and segregating-sites

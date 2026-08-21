@@ -42,6 +42,19 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
 - `step6_validation_plots` constrains its `{chrom}` wildcard to the validation
   chromosomes. Unconstrained, it also matched `genomewide/<variant>` and was
   ambiguous with step 6b for the genome-wide sentinel file.
+- `step6b_genomewide_scatter` is registered in the Snakefile's `RESOURCE_RULES`.
+  The shipped `config/snakemake.yaml` names it under `resources:`, so without
+  the registration every run using that config aborted at parse time with
+  `Unknown resources entry 'step6b_genomewide_scatter'`. The integration-test
+  configs carry no `resources:` block, which is why the test suite did not catch
+  it; a test now dry-runs the shipped resource keys.
+- The step-6b panels no longer claim to be genome-wide when they are not. Step 6b
+  can only pool the chromosomes step 6 ran on, and `validation_first_chrom_only`
+  defaults to true, so the default report was captioned "All windows from all
+  chromosomes pooled" over a single chromosome. The figures now take
+  `--all-chroms` and title themselves `PARTIAL GENOME: n of N chromosomes`, and
+  the HTML section derives its coverage from the pooled table itself — retitling
+  to "partial genome" and adding a red warning naming the missing chromosomes.
 
 ## [v1.12] — 2026-08-19 — documented coalescence plotting, no `--time-adjust`
 

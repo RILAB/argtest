@@ -251,6 +251,31 @@ def test_snakemake_ratemap_only_validation_sim_branch_dry_run(tmp_path):
 
 
 @pytest.mark.skipif(not SNK_AVAILABLE, reason=SNK_SKIP_REASON)
+def test_shipped_config_resource_keys_are_all_known_rules(tmp_path):
+    """Every rule named under `resources:` in the shipped config must exist.
+
+    The Snakefile rejects an unknown `resources:` key at parse time, so a rule
+    added to config/snakemake.yaml but not to RESOURCE_RULES makes every run
+    using the shipped config abort immediately. The dataset configs built by
+    these tests carry no `resources:` block at all, so nothing else here
+    exercises that validation.
+    """
+    import yaml
+
+    shipped = yaml.safe_load((REPO_ROOT / "config" / "snakemake.yaml").read_text())
+    resources = shipped.get("resources") or {}
+    assert resources, "shipped config has no resources block to check"
+
+    dataset = build_dataset(tmp_path)
+    with open(dataset["config"], "a") as fh:
+        fh.write(yaml.safe_dump({"resources": resources}))
+
+    # Parsing far enough to build the DAG is the assertion; an unknown key
+    # raises WorkflowError before any job runs.
+    run_snakemake(REPO_ROOT, dataset["config"], "-n")
+
+
+@pytest.mark.skipif(not SNK_AVAILABLE, reason=SNK_SKIP_REASON)
 def test_snakemake_real_run(tmp_path):
     dataset = build_dataset(tmp_path)
     result = run_snakemake(REPO_ROOT, dataset["config"], "--cores", "1", "--rerun-incomplete")

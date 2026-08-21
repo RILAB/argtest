@@ -58,6 +58,7 @@ RESOURCE_RULES = {
     "merge_replicates",
     "export_vcf",
     "step6_validation_plots",
+    "step6b_genomewide_scatter",
     "step7_summary",
 }
 RESOURCE_KEYS = {"mem_mb", "time", "threads", "partition"}
@@ -867,12 +868,14 @@ if RUN_VALIDATION:
             str(LOG_DIR / "step6b" / "{variant}.log")
         params:
             out_dir=lambda wildcards: str(GENOMEWIDE_DIR / wildcards.variant),
+            all_chroms=" ".join(CHROMS),
         shell:
             """
             python scripts/genomewide_expected_vs_observed.py \
               --windows {input.windows:q} \
               --hapmap "{input.hapmap}" \
               --fai "{input.fai}" \
+              --all-chroms {params.all_chroms} \
               --out-dir "{params.out_dir}" \
               >> "{log}" 2>&1
             touch "{output}"

@@ -239,3 +239,67 @@ def test_validation_dumps_then_genomewide_plot(tmp_path):
     # The map's slow and fast halves must both be represented.
     assert rates.min() < 1.0 < rates.max()
     assert all(r["obs_pi"] for r in rows)
+
+
+# --------------------------------------------------------------------------- #
+# Genome coverage labelling
+#
+# validation_first_chrom_only defaults to true, so step 6b routinely pools ONE
+# chromosome. Every one of these guards the claim that the result is genome-wide.
+# --------------------------------------------------------------------------- #
+
+def test_full_coverage_is_labelled_genome_wide():
+    note = gw.coverage_note({"chr1", "chr2"}, ["chr1", "chr2"])
+    assert "genome-wide" in note
+    assert "PARTIAL" not in note
+
+
+def test_partial_coverage_is_labelled_partial_and_counts_both_sides():
+    note = gw.coverage_note({"chr1"}, ["chr1", "chr2", "chr3"])
+    assert note.startswith("PARTIAL GENOME")
+    assert "1 of 3" in note
+    assert "chr1" in note
+
+
+def test_many_pooled_chromosomes_are_truncated_not_dumped():
+    covered = {f"chr{i}" for i in range(1, 8)}
+    note = gw.coverage_note(covered, [f"chr{i}" for i in range(1, 20)])
+    assert "7 of 19" in note
+    assert note.endswith("...)")
+
+
+def test_coverage_is_not_claimed_when_the_full_list_is_unknown():
+    """Without --all-chroms the script cannot know what it is missing."""
+    note = gw.coverage_note({"chr1"}, None)
+    assert "genome-wide" not in note
+    assert "PARTIAL" not in note
+    assert "1 chromosome pooled" == note
+
+
+def test_partial_run_warns_on_stderr_and_titles_the_plot(tmp_path, monkeypatch, capsys):
+    """A one-chromosome pool must not produce an unlabelled 'genome-wide' plot."""
+    path = tmp_path / "chr1" / "cleaned" / "windows.tsv"
+    _write_windows_tsv(path, [
+        "primary\t0\t100\t50\t0.1\t0.2\t\t\t-1\t-2\t\t\t\t\t\t",
+        "primary\t100\t200\t150\t0.3\t0.25\t\t\t-0.5\t-1\t\t\t\t\t\t",
+    ])
+    # Map and FAI are keyed by the chromosome directory name itself; unlike
+    # "combined.1", a bare "chr1" has no numeric suffix to strip.
+    hapmap = tmp_path / "map.tsv"
+    hapmap.write_text("Chromosome\tPosition\tRate\tMap\nchr1\t0\t1.0\t0.0\n")
+    fai = tmp_path / "ref.fai"
+    fai.write_text("chr1\t200\n")
+    out_dir = tmp_path / "out"
+    monkeypatch.setattr(sys, "argv", [
+        "genomewide_expected_vs_observed.py",
+        "--windows", str(path), "--hapmap", str(hapmap), "--fai", str(fai),
+        "--all-chroms", "chr1", "chr2", "chr3",
+        "--out-dir", str(out_dir),
+    ])
+
+    gw.main()
+
+    err = capsys.readouterr().err
+    assert "NOT genome-wide" in err
+    assert "chr2" in err and "chr3" in err
+    assert (out_dir / "diversity-expected-vs-observed-by-rec.png").exists()

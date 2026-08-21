@@ -80,6 +80,17 @@ def parse_args(argv=None):
         help="Directory for the pooled TSV and the PNGs.",
     )
     p.add_argument(
+        "--all-chroms",
+        nargs="+",
+        default=None,
+        help=(
+            "Every chromosome in the dataset, so the plots can state what fraction "
+            "of the genome they actually cover. Step 6 may have run on a subset "
+            "(validation_first_chrom_only), in which case pooling its windows is "
+            "not genome-wide and the figures must not imply that it is."
+        ),
+    )
+    p.add_argument(
         "--prefix",
         default="",
         help="Optional filename prefix for the outputs.",
@@ -235,7 +246,26 @@ def rate_norm(rates: np.ndarray):
     return rates, Normalize(vmin=vmin, vmax=vmax), "Recombination rate (cM/Mb)"
 
 
-def scatter_plot(path: Path, obs, exp, rates, axis_label: str, n_chroms: int) -> bool:
+def coverage_note(pooled_chroms: set[str], all_chroms: list[str] | None) -> str:
+    """How much of the genome these windows actually represent.
+
+    Reported on every figure. Under validation_first_chrom_only, step 6 runs on
+    one chromosome, so pooling its windows is emphatically not genome-wide; a
+    figure that did not say so would be read as a whole-genome result.
+    """
+    n = len(pooled_chroms)
+    if not all_chroms:
+        return f"{n} chromosome{'s' if n != 1 else ''} pooled"
+    total = len(all_chroms)
+    if n >= total:
+        return f"genome-wide: all {total} chromosomes pooled"
+    listed = ", ".join(sorted(pooled_chroms)[:4])
+    if n > 4:
+        listed += ", ..."
+    return f"PARTIAL GENOME: {n} of {total} chromosomes ({listed})"
+
+
+def scatter_plot(path: Path, obs, exp, rates, axis_label: str, coverage: str) -> bool:
     """One expected-vs-observed panel. Returns False if there was nothing to draw."""
     keep = np.isfinite(obs) & np.isfinite(exp)
     if not keep.any():
@@ -258,8 +288,7 @@ def scatter_plot(path: Path, obs, exp, rates, axis_label: str, n_chroms: int) ->
             label="1:1")
     ax.set_xlabel(f"Observed — {axis_label}")
     ax.set_ylabel(f"Expected (sim) — {axis_label}")
-    ax.set_title(f"{obs.size} windows pooled across {n_chroms} chromosomes",
-                 fontsize=9)
+    ax.set_title(f"{obs.size} windows — {coverage}", fontsize=9)
     ax.legend(fontsize=7)
     fig.colorbar(sc, ax=ax, label=cbar_label)
     fig.savefig(path)
@@ -284,13 +313,22 @@ def main():
     write_pooled_tsv(tsv_path, pooled)
     print(f"Wrote: {tsv_path}")
 
-    n_chroms = len({e["chrom"] for e in pooled})
+    pooled_chroms = {e["chrom"] for e in pooled}
+    coverage = coverage_note(pooled_chroms, args.all_chroms)
+    if args.all_chroms and len(pooled_chroms) < len(args.all_chroms):
+        missing = sorted(set(args.all_chroms) - pooled_chroms)
+        print(
+            f"WARNING: these plots are NOT genome-wide. {coverage}. Missing: "
+            f"{', '.join(missing)}. Step 6 must run on every chromosome "
+            f"(validation_first_chrom_only: false) for a whole-genome result.",
+            file=sys.stderr,
+        )
     rates = np.array([e["rec_rate_cm_per_mb"] for e in pooled])
     for stem, col, axis_label in STATS:
         obs = np.array([e[f"obs_{col}"] for e in pooled])
         exp = np.array([e[f"exp_{col}"] for e in pooled])
         png = args.out_dir / f"{args.prefix}{stem}-expected-vs-observed-by-rec.png"
-        if scatter_plot(png, obs, exp, rates, axis_label, n_chroms):
+        if scatter_plot(png, obs, exp, rates, axis_label, coverage):
             print(f"Wrote: {png}")
         else:
             # Without --sim-branch there is no expectation to plot against, so

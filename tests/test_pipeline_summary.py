@@ -116,3 +116,51 @@ def test_all_row_totals_sum_chromosomes_within_each_replicate():
 
     assert ps.totals_by_replicate(retention, ["1", "2"], "combined_vals") == [40, 60]
     assert ps.totals_by_replicate(retention, ["1", "2"], "retained_vals") == [140, 120]
+
+
+# --------------------------------------------------------------------------- #
+# Genome-wide section coverage labelling
+# --------------------------------------------------------------------------- #
+
+def _write_pooled(step6_dir, variant, chroms):
+    d = step6_dir / "genomewide" / variant
+    d.mkdir(parents=True, exist_ok=True)
+    header = "chrom\tdataset\twindow_start\twindow_end\trec_rate_cm_per_mb\t"
+    header += "obs_pi\texp_pi\tobs_tajimas_d\texp_tajimas_d"
+    rows = [f"{c}\tprimary\t0.0\t100.0\t1.0\t0.1\t0.2\t-1.0\t-2.0" for c in chroms]
+    (d / "genomewide-windows.tsv").write_text("\n".join([header] + rows) + "\n")
+
+
+def test_pooled_chroms_are_read_from_the_data(tmp_path):
+    _write_pooled(tmp_path, "cleaned", ["chr1", "chr2", "chr1"])
+    assert ps.pooled_chroms(tmp_path / "genomewide") == {"chr1", "chr2"}
+
+
+def test_all_chromosomes_pooled_is_called_genome_wide(tmp_path):
+    _write_pooled(tmp_path, "cleaned", ["chr1", "chr2"])
+    _write_pooled(tmp_path, "original", ["chr1", "chr2"])
+
+    html = ps.genomewide_section(["chr1", "chr2"], tmp_path)
+
+    assert "Genome-wide expected vs observed" in html
+    assert "partial genome" not in html.lower()
+
+
+def test_partial_pool_is_never_captioned_as_genome_wide(tmp_path):
+    """The shipped default runs step 6 on one chromosome; the report must say so."""
+    _write_pooled(tmp_path, "cleaned", ["chr1"])
+    _write_pooled(tmp_path, "original", ["chr1"])
+
+    html = ps.genomewide_section(["chr1", "chr2", "chr3"], tmp_path)
+
+    assert "All windows from all" not in html
+    assert "partial genome" in html.lower()
+    assert "1 of 3 chromosomes" in html
+    # The missing chromosomes are named, and the warning is visually flagged.
+    assert "chr2" in html and "chr3" in html
+    assert "validation_first_chrom_only" in html
+    assert "#c33" in html
+
+
+def test_absent_genomewide_dir_yields_no_section(tmp_path):
+    assert ps.genomewide_section(["chr1"], tmp_path) == ""

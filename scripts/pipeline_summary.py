@@ -617,13 +617,39 @@ GENOMEWIDE_PLOTS = [
 ]
 
 
-def genomewide_section(step6_dir) -> str:
-    """Whole-genome expected-vs-observed panels, pooled over all chromosomes.
+def pooled_chroms(gw_dir: Path) -> set[str]:
+    """Which chromosomes actually made it into the pooled tables.
+
+    Read from the data rather than inferred from config: step 6 runs on a subset
+    under validation_first_chrom_only, and a heading that says "genome-wide"
+    when one chromosome is present would be read as a whole-genome result.
+    """
+    found: set[str] = set()
+    for variant in ("original", "cleaned"):
+        path = gw_dir / variant / "genomewide-windows.tsv"
+        if not path.exists():
+            continue
+        rows = iter_data_lines(path)
+        header = next(rows, "").split("\t")
+        if "chrom" not in header:
+            continue
+        idx = header.index("chrom")
+        for line in rows:
+            cells = line.split("\t")
+            if len(cells) > idx:
+                found.add(cells[idx])
+    return found
+
+
+def genomewide_section(chroms, step6_dir) -> str:
+    """Expected-vs-observed panels pooled across the validated chromosomes.
 
     Distinct from the per-chromosome scatters below: every window from every
-    chromosome lands in one panel, coloured by that window's recombination rate,
-    so a rate-dependent departure from the 1:1 line is visible as colour
-    structure rather than as a difference between chromosome blocks.
+    pooled chromosome lands in one panel, coloured by that window's
+    recombination rate, so a rate-dependent departure from the 1:1 line is
+    visible as colour structure rather than as a difference between chromosome
+    blocks. Whether that pooling is genome-wide depends on how many chromosomes
+    step 6 ran on, which is stated explicitly below rather than assumed.
     """
     gw_dir = step6_dir / "genomewide"
     if not gw_dir.exists():
@@ -633,8 +659,41 @@ def genomewide_section(step6_dir) -> str:
     if not orig_dir.exists() and not cln_dir.exists():
         return ""
 
-    parts = ['<h2>Genome-wide expected vs observed</h2>',
-             '<p class="note">All windows from all chromosomes pooled. Colour is the '
+    covered = pooled_chroms(gw_dir)
+    missing = [c for c in chroms if c not in covered]
+    if covered and not missing:
+        heading = "Genome-wide expected vs observed"
+        scope = (
+            f"All windows from all {len(chroms)} chromosomes pooled."
+        )
+        warn = ""
+    else:
+        n_covered = len(covered) if covered else 0
+        heading = (
+            f"Expected vs observed — partial genome "
+            f"({n_covered} of {len(chroms)} chromosomes)"
+        )
+        scope = (
+            f"Windows from {n_covered} of {len(chroms)} chromosomes pooled — "
+            f"<b>this is not a genome-wide result</b>."
+        )
+        listed = ", ".join(missing[:12])
+        if len(missing) > 12:
+            listed += f", … (+{len(missing) - 12} more)"
+        warn = (
+            '<p class="note" style="border-left:4px solid #c33;padding-left:10px">'
+            f'<b>Partial genome.</b> Only {n_covered} of {len(chroms)} chromosomes '
+            f'contributed windows to these panels'
+            + (f' — missing: {listed}. ' if missing else '. ')
+            + 'Step 6 runs on the first chromosome only unless '
+            '<code>validation_first_chrom_only</code> is set to <code>false</code>, '
+            'and step 6b can only pool what step 6 produced. Do not read these '
+            'panels as a whole-genome summary; a recombination-rate trend on one '
+            'chromosome need not hold across the genome.</p>'
+        )
+
+    parts = [f'<h2>{heading}</h2>',
+             f'<p class="note">{scope} Colour is the '
              'length-weighted mean recombination rate of each window from the '
              'HapMap map; grey points are windows the map does not cover. Points '
              'off the dashed 1:1 line are windows where the ARG-simulated '
@@ -644,6 +703,7 @@ def genomewide_section(step6_dir) -> str:
              '<code>step6_validation/genomewide/&lt;variant&gt;/genomewide-windows.tsv</code>. '
              'Requires <code>sim_branch</code>; without it there is no expectation '
              'to plot.</p>',
+             warn,
              '<div class="chrom-block"><div class="plot-grid">']
     for label, col_dir in [("Original", orig_dir), ("Cleaned", cln_dir)]:
         parts.append(f'<div class="plot-col"><h3>{label}</h3>')
@@ -705,7 +765,7 @@ def main():
     mu_source_html = mu_source_section(mu_sources)
 
     step6_dir = out_dir / "step6_validation"
-    gw_html   = genomewide_section(step6_dir)
+    gw_html   = genomewide_section(chroms, step6_dir)
     val_html  = validation_section(chroms, out_dir, step6_dir)
 
     mu_str = args.mutation_rate if args.mutation_rate not in (None, "null") else "—"
