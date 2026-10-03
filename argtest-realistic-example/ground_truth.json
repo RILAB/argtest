@@ -16,6 +16,8 @@
       "severity": 5.0
     }
   ],
+  "contam_hotspot_frac": 0.0,
+  "contam_hotspot_size": 500000.0,
   "chromosomes": [
     {
       "chrom": "chr1",
@@ -384,7 +386,8 @@
             4
           ]
         }
-      ]
+      ],
+      "contam_hotspots": []
     },
     {
       "chrom": "chr2",
@@ -753,7 +756,8 @@
             29
           ]
         }
-      ]
+      ],
+      "contam_hotspots": []
     },
     {
       "chrom": "chr3",
@@ -1122,7 +1126,8 @@
             25
           ]
         }
-      ]
+      ],
+      "contam_hotspots": []
     }
   ]
 }
