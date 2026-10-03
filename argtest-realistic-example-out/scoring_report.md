@@ -28,24 +28,24 @@ How often is each individual flagged as a per-window outlier? Summed across the 
 
 | chrom | individual | flag count | role |
 |---|---|---:|---|
-| chr1 | ind12 | 11250 | **CONTAM sev=5×** |
-| chr1 | ind1 | 8837 | **CONTAM sev=2×** |
-| chr1 | ind6 | 47 | clean |
-| chr1 | ind7 | 46 | clean |
-| chr1 | ind5 | 41 | clean |
-| chr1 | ind14 | 38 | clean |
-| chr2 | ind12 | 11915 | **CONTAM sev=5×** |
-| chr2 | ind1 | 9093 | **CONTAM sev=2×** |
-| chr2 | ind10 | 34 | clean |
-| chr2 | ind13 | 34 | clean |
-| chr2 | ind0 | 31 | clean |
-| chr2 | ind2 | 31 | clean |
-| chr3 | ind12 | 11456 | **CONTAM sev=5×** |
-| chr3 | ind1 | 9076 | **CONTAM sev=2×** |
-| chr3 | ind0 | 46 | clean |
-| chr3 | ind15 | 38 | clean |
-| chr3 | ind7 | 34 | clean |
+| chr1 | ind12 | 11167 | **CONTAM sev=5×** |
+| chr1 | ind1 | 8750 | **CONTAM sev=2×** |
+| chr1 | ind10 | 42 | clean |
+| chr1 | ind14 | 39 | clean |
+| chr1 | ind6 | 37 | clean |
+| chr1 | ind13 | 36 | clean |
+| chr2 | ind12 | 11838 | **CONTAM sev=5×** |
+| chr2 | ind1 | 8911 | **CONTAM sev=2×** |
+| chr2 | ind10 | 40 | clean |
+| chr2 | ind3 | 34 | clean |
+| chr2 | ind14 | 33 | clean |
+| chr2 | ind4 | 33 | clean |
+| chr3 | ind12 | 11391 | **CONTAM sev=5×** |
+| chr3 | ind1 | 8943 | **CONTAM sev=2×** |
+| chr3 | ind2 | 37 | clean |
+| chr3 | ind9 | 34 | clean |
 | chr3 | ind3 | 32 | clean |
+| chr3 | ind15 | 31 | clean |
 
 ## 3. mutation_masked windows vs prune intervals
 
@@ -53,9 +53,9 @@ When the per-window outlier-fraction exceeds `--mutload_fraction`, the window is
 
 | chrom | prune truth (Mb) | called (Mb) | overlap (Mb) | precision | recall |
 |---|---:|---:|---:|---:|---:|
-| chr1 | 5.00 | 2.53 | 1.37 | 0.542 | 0.274 |
-| chr2 | 5.00 | 2.54 | 1.39 | 0.547 | 0.277 |
-| chr3 | 5.00 | 2.74 | 1.63 | 0.596 | 0.327 |
+| chr1 | 5.00 | 2.56 | 1.40 | 0.548 | 0.281 |
+| chr2 | 5.00 | 2.50 | 1.36 | 0.544 | 0.271 |
+| chr3 | 5.00 | 2.49 | 1.46 | 0.585 | 0.291 |
 
 Modest recall: with `--prune-frac-samples 0.25`, exactly 25% of samples are dropped in each pruned window — sitting right at the default `--mutload_fraction 0.2` boundary. Poisson variation pushes some windows over and some under. Tightening `mutload_fraction` to 0.15 would lift recall.
 
@@ -80,12 +80,12 @@ Each row in `outliers.bed` flags one or more individuals in one window. Treating
 
 | chrom | windows | TP | spurious | prune-expl | net FP | spurious rate | net FP rate |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| chr1 | 11810 | 20087 | 478 | 216 | 262 | 0.29% | 0.20% |
-| chr2 | 11915 | 21008 | 385 | 174 | 211 | 0.23% | 0.16% |
-| chr3 | 11813 | 20532 | 414 | 210 | 204 | 0.25% | 0.16% |
-| **total** | **35538** | **61627** | **1277** | **600** | **677** | **0.26%** | **0.17%** |
+| chr1 | 11714 | 19917 | 460 | 222 | 238 | 0.28% | 0.18% |
+| chr2 | 11839 | 20749 | 371 | 159 | 212 | 0.22% | 0.16% |
+| chr3 | 11747 | 20334 | 399 | 186 | 213 | 0.24% | 0.17% |
+| **total** | **35300** | **61000** | **1230** | **567** | **663** | **0.25%** | **0.17%** |
 
-**TP recall**: 61627 / 71076 expected = 86.71% — i.e., when an outlier window exists, the contaminated individuals are flagged in it ~87% of the time.
+**TP recall**: 61000 / 70600 expected = 86.40% — i.e., when an outlier window exists, the contaminated individuals are flagged in it ~86% of the time.
 
 **Denominators**:
 - spurious rate = spurious / (windows × 14 non-contam inds)
