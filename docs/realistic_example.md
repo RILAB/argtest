@@ -191,7 +191,7 @@ This emits both stdout text and a Markdown report covering:
   spurious, prune-explained spurious, and net FP (the actual
   statistical-noise floor of the per-window outlier test).
 
-See the [example scoring report](#example-scoring-numbers-3-chrom-8-reps-16-dip-10-mb)
+See the [example scoring report](#example-scoring-numbers-3-chrom--8-reps--16-dip--10-mb)
 section below for representative numbers on a default-config run.
 
 ## Example scoring numbers (3 chrom × 8 reps × 16 dip × 10 Mb)

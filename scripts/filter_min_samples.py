@@ -14,7 +14,7 @@ PRESERVES sequence coordinates (dropped spans become empty gaps; no ``trim()``
 intersected with the complement of the dropped spans so downstream
 accessibility is not overestimated.
 
-Locked design decisions (min_samples_filter_plan.md, 2026-06-26) and the
+Locked design decisions (docs/dev/min_samples_filter_plan.md, 2026-06-26) and the
 defaults chosen here for the still-open minor questions:
 
 - Unit is sample NODES (haploids). The ``individuals`` unit mode is deferred.

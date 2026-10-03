@@ -31,10 +31,10 @@ Priority ranking is at the end.
 
 ### A1. `validate_trimmed_ts` is a no-op that prints a false warning on every run — HIGH
 
-[argtest_common.py:275-303](scripts/argtest_common.py#L275-L303)
+[argtest_common.py:275-303](../../../scripts/argtest_common.py#L275-L303)
 
-Called by [trim_samples.py:361](scripts/trim_samples.py#L361) and
-[filter_min_samples.py:263](scripts/filter_min_samples.py#L263) — i.e. every step-5 and
+Called by [trim_samples.py:361](../../../scripts/trim_samples.py#L361) and
+[filter_min_samples.py:263](../../../scripts/filter_min_samples.py#L263) — i.e. every step-5 and
 step-5b job. Traced against the installed tskit *(measured)*:
 
 - `hasattr(ts, "check_index")` → `True`, so the outer branch is entered.
@@ -52,10 +52,10 @@ the actual guarantee you have today.
 
 ### A2. `find_low_access_regions.py` writes the replicate ID into the BED chrom column
 
-[find_low_access_regions.py:105](scripts/find_low_access_regions.py#L105) — `chrom = ts_path.stem`.
+[find_low_access_regions.py:105](../../../scripts/find_low_access_regions.py#L105) — `chrom = ts_path.stem`.
 
 In the nested layout the Snakefile feeds it (`<root>/<chrom>/<rep>.tsz` via
-[Snakefile:427-434](Snakefile#L427-L434)), the stem is the **replicate ID**, not the
+[Snakefile:427-434](../../../Snakefile#L427-L434)), the stem is the **replicate ID**, not the
 chromosome. Verified by running it on `example_data/sim_2chr_5rep/trees/chr1/1.trees`
 *(measured)*:
 
@@ -71,7 +71,7 @@ is mislabeled for anyone reading it directly or feeding it to bedtools. Fix: add
 
 ### A3. `trim_regions_single.py` discards pre-existing tree-sequence metadata
 
-[trim_regions_single.py:46-58](scripts/trim_regions_single.py#L46-L58)
+[trim_regions_single.py:46-58](../../../scripts/trim_regions_single.py#L46-L58)
 
 ```python
 metadata: dict = {"kept_intervals": [...]}
@@ -80,37 +80,37 @@ tables.metadata = metadata          # wholesale replacement
 ```
 
 Any top-level metadata the input ARG carried (e.g. SINGER provenance fields) is dropped
-at step 4. Compare [merge_treefiles_by_replicate.py:245-247](scripts/merge_treefiles_by_replicate.py#L245-L247)
-and [filter_min_samples.py:246-249](scripts/filter_min_samples.py#L246-L249), which both
+at step 4. Compare [merge_treefiles_by_replicate.py:245-247](../../../scripts/merge_treefiles_by_replicate.py#L245-L247)
+and [filter_min_samples.py:246-249](../../../scripts/filter_min_samples.py#L246-L249), which both
 do `{**existing, **extra}`. Fix: merge instead of replace, for consistency.
 
 ### A4. `combine_remove_masks.py` truncates float mask boundaries inward
 
-[combine_remove_masks.py:65](scripts/combine_remove_masks.py#L65) —
+[combine_remove_masks.py:65](../../../scripts/combine_remove_masks.py#L65) —
 `f"{args.chrom}\t{int(left)}\t{int(right)}"`.
 
 For a *removal* mask, truncating `right` loses up to 1 bp of masked sequence per interval.
 Should be `floor(left)` / `ceil(right)` to stay conservative. In practice step-1/2/3
 boundaries are integral so this rarely fires, but SNP-windowed mutload masks
-([mutload_masks.py:164-168](scripts/mutload_masks.py#L164-L168)) emit float window edges
+([mutload_masks.py:164-168](../../../scripts/mutload_masks.py#L164-L168)) emit float window edges
 derived from site positions, and those *do* truncate — and can even produce a zero-width
 BED row when two consecutive window edges land inside the same integer.
 
 ### A5. Inconsistent BED-parsing strictness
 
-- [argtest_common.py:320](scripts/argtest_common.py#L320) — raises `ValueError` on <3 columns.
+- [argtest_common.py:320](../../../scripts/argtest_common.py#L320) — raises `ValueError` on <3 columns.
 - [trim_regions.py:71](scripts/trim_regions.py#L71) — raises `ValueError`.
-- [combine_remove_masks.py:46-47](scripts/combine_remove_masks.py#L46-L47) — **silently skips**.
+- [combine_remove_masks.py:46-47](../../../scripts/combine_remove_masks.py#L46-L47) — **silently skips**.
 
-The README ([line 322](README.md#L322)) documents the raising behavior as universal. A
+The README ([line 322](../../../README.md#L322)) documents the raising behavior as universal. A
 malformed step-3 BED reaching step 4 would be silently ignored rather than failing the
 job. Pick one (recommend: raise everywhere, it's one shared helper) and delete the other two.
 
 ### A6. Pinned-tskit dependency fails open, not closed
 
 `environment.yml` pins `tskit @ git+nspope/tskit@73d8cd9` because
-[coalescence_ne_plots_from_ts.py](scripts/coalescence_ne_plots_from_ts.py) depends on that
-fork's partial-missing-data normalization (documented at [README.md:304](README.md#L304)).
+[coalescence_ne_plots_from_ts.py](../../../scripts/coalescence_ne_plots_from_ts.py) depends on that
+fork's partial-missing-data normalization (documented at [README.md:304](../../../README.md#L304)).
 
 Running the test suite against **upstream** tskit 1.0.0 *(measured)*:
 
@@ -131,10 +131,10 @@ turn a silent-wrong-answer into a startup failure. Cheap insurance for a pinned 
 
 ### A7. Minor
 
-- [filter_min_samples.py:171](scripts/filter_min_samples.py#L171) — `_intersect_keep_with_drops(keep, dropped, seq_len)`: `seq_len` is never used. Dead parameter.
-- [trim_regions_single.py:50-54](scripts/trim_regions_single.py#L50-L54) — bare `except Exception: mu = None` around the pickle load swallows corrupt-file errors. Also, if the pickle holds a *scalar* rate, `ratemap_to_metadata(mu)` on line 56 throws outside the try.
-- [measure_merge_mem.py:38](measure_merge_mem.py#L38) — `ru_maxrss / 1e6` assumes kB (Linux). On macOS `ru_maxrss` is bytes, so the reported peak is 1000× off. Fine on the HPC target, worth a comment.
-- [Snakefile:202](Snakefile#L202) — `TRIM_REMOVE_ARG` builds shell args by string interpolation; a BED path containing `"` breaks the command. Same for `--chroms {params.chroms}` at [Snakefile:813](Snakefile#L813).
+- [filter_min_samples.py:171](../../../scripts/filter_min_samples.py#L171) — `_intersect_keep_with_drops(keep, dropped, seq_len)`: `seq_len` is never used. Dead parameter.
+- [trim_regions_single.py:50-54](../../../scripts/trim_regions_single.py#L50-L54) — bare `except Exception: mu = None` around the pickle load swallows corrupt-file errors. Also, if the pickle holds a *scalar* rate, `ratemap_to_metadata(mu)` on line 56 throws outside the try.
+- [measure_merge_mem.py:38](../../../measure_merge_mem.py#L38) — `ru_maxrss / 1e6` assumes kB (Linux). On macOS `ru_maxrss` is bytes, so the reported peak is 1000× off. Fine on the HPC target, worth a comment.
+- [Snakefile:202](../../../Snakefile#L202) — `TRIM_REMOVE_ARG` builds shell args by string interpolation; a BED path containing `"` breaks the command. Same for `--chroms {params.chroms}` at [Snakefile:813](../../../Snakefile#L813).
 
 ---
 
@@ -148,17 +148,17 @@ This is the main ask. Everything below is **dead in production**, verified by gr
 | What | Where | Lines | Only referenced by |
 |---|---|---:|---|
 | `trim_samples_chunked.py` (whole module) | [scripts/trim_samples_chunked.py](scripts/trim_samples_chunked.py) | 146 | nothing at all |
-| `trim_ts_by_intervals` | [argtest_common.py:196-258](scripts/argtest_common.py#L196-L258) | 63 | `test_mutload.py` |
-| `validate_trimmed_ts` | [argtest_common.py:275-303](scripts/argtest_common.py#L275-L303) | 29 | see A1 — a no-op |
-| `collapse_masked_intervals` | [argtest_common.py:631-659](scripts/argtest_common.py#L631-L659) | 29 | `trim_regions.py` only |
-| `ratemap_from_keep_intervals` | [argtest_common.py:593-618](scripts/argtest_common.py#L593-L618) | 26 | `trim_regions.py` only |
-| `build_shared_mask` | [argtest_common.py:674-697](scripts/argtest_common.py#L674-L697) | 24 | `collapse_masked_and_low_access_windows` only |
-| `mutational_load` removal branch | [argtest_common.py:119-159](scripts/argtest_common.py#L119-L159) | ~25 | nothing — no caller ever passes `remove_intervals` |
-| `build_removal_segments` | [argtest_common.py:162-181](scripts/argtest_common.py#L162-L181) | 20 | the dead branch above + tests |
-| `assert_sample_ids_preserved` | [argtest_common.py:261-272](scripts/argtest_common.py#L261-L272) | 12 | nothing |
-| `build_segments_with_drop_nodes` | [argtest_common.py:184-193](scripts/argtest_common.py#L184-L193) | 10 | `trim_ts_by_intervals` only |
-| `collapse_masked_and_low_access_windows` | [argtest_common.py:662-671](scripts/argtest_common.py#L662-L671) | 10 | nothing |
-| `and_ratemaps_binary` | [argtest_common.py:621-628](scripts/argtest_common.py#L621-L628) | 8 | `build_shared_mask` only |
+| `trim_ts_by_intervals` | [argtest_common.py:196-258](../../../scripts/argtest_common.py#L196-L258) | 63 | `test_mutload.py` |
+| `validate_trimmed_ts` | [argtest_common.py:275-303](../../../scripts/argtest_common.py#L275-L303) | 29 | see A1 — a no-op |
+| `collapse_masked_intervals` | [argtest_common.py:631-659](../../../scripts/argtest_common.py#L631-L659) | 29 | `trim_regions.py` only |
+| `ratemap_from_keep_intervals` | [argtest_common.py:593-618](../../../scripts/argtest_common.py#L593-L618) | 26 | `trim_regions.py` only |
+| `build_shared_mask` | [argtest_common.py:674-697](../../../scripts/argtest_common.py#L674-L697) | 24 | `collapse_masked_and_low_access_windows` only |
+| `mutational_load` removal branch | [argtest_common.py:119-159](../../../scripts/argtest_common.py#L119-L159) | ~25 | nothing — no caller ever passes `remove_intervals` |
+| `build_removal_segments` | [argtest_common.py:162-181](../../../scripts/argtest_common.py#L162-L181) | 20 | the dead branch above + tests |
+| `assert_sample_ids_preserved` | [argtest_common.py:261-272](../../../scripts/argtest_common.py#L261-L272) | 12 | nothing |
+| `build_segments_with_drop_nodes` | [argtest_common.py:184-193](../../../scripts/argtest_common.py#L184-L193) | 10 | `trim_ts_by_intervals` only |
+| `collapse_masked_and_low_access_windows` | [argtest_common.py:662-671](../../../scripts/argtest_common.py#L662-L671) | 10 | nothing |
+| `and_ratemaps_binary` | [argtest_common.py:621-628](../../../scripts/argtest_common.py#L621-L628) | 8 | `build_shared_mask` only |
 | `trim_regions.py` CLI (`main`, `find_tree_files`, `output_name`, `parse_args`) | [scripts/trim_regions.py](scripts/trim_regions.py) | ~110 | nothing — superseded by `trim_regions_single.py` |
 
 **≈ 510 lines of `scripts/`, plus ~150 lines of `test_mutload.py`** that exist solely to
@@ -171,7 +171,7 @@ Notes on the two entries that need care:
 
 - **`trim_regions.py`** — keep `complement_intervals` and `load_mask_intervals`
   (27 lines; `trim_regions_single.py` imports them at
-  [line 18](scripts/trim_regions_single.py#L18)). Move them into `argtest_common.py`
+  [line 18](../../../scripts/trim_regions_single.py#L18)). Move them into `argtest_common.py`
   and delete the rest of the module. Deleting the module also removes the
   `collapse_masked_intervals` / `ratemap_from_keep_intervals` chain above — those two
   implement *coordinate-compacting* trimming, which the pipeline deliberately does not
@@ -185,24 +185,24 @@ Notes on the two entries that need care:
 
 ### B2. Guards that can never fire
 
-- [mutload_masks.py:149-150](scripts/mutload_masks.py#L149-L150) —
+- [mutload_masks.py:149-150](../../../scripts/mutload_masks.py#L149-L150) —
   `if expected_names != unique_names: raise`. Both lists come from
   `aggregate_by_individual(..., names)` with the *same* `names` object, so they are
   always equal by construction.
-- [pipeline_summary.py:413-415](scripts/pipeline_summary.py#L413-L415) and
-  [:437-444](scripts/pipeline_summary.py#L437-L444) — `if row_by_rep is None` and the
+- [pipeline_summary.py:413-415](../../../scripts/pipeline_summary.py#L413-L415) and
+  [:437-444](../../../scripts/pipeline_summary.py#L437-L444) — `if row_by_rep is None` and the
   `key == "retained_vals" and "retained_by_rep" in row` / positional-index fallback.
   `collect_retention` always populates `retained_by_rep`
-  ([line 347](scripts/pipeline_summary.py#L347)), so the fallback branches are
+  ([line 347](../../../scripts/pipeline_summary.py#L347)), so the fallback branches are
   unreachable. `totals_by_replicate` collapses to about six lines without them.
-- [find_low_access_regions.py:96](scripts/find_low_access_regions.py#L96) and
-  [:120](scripts/find_low_access_regions.py#L120) — `getattr(args, "mutation_rate", None)`
+- [find_low_access_regions.py:96](../../../scripts/find_low_access_regions.py#L96) and
+  [:120](../../../scripts/find_low_access_regions.py#L120) — `getattr(args, "mutation_rate", None)`
   / `getattr(args, "log", None)`. `argparse` guarantees both attributes exist. Just use
   `args.mutation_rate` / `args.log`.
 
 ### B3. `infer_mu_path` — the fallback is worse than no fallback
 
-[argtest_common.py:519-566](scripts/argtest_common.py#L519-L566)
+[argtest_common.py:519-566](../../../scripts/argtest_common.py#L519-L566)
 
 `infer_mu_base` generates candidate stems by stripping `.N`, `_N`, **and** `-N` suffixes
 from both the file stem and the parent directory name, then `infer_mu_path` does an exact
@@ -221,7 +221,7 @@ glob/ambiguity path entirely, and raise `FileNotFoundError` listing the exact pa
 
 ### B4. `resolve_mu_rate` carries a test-fixture shim in production
 
-[argtest_common.py:455-458](scripts/argtest_common.py#L455-L458)
+[argtest_common.py:455-458](../../../scripts/argtest_common.py#L455-L458)
 
 ```python
 # Some fixtures pickle a SimpleNamespace with .position/.rate; rebuild a RateMap.
@@ -235,7 +235,7 @@ duck-typed into a silently wrong ratemap.
 
 ### B5. Snakefile step 6 stages files through `/tmp` with 35 lines of bash
 
-[Snakefile:722-756](Snakefile#L722-L756)
+[Snakefile:722-756](../../../Snakefile#L722-L756)
 
 Two `mktemp -d`, a trap, two symlink loops, and an inline Python heredoc that imports
 `argtest_common` just to resolve a `mut_rate.p` path — all because
@@ -248,26 +248,26 @@ compute nodes.
 
 ### B6. Duplicated helpers
 
-- [compare_trees_html.py:8-21](scripts/compare_trees_html.py#L8-L21) and
-  [trees_gallery_html.py:8-21](scripts/trees_gallery_html.py#L8-L21) each re-implement
+- [compare_trees_html.py:8-21](../../../scripts/compare_trees_html.py#L8-L21) and
+  [trees_gallery_html.py:8-21](../../../scripts/trees_gallery_html.py#L8-L21) each re-implement
   `load_ts` verbatim instead of importing it from `argtest_common`.
-- [score_realistic_example.py:64-74](scripts/score_realistic_example.py#L64-L74)
+- [score_realistic_example.py:64-74](../../../scripts/score_realistic_example.py#L64-L74)
   re-implements `merge_intervals`.
-- [mutload_masks.py:101-115](scripts/mutload_masks.py#L101-L115) and
-  [mutload_summary.py:140-158](scripts/mutload_summary.py#L140-L158) have near-identical
+- [mutload_masks.py:101-115](../../../scripts/mutload_masks.py#L101-L115) and
+  [mutload_summary.py:140-158](../../../scripts/mutload_summary.py#L140-L158) have near-identical
   `build_bp_windows` / `build_snp_windows` (the only difference is where the `<= 0`
   validation lives).
 - `genome_windows`-style "arange then clamp the last edge" appears **five** times:
-  [argtest_common.py:684-686](scripts/argtest_common.py#L684-L686),
-  [mutload_masks.py:103-106](scripts/mutload_masks.py#L103-L106),
-  [find_low_access_regions.py:98-100](scripts/find_low_access_regions.py#L98-L100),
-  [validation_plots_from_ts.py:200-203](scripts/validation_plots_from_ts.py#L200-L203),
-  [coalescence_ne_plots_from_ts.py:489-491](scripts/coalescence_ne_plots_from_ts.py#L489-L491).
+  [argtest_common.py:684-686](../../../scripts/argtest_common.py#L684-L686),
+  [mutload_masks.py:103-106](../../../scripts/mutload_masks.py#L103-L106),
+  [find_low_access_regions.py:98-100](../../../scripts/find_low_access_regions.py#L98-L100),
+  [validation_plots_from_ts.py:200-203](../../../scripts/validation_plots_from_ts.py#L200-L203),
+  [coalescence_ne_plots_from_ts.py:489-491](../../../scripts/coalescence_ne_plots_from_ts.py#L489-L491).
   One shared helper.
 
 ### B7. `validation_plots_from_ts.py` `main()` is 480 lines of near-identical plot blocks
 
-[validation_plots_from_ts.py:535-1011](scripts/validation_plots_from_ts.py#L535-L1011)
+[validation_plots_from_ts.py:535-1011](../../../scripts/validation_plots_from_ts.py#L535-L1011)
 
 Diversity / segregating-sites / Tajima's D each get an identical *scatter → skyline →
 trace* triple, differing only in the dict keys and axis labels. That's ~330 lines that a
@@ -280,25 +280,25 @@ STATS = [("div", "Diversity", ...), ("s", "Segregating sites / base", ...), ("td
 reduces to roughly 80. Not urgent, but this is the file most likely to grow a
 copy-paste bug (each block already has slightly different NaN handling — compare
 `site_td = np.where(np.isnan(div_scale), ...)` at
-[line 390](scripts/validation_plots_from_ts.py#L390) against
+[line 390](../../../scripts/validation_plots_from_ts.py#L390) against
 `sim_td = np.where(rep_acc <= 0, ...)` at
-[line 432](scripts/validation_plots_from_ts.py#L432)).
+[line 432](../../../scripts/validation_plots_from_ts.py#L432)).
 
 ### B8. Things I looked at and would **keep**
 
 Flagging these so they don't get swept up:
 
-- `safe_log_yscale` ([validation_plots_from_ts.py:228](scripts/validation_plots_from_ts.py#L228)) —
+- `safe_log_yscale` ([validation_plots_from_ts.py:228](../../../scripts/validation_plots_from_ts.py#L228)) —
   guards a real matplotlib crash-at-savefig on empty spectra. Cheap, keep.
-- The Snakefile `resources:` validation block ([Snakefile:65-88](Snakefile#L65-L88)) —
+- The Snakefile `resources:` validation block ([Snakefile:65-88](../../../Snakefile#L65-L88)) —
   catches config typos at parse time rather than after a 6-hour job. Keep.
-- `export_vcf.resolve_samples` mixed-ploidy fallback ([export_vcf.py:53-80](scripts/export_vcf.py#L53-L80)) —
+- `export_vcf.resolve_samples` mixed-ploidy fallback ([export_vcf.py:53-80](../../../scripts/export_vcf.py#L53-L80)) —
   small, and the haploid-vs-diploid distinction is genuinely load-bearing for the admix data.
-- `hapmap_low_rec_mask._resolve_chrom` chr-prefix matching ([hapmap_low_rec_mask.py:119-133](scripts/hapmap_low_rec_mask.py#L119-L133)) —
+- `hapmap_low_rec_mask._resolve_chrom` chr-prefix matching ([hapmap_low_rec_mask.py:119-133](../../../scripts/hapmap_low_rec_mask.py#L119-L133)) —
   cross-naming-convention hapmaps are a real recurring input problem (CLAUDE.md documents it). Keep.
 - `filter_min_samples._sample_edge_coverage` — the sweep is more code than a per-tree
   loop but is asymptotically better and correctly reasoned. Keep.
-- `mutload_seed_for` ([Snakefile:146-151](Snakefile#L146-L151)) — deterministic per-(chrom, rep) seeds. Keep.
+- `mutload_seed_for` ([Snakefile:146-151](../../../Snakefile#L146-L151)) — deterministic per-(chrom, rep) seeds. Keep.
 
 ---
 
@@ -306,7 +306,7 @@ Flagging these so they don't get swept up:
 
 ### C1. Batch the merge concatenate — 34% lower peak RSS, 15% faster *(measured)*
 
-[merge_treefiles_by_replicate.py:210-219](scripts/merge_treefiles_by_replicate.py#L210-L219)
+[merge_treefiles_by_replicate.py:210-219](../../../scripts/merge_treefiles_by_replicate.py#L210-L219)
 
 ```python
 merged = first_ts
@@ -335,7 +335,7 @@ Given CLAUDE.md documents `merge_replicates` as the OOM step and recommends budg
 
 ### C2. Free the intermediate before the metadata rebuild
 
-[merge_treefiles_by_replicate.py:243-248](scripts/merge_treefiles_by_replicate.py#L243-L248)
+[merge_treefiles_by_replicate.py:243-248](../../../scripts/merge_treefiles_by_replicate.py#L243-L248)
 
 ```python
 tables = merged.dump_tables()      # full copy #2
@@ -343,7 +343,7 @@ tables = merged.dump_tables()      # full copy #2
 merged = tables.tree_sequence()    # full copy #3
 ```
 
-`extra` now *always* contains `chrom_offsets` ([line 229](scripts/merge_treefiles_by_replicate.py#L229)),
+`extra` now *always* contains `chrom_offsets` ([line 229](../../../scripts/merge_treefiles_by_replicate.py#L229)),
 so this rebuild always runs and momentarily holds three whole-genome copies. Adding
 `del merged` immediately after `dump_tables()` (and reading `existing` before it) drops
 one copy at the exact peak. `measure_merge_mem.py` already isolates this stage — worth
@@ -351,7 +351,7 @@ re-running with the change.
 
 ### C3. `mutational_load` copies the whole tree sequence for nothing
 
-[argtest_common.py:131](scripts/argtest_common.py#L131)
+[argtest_common.py:131](../../../scripts/argtest_common.py#L131)
 
 ```python
 sub = ts.keep_intervals([(left, right)], simplify=False)
@@ -365,7 +365,7 @@ when `left == 0 and right == ts.sequence_length` is free.
 
 ### C4. `mutational_load`'s Python loop is ~2.7× slower than a `variants()` sweep *(measured)*
 
-[argtest_common.py:145-158](scripts/argtest_common.py#L145-L158)
+[argtest_common.py:145-158](../../../scripts/argtest_common.py#L145-L158)
 
 On 200 samples / 5 Mb / 10,481 trees / 11,832 sites: **0.16 s** for the current
 tree→site→mutation→`tree.samples()` loop vs **0.06 s** for
@@ -376,7 +376,7 @@ for var in ts.variants():
     out[wi[var.site.id]] += (var.genotypes != 0)
 ```
 
-Note `sample_lists=True` on [line 145](scripts/argtest_common.py#L145) also makes tree
+Note `sample_lists=True` on [line 145](../../../scripts/argtest_common.py#L145) also makes tree
 construction itself more expensive.
 
 **Caveat — not a drop-in.** The two disagree by 523 of 399,794 counts (0.13%) on that
@@ -390,17 +390,17 @@ only at the 0.1% level.
 
 ### C5. `coalescence_ne_plots_from_ts.py` loads every tree sequence twice
 
-[compute_quantile_time_windows:237-243](scripts/coalescence_ne_plots_from_ts.py#L237-L243)
-and [compute_logspaced_time_windows:297-303](scripts/coalescence_ne_plots_from_ts.py#L297-L303)
+[compute_quantile_time_windows:237-243](../../../scripts/coalescence_ne_plots_from_ts.py#L237-L243)
+and [compute_logspaced_time_windows:297-303](../../../scripts/coalescence_ne_plots_from_ts.py#L297-L303)
 each `load_ts()` all post-burnin replicates to build the time grid, then
-[main:584-597](scripts/coalescence_ne_plots_from_ts.py#L584-L597) loads all of them again
+[main:584-597](../../../scripts/coalescence_ne_plots_from_ts.py#L584-L597) loads all of them again
 for the statistics. For whole-genome merged ARGs that doubles the I/O and decompression
 of the most expensive input in the repo. Restructure to load once and pass the objects
 (or accept the grid-building cost only for the first replicate).
 
 ### C6. `hapmap_low_rec_mask.py` reads the HapMap twice per invocation
 
-[hapmap_low_rec_mask.py:143-146](scripts/hapmap_low_rec_mask.py#L143-L146) — `hapmap_chroms()`
+[hapmap_low_rec_mask.py:143-146](../../../scripts/hapmap_low_rec_mask.py#L143-L146) — `hapmap_chroms()`
 scans the whole file to resolve the chromosome name, then `load_hapmap()` scans it again.
 Since `step1_low_rec_masks` is a per-chromosome rule, a 16-chromosome run makes **32 full
 passes** over the map. `load_hapmap` could return the chrom set it already saw, or the
@@ -417,15 +417,15 @@ Same pattern in `coalescence_ne_plots_from_ts.py`.
 
 ### C8. Micro
 
-- [argtest_common.py:77-95](scripts/argtest_common.py#L77-L95) `aggregate_by_individual` —
+- [argtest_common.py:77-95](../../../scripts/argtest_common.py#L77-L95) `aggregate_by_individual` —
   Python loop over samples; `np.add.at(agg, idx_array, load)` with a precomputed index
   array is a one-liner and vectorized.
-- [argtest_common.py:342-354](scripts/argtest_common.py#L342-L354) `merge_intervals` —
+- [argtest_common.py:342-354](../../../scripts/argtest_common.py#L342-L354) `merge_intervals` —
   converts to numpy, sorts, then builds a Python list. Called **once per target node**
-  in [trim_samples.py:265-267](scripts/trim_samples.py#L265-L267), so with thousands of
+  in [trim_samples.py:265-267](../../../scripts/trim_samples.py#L265-L267), so with thousands of
   trimmed nodes you pay thousands of tiny array round-trips. A pure-Python sort path for
   small inputs would be faster.
-- [coalescence_ne_plots_from_ts.py:595](scripts/coalescence_ne_plots_from_ts.py#L595) —
+- [coalescence_ne_plots_from_ts.py:595](../../../scripts/coalescence_ne_plots_from_ts.py#L595) —
   `if i in keep_post` on a numpy array is O(n) per iteration; use a set or `i >= burnin`.
 
 ---
@@ -434,14 +434,14 @@ Same pattern in `coalescence_ne_plots_from_ts.py`.
 
 ### D1. README points step 4 at the wrong script — and the two differ semantically
 
-[README.md:79](README.md#L79) (Suggested Workflow, which claims "The Snakemake pipeline
+[README.md:79](../../../README.md#L79) (Suggested Workflow, which claims "The Snakemake pipeline
 automates exactly these steps"):
 
 > **Remove affected regions.** Combine the step 1–3 BED masks per chromosome and trim
 > those regions from each tree sequence with `scripts/trim_regions.py`.
 
-The pipeline runs [`trim_regions_single.py`](scripts/trim_regions_single.py)
-([Snakefile:539](Snakefile#L539)). This is not just a naming nit:
+The pipeline runs [`trim_regions_single.py`](../../../scripts/trim_regions_single.py)
+([Snakefile:539](../../../Snakefile#L539)). This is not just a naming nit:
 
 | | `trim_regions.py` | `trim_regions_single.py` (actual) |
 |---|---|---|
@@ -452,7 +452,7 @@ Every downstream coordinate assumption in the repo (`chrom_offsets`, `kept_inter
 `locate_tree.py`, the step-5b `delete_intervals` design) depends on coordinates being
 preserved. `reports/upstream_stats_comparison.md:28,404` already flags this discrepancy —
 it just never made it back into the README. Same issue at
-[README.md:285](README.md#L285), [:319](README.md#L319), [:322](README.md#L322).
+[README.md:285](../../../README.md#L285), [:319](../../../README.md#L319), [:322](../../../README.md#L322).
 
 **If you take the B1 recommendation and delete `trim_regions.py`, all four references
 must go.**
@@ -464,11 +464,11 @@ must go.**
   work that shipped (v1.7–v1.9 per the CHANGELOG). Move to `reports/` or delete — as
   root-level files they read like open work.
 - `NOTES.md` (30 lines) is referenced only from
-  [README.md:287](README.md#L287) for sample-ID matching rules. That content belongs in
+  [README.md:287](../../../README.md#L287) for sample-ID matching rules. That content belongs in
   the README section that links to it.
 - [trim_samples_chunked.py:13](scripts/trim_samples_chunked.py#L13) cites
   `reports/profiling/verify_trim_chunked.py`, which does not exist.
-- [mutload_summary.py:126-131](scripts/mutload_summary.py#L126-L131) — `--out` docs say
+- [mutload_summary.py:126-131](../../../scripts/mutload_summary.py#L126-L131) — `--out` docs say
   "Only the filename part is used; the file is always written to `<repo-root>/results/`".
   That's surprising behavior for a `--out` flag (it silently ignores any directory the
   user passes, and writes into the *repo*, not the cwd). Either honor the path or rename
@@ -476,17 +476,17 @@ must go.**
 
 ### D3. `pipeline_summary` and `validation_plots` measure "accessible" differently
 
-- [pipeline_summary.py:316-321](scripts/pipeline_summary.py#L316-L321) derives accessible
+- [pipeline_summary.py:316-321](../../../scripts/pipeline_summary.py#L316-L321) derives accessible
   intervals from the **mutation ratemap** (`rate > 0`), and falls back to `None`
   (= whole sequence) when no ratemap is embedded.
-- [validation_plots_from_ts.py:354-360](scripts/validation_plots_from_ts.py#L354-L360)
+- [validation_plots_from_ts.py:354-360](../../../scripts/validation_plots_from_ts.py#L354-L360)
   prefers **`kept_intervals`** metadata, falling back to the ratemap, then to `None`.
 
 Both are labeled "accessible bp" in their outputs. They usually agree (trimmed regions
 become edge-less trees either way), but a chromosome whose metadata lost its ratemap gets
 a silently inflated retention percentage in the HTML summary while the validation plots
 use the correct mask. Worth either unifying on `kept_intervals`-first or documenting the
-distinction in the README's retention paragraph ([README.md:83](README.md#L83)).
+distinction in the README's retention paragraph ([README.md:83](../../../README.md#L83)).
 
 ---
 

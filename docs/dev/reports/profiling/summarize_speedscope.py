@@ -8,7 +8,7 @@ import json
 import sys
 from collections import defaultdict
 
-path = sys.argv[1] if len(sys.argv) > 1 else "reports/profiling/trim_rep2.speedscope.json"
+path = sys.argv[1] if len(sys.argv) > 1 else "docs/dev/reports/profiling/trim_rep2.speedscope.json"
 with open(path) as fh:
     doc = json.load(fh)
 

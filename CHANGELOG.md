@@ -104,7 +104,7 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
   the simulation defaults (1 Mb sequence, 50 Kb windows) as if they were fixed;
   they point at `--sim-length` and `--sim-window-size`.
 - Document every `coalescence_ne_plots_from_ts.py` option, in
-  [COALESCENCE_NE_PLOTS.md](COALESCENCE_NE_PLOTS.md) (linked from the README),
+  [COALESCENCE_NE_PLOTS.md](docs/coalescence_ne_plots.md) (linked from the README),
   covering the time-grid modes, estimation and plotting flags, the Demes
   simulation flags, and every output file with the estimates-TSV columns.
 

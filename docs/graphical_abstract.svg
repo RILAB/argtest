@@ -1,0 +1,367 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="780" viewBox="0 0 1600 780" role="img" aria-label="ARGtest pipeline overview: inferred ARGs are screened for low recombination, poor accessibility and aberrant mutation load; flagged regions are trimmed from all samples and outlier individuals are pruned per window; outputs are cleaned ARGs, validation plots and a summary report.">
+<rect x="0.00" y="0.00" width="1600.00" height="780.00" rx="0" fill="#FFFFFF"/>
+<text x="56" y="92" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="52" font-weight="700" fill="#1A1D21" text-anchor="start" letter-spacing="-1">ARGtest</text>
+<text x="56" y="130" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="400" fill="#3F4650" text-anchor="start">Masking, trimming and validating ancestral recombination graphs</text>
+<text x="1544" y="104" font-family="'IBM Plex Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#3F4650" text-anchor="end">Snakemake pipeline · local or SLURM</text>
+<text x="1544" y="128" font-family="'IBM Plex Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#3F4650" text-anchor="end">input: SINGER-style .trees / .tsz</text>
+<rect x="56.00" y="150.00" width="1488.00" height="2.00" rx="0" fill="#1A1D21"/>
+<text x="56" y="196" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#5A626C" text-anchor="start" letter-spacing="2">INPUT</text>
+<rect x="56.00" y="212.00" width="270.00" height="170.00" rx="10" fill="#F3F5F7"/>
+<g transform="translate(74 228)"><path d="M27 4v10M27 14L12 26M27 14l15 12M12 26L5 42M12 26l7 16M42 26l-6 16M42 26l8 16" fill="none" stroke="#1A1D21" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g transform="translate(134 228)"><path d="M27 4v8M27 12L8 30M27 12l16 10M8 30L4 42M8 30l6 12M43 22L26 42M43 22l4 20" fill="none" stroke="#1A1D21" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g transform="translate(194 228)"><path d="M27 4v12M27 16L16 22M27 16l14 18M16 22L5 42M16 22l8 20M41 34l-5 8M41 34l8 8" fill="none" stroke="#1A1D21" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
+<text x="74" y="306" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="600" fill="#1A1D21" text-anchor="start">Inferred ARGs</text>
+<text x="74" y="332" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#3F4650" text-anchor="start">Tree sequences, one per</text>
+<text x="74" y="352" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#3F4650" text-anchor="start">chromosome × replicate</text>
+<rect x="56.00" y="396.00" width="270.00" height="66.00" rx="10" fill="#F3F5F7"/>
+<text x="74" y="424" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#1A1D21" text-anchor="start">Recombination map</text>
+<text x="74" y="446" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">HapMap format</text>
+<rect x="56.00" y="476.00" width="270.00" height="66.00" rx="10" fill="#F3F5F7"/>
+<text x="74" y="504" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#1A1D21" text-anchor="start">Mutation-rate map</text>
+<text x="74" y="526" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">embedded or scalar µ</text>
+<rect x="56.00" y="556.00" width="270.00" height="66.00" rx="10" fill="#F3F5F7"/>
+<text x="74" y="584" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#1A1D21" text-anchor="start">Reference index</text>
+<text x="74" y="606" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">.fai chromosome lengths</text>
+<path d="M338 470h34M362 461l10 9-10 9" fill="none" stroke="#1A1D21" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1170 470h34M1194 461l10 9-10 9" fill="none" stroke="#1A1D21" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="382" y="196" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#5A626C" text-anchor="start" letter-spacing="2">DETECT</text>
+<text x="1158" y="196" font-family="'IBM Plex Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#5A626C" text-anchor="end">genomic windows →</text>
+<circle cx="399" cy="234" r="17" fill="#2B5FA8"/>
+<text x="399" y="240" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#FFFFFF" text-anchor="middle">1</text>
+<text x="430" y="231" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="600" fill="#1A1D21" text-anchor="start">Low recombination</text>
+<text x="430" y="250" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">from the recombination map</text>
+<rect x="694.00" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="713.46" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="732.92" y="223.00" width="16.46" height="22.00" rx="2" fill="#2B5FA8"/>
+<rect x="752.38" y="223.00" width="16.46" height="22.00" rx="2" fill="#2B5FA8"/>
+<rect x="771.83" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="791.29" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="810.75" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="830.21" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="849.67" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="869.12" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="888.58" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="908.04" y="223.00" width="16.46" height="22.00" rx="2" fill="#2B5FA8"/>
+<rect x="927.50" y="223.00" width="16.46" height="22.00" rx="2" fill="#2B5FA8"/>
+<rect x="946.96" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="966.42" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="985.88" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1005.33" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1024.79" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1044.25" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1063.71" y="223.00" width="16.46" height="22.00" rx="2" fill="#2B5FA8"/>
+<rect x="1083.17" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1102.62" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1122.08" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1141.54" y="223.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<circle cx="399" cy="284" r="17" fill="#6B7280"/>
+<text x="399" y="290" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#FFFFFF" text-anchor="middle">2</text>
+<text x="430" y="281" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="600" fill="#1A1D21" text-anchor="start">Poor accessibility</text>
+<text x="430" y="300" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">windows mostly masked in input</text>
+<rect x="694.00" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="713.46" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="732.92" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="752.38" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="771.83" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="791.29" y="273.00" width="16.46" height="22.00" rx="2" fill="#6B7280"/>
+<rect x="810.75" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="830.21" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="849.67" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="869.12" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="888.58" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="908.04" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="927.50" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="946.96" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="966.42" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="985.88" y="273.00" width="16.46" height="22.00" rx="2" fill="#6B7280"/>
+<rect x="1005.33" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1024.79" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1044.25" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1063.71" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1083.17" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1102.62" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1122.08" y="273.00" width="16.46" height="22.00" rx="2" fill="#6B7280"/>
+<rect x="1141.54" y="273.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<circle cx="399" cy="334" r="17" fill="#C25A12"/>
+<text x="399" y="340" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#FFFFFF" text-anchor="middle">3</text>
+<text x="430" y="331" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="600" fill="#1A1D21" text-anchor="start">Aberrant mutation load</text>
+<text x="430" y="350" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">per individual, vs. simulated</text>
+<rect x="694.00" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="713.46" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="732.92" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="752.38" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="771.83" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="791.29" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="810.75" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="830.21" y="323.00" width="16.46" height="22.00" rx="2" fill="#C25A12"/>
+<rect x="849.67" y="323.00" width="16.46" height="22.00" rx="2" fill="#C25A12"/>
+<rect x="869.12" y="323.00" width="16.46" height="22.00" rx="2" fill="#C25A12"/>
+<rect x="888.58" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="908.04" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="927.50" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="946.96" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="966.42" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="985.88" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1005.33" y="323.00" width="16.46" height="22.00" rx="2" fill="#C25A12"/>
+<rect x="1024.79" y="323.00" width="16.46" height="22.00" rx="2" fill="#C25A12"/>
+<rect x="1044.25" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1063.71" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1083.17" y="323.00" width="16.46" height="22.00" rx="2" fill="#C25A12"/>
+<rect x="1102.62" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1122.08" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<rect x="1141.54" y="323.00" width="16.46" height="22.00" rx="2" fill="#E6E9ED"/>
+<text x="382" y="388" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#5A626C" text-anchor="start" letter-spacing="2">REMOVE</text>
+<rect x="464.00" y="382.00" width="694.00" height="1.00" rx="0" fill="#C9CED4"/>
+<circle cx="399" cy="424" r="17" fill="#1A1D21"/>
+<text x="399" y="430" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#FFFFFF" text-anchor="middle">4</text>
+<text x="430" y="430" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="600" fill="#1A1D21" text-anchor="start">Trim regions</text>
+<text x="430" y="452" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">Masks 1 + 2 cut from every</text>
+<text x="430" y="470" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">sample; coordinates preserved</text>
+<circle cx="399" cy="540" r="17" fill="#1A1D21"/>
+<text x="399" y="546" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#FFFFFF" text-anchor="middle">5</text>
+<text x="430" y="546" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="600" fill="#1A1D21" text-anchor="start">Trim samples</text>
+<text x="430" y="568" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">Outlier individuals pruned only</text>
+<text x="430" y="586" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">in the windows where they fail</text>
+<rect x="694.00" y="406.00" width="464.00" height="222.00" rx="10" fill="#F3F5F7"/>
+<rect x="708.00" y="420.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="726.29" y="420.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="744.58" y="420.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="762.88" y="420.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="781.17" y="420.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="799.46" y="420.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="817.75" y="420.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="836.04" y="420.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="854.33" y="420.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="872.62" y="420.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="890.92" y="420.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="909.21" y="420.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="927.50" y="420.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="945.79" y="420.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="964.08" y="420.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="982.38" y="420.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1000.67" y="420.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1018.96" y="420.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1037.25" y="420.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1055.54" y="420.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1073.83" y="420.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1092.12" y="420.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1110.42" y="420.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1128.71" y="420.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="708.00" y="443.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="726.29" y="443.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="744.58" y="443.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="762.88" y="443.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="781.17" y="443.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="799.46" y="443.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="817.75" y="443.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="836.04" y="443.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="854.33" y="443.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="872.62" y="443.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="890.92" y="443.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="909.21" y="443.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="927.50" y="443.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="945.79" y="443.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="964.08" y="443.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="982.38" y="443.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1000.67" y="443.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1018.96" y="443.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1037.25" y="443.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1055.54" y="443.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1073.83" y="443.00" width="15.29" height="19.00" rx="2" fill="#C25A12"/>
+<rect x="1092.12" y="443.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1110.42" y="443.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1128.71" y="443.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="708.00" y="466.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="726.29" y="466.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="744.58" y="466.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="762.88" y="466.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="781.17" y="466.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="799.46" y="466.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="817.75" y="466.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="836.04" y="466.00" width="15.29" height="19.00" rx="2" fill="#C25A12"/>
+<rect x="854.33" y="466.00" width="15.29" height="19.00" rx="2" fill="#C25A12"/>
+<rect x="872.62" y="466.00" width="15.29" height="19.00" rx="2" fill="#C25A12"/>
+<rect x="890.92" y="466.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="909.21" y="466.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="927.50" y="466.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="945.79" y="466.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="964.08" y="466.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="982.38" y="466.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1000.67" y="466.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1018.96" y="466.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1037.25" y="466.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1055.54" y="466.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1073.83" y="466.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1092.12" y="466.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1110.42" y="466.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1128.71" y="466.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="708.00" y="489.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="726.29" y="489.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="744.58" y="489.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="762.88" y="489.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="781.17" y="489.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="799.46" y="489.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="817.75" y="489.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="836.04" y="489.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="854.33" y="489.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="872.62" y="489.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="890.92" y="489.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="909.21" y="489.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="927.50" y="489.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="945.79" y="489.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="964.08" y="489.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="982.38" y="489.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1000.67" y="489.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1018.96" y="489.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1037.25" y="489.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1055.54" y="489.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1073.83" y="489.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1092.12" y="489.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1110.42" y="489.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1128.71" y="489.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="708.00" y="512.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="726.29" y="512.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="744.58" y="512.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="762.88" y="512.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="781.17" y="512.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="799.46" y="512.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="817.75" y="512.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="836.04" y="512.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="854.33" y="512.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="872.62" y="512.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="890.92" y="512.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="909.21" y="512.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="927.50" y="512.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="945.79" y="512.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="964.08" y="512.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="982.38" y="512.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1000.67" y="512.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1018.96" y="512.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1037.25" y="512.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1055.54" y="512.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1073.83" y="512.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1092.12" y="512.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1110.42" y="512.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1128.71" y="512.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="708.00" y="535.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="726.29" y="535.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="744.58" y="535.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="762.88" y="535.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="781.17" y="535.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="799.46" y="535.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="817.75" y="535.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="836.04" y="535.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="854.33" y="535.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="872.62" y="535.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="890.92" y="535.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="909.21" y="535.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="927.50" y="535.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="945.79" y="535.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="964.08" y="535.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="982.38" y="535.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1000.67" y="535.00" width="15.29" height="19.00" rx="2" fill="#C25A12"/>
+<rect x="1018.96" y="535.00" width="15.29" height="19.00" rx="2" fill="#C25A12"/>
+<rect x="1037.25" y="535.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1055.54" y="535.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1073.83" y="535.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1092.12" y="535.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1110.42" y="535.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1128.71" y="535.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="708.00" y="558.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="726.29" y="558.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="744.58" y="558.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="762.88" y="558.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="781.17" y="558.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="799.46" y="558.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="817.75" y="558.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="836.04" y="558.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="854.33" y="558.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="872.62" y="558.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="890.92" y="558.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="909.21" y="558.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="927.50" y="558.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="945.79" y="558.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="964.08" y="558.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="982.38" y="558.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1000.67" y="558.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1018.96" y="558.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1037.25" y="558.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1055.54" y="558.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1073.83" y="558.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1092.12" y="558.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1110.42" y="558.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1128.71" y="558.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="708.00" y="581.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="726.29" y="581.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="744.58" y="581.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="762.88" y="581.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="781.17" y="581.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="799.46" y="581.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="817.75" y="581.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="836.04" y="581.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="854.33" y="581.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="872.62" y="581.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="890.92" y="581.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="909.21" y="581.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="927.50" y="581.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="945.79" y="581.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="964.08" y="581.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="982.38" y="581.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1000.67" y="581.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1018.96" y="581.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1037.25" y="581.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1055.54" y="581.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1073.83" y="581.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1092.12" y="581.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<rect x="1110.42" y="581.00" width="15.29" height="19.00" rx="2" fill="#FFFFFF"/>
+<rect x="1128.71" y="581.00" width="15.29" height="19.00" rx="2" fill="#CFE5E3"/>
+<text x="708" y="618" font-family="'IBM Plex Mono', Menlo, Consolas, monospace" font-size="12" font-weight="400" fill="#5A626C" text-anchor="start">rows = individuals</text>
+<text x="1144" y="618" font-family="'IBM Plex Mono', Menlo, Consolas, monospace" font-size="12" font-weight="400" fill="#5A626C" text-anchor="end">columns = windows</text>
+<rect x="430.00" y="652.00" width="14.00" height="14.00" rx="2" fill="#CFE5E3"/>
+<text x="452" y="664" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">retained</text>
+<rect x="542.00" y="652.00" width="14.00" height="14.00" rx="2" fill="#FFFFFF" stroke="#C9CED4" stroke-width="1"/>
+<text x="564" y="664" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">region removed</text>
+<rect x="702.00" y="652.00" width="14.00" height="14.00" rx="2" fill="#C25A12"/>
+<text x="724" y="664" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">sample pruned</text>
+<text x="430" y="692" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#5A626C" text-anchor="start">Optional: drop windows with too few samples left</text>
+<text x="1214" y="196" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#5A626C" text-anchor="start" letter-spacing="2">OUTPUT</text>
+<rect x="1214.00" y="212.00" width="330.00" height="112.00" rx="10" fill="#0E6B6A"/>
+<text x="1232" y="240" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="600" fill="#FFFFFF" text-anchor="start">Cleaned ARGs</text>
+<text x="1232" y="264" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#FFFFFF" text-anchor="start">Per chromosome, plus one merged</text>
+<text x="1232" y="284" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#FFFFFF" text-anchor="start">genome-wide tree sequence per</text>
+<text x="1232" y="304" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#FFFFFF" text-anchor="start">replicate · optional VCF</text>
+<rect x="1214.00" y="338.00" width="330.00" height="224.00" rx="10" fill="#FFFFFF" stroke="#C9CED4" stroke-width="1.5"/>
+<text x="1232" y="366" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="600" fill="#1A1D21" text-anchor="start">Validation</text>
+<g transform="translate(1232 380)"><path d="M6 4v60h76" fill="none" stroke="#1A1D21" stroke-width="1.5"/><path d="M8 62L80 8" stroke="#8A929C" stroke-width="1.2" stroke-dasharray="3 3"/>
+<circle cx="20" cy="50" r="3" fill="#2B5FA8"/>
+<circle cx="25" cy="52" r="3" fill="#2B5FA8"/>
+<circle cx="30" cy="44" r="3" fill="#2B5FA8"/>
+<circle cx="40" cy="33" r="3" fill="#6E93C8"/>
+<circle cx="46" cy="35" r="3" fill="#6E93C8"/>
+<circle cx="50" cy="29" r="3" fill="#6E93C8"/>
+<circle cx="58" cy="20" r="3" fill="#B7C9E3"/>
+<circle cx="68" cy="16" r="3" fill="#B7C9E3"/>
+</g>
+<g transform="translate(1372 380)"><path d="M6 4v60h76" fill="none" stroke="#1A1D21" stroke-width="1.5"/>
+<rect x="11" y="14" width="9" height="50" fill="#0E6B6A"/>
+<rect x="23" y="36" width="9" height="28" fill="#0E6B6A"/>
+<rect x="35" y="45" width="9" height="19" fill="#0E6B6A"/>
+<rect x="47" y="50" width="9" height="14" fill="#0E6B6A"/>
+<rect x="59" y="53" width="9" height="11" fill="#0E6B6A"/>
+<rect x="71" y="55" width="9" height="9" fill="#0E6B6A"/>
+</g>
+<text x="1275" y="464" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#3F4650" text-anchor="middle">expected vs</text>
+<text x="1275" y="479" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#3F4650" text-anchor="middle">observed</text>
+<text x="1415" y="464" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#3F4650" text-anchor="middle">site frequency</text>
+<text x="1415" y="479" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#3F4650" text-anchor="middle">spectrum</text>
+<text x="1232" y="506" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">Load, π, Tajima's D and SFS,</text>
+<text x="1232" y="526" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">compared with mutations</text>
+<text x="1232" y="546" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">simulated on the ARG</text>
+<rect x="1214.00" y="576.00" width="330.00" height="90.00" rx="10" fill="#FFFFFF" stroke="#C9CED4" stroke-width="1.5"/>
+<text x="1232" y="604" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="600" fill="#1A1D21" text-anchor="start">Summary report</text>
+<text x="1232" y="628" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">One HTML page: genome retained at</text>
+<text x="1232" y="648" font-family="'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">each step, outlier counts, all plots</text>
+<rect x="56.00" y="724.00" width="1488.00" height="1.00" rx="0" fill="#C9CED4"/>
+<text x="56" y="752" font-family="'IBM Plex Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#3F4650" text-anchor="start">github.com/RILAB/argtest</text>
+<text x="1544" y="752" font-family="'IBM Plex Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#3F4650" text-anchor="end">Ross-Ibarra 2026 · doi:10.5281/zenodo.19698118</text>
+</svg>

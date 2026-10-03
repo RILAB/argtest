@@ -17,7 +17,7 @@ amaranth_firstry/
 amaranth_results/
 
 # Profiling artifacts (speedscope traces, timing dumps)
-reports/profiling/
+docs/dev/reports/profiling/
 
 # Realistic example dataset — large generated artifacts are not tracked.
 # Regenerate with scripts/make_realistic_example.py (seed pinned in

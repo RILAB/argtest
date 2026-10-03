@@ -1,8 +1,8 @@
 # Coalescence and Ne plots
 
-Full option reference for [`scripts/coalescence_ne_plots_from_ts.py`](scripts/coalescence_ne_plots_from_ts.py),
+Full option reference for [`scripts/coalescence_ne_plots_from_ts.py`](../scripts/coalescence_ne_plots_from_ts.py),
 an auxiliary script that is not part of the Snakemake pipeline — see
-[README.md](README.md#auxiliary-scripts) for the others.
+[README.md](scripts.md#auxiliary-scripts) for the others.
 
 It reads a directory of tree-sequence replicates (treated as MCMC draws, ordered naturally by trailing replicate number), computes pair-coalescence mass and rates on a shared time grid, and writes plots plus the underlying numbers. Times are in generations throughout.
 
