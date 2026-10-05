@@ -3,6 +3,44 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
+## [v1.13.1] — 2026-10-04 — dropped-mask-interval warnings, test hardening, docs split
+
+### Added
+
+- Step 4 (`combine_remove_masks.py`) no longer drops zero-length or
+  negative-length mask intervals (`end <= start`) silently. Each one is still
+  skipped, since it covers no sequence, but now prints a warning naming its
+  file and line, and the step-4 log records `dropped_intervals=N` plus one line
+  per dropped row. `pipeline_summary.html` shows a red warning under the
+  retention table listing the affected chromosome/replicate pairs when any were
+  dropped, and nothing otherwise. Logs written by earlier versions lack the
+  field and are treated as having dropped nothing.
+
+### Changed
+
+- The observed-vs-expected outlier band check, previously copied three times
+  across `mutload_masks.py` and `mutload_summary.py`, is now one helper,
+  `argtest_common.outside_band`. Behaviour is unchanged: strict inequalities, so
+  a load exactly on a band edge is not flagged.
+- The README is split into `docs/*.md`, with a graphical abstract; developer
+  notes moved to `docs/dev/`. Open work is now tracked as GitHub issues, and
+  `docs/dev/TODO.md` points there.
+- The realistic example's ground truth, README and scoring report were
+  regenerated and re-scored against v1.13 outputs.
+
+### Fixed
+
+- `docs/outputs.md` now states that VCF `REF`/`ALT` are the ARG's
+  ancestral/derived alleles, not reference/alternate, and that allele strings
+  are copied verbatim (simulated data gives `REF=0`, `ALT=1`).
+- `tests/test_mutload.py` no longer writes into, or deletes files from, the
+  repository's own `results/` and `logs/`; the `mutload_summary` tests now run
+  in a temporary directory. Tests that re-implemented the outlier formula
+  inline, or asserted only that a file existed or an array had a given shape,
+  now exercise the real code and check content, and a new structural test
+  covers `trim_samples` (sample order, isolation inside the removed interval
+  only, and mutation-parent integrity).
+
 ## [v1.13] — 2026-08-21 — genome-wide expected-vs-observed, plot-data dumps, step-7 timeout fix
 
 ### Added
