@@ -75,6 +75,18 @@ def sample_names(ts: tskit.TreeSequence, name_substring_to_remove=""):
     return names
 
 
+def outside_band(observed, expected, cutoff):
+    """Flag cells whose observed load falls outside ``[(1-c)E, (1+c)E]``.
+
+    Strict inequalities, so a value exactly on a band edge is not flagged. A
+    zero expectation gives a zero-width band: any positive observed load is
+    flagged, observed zero is not.
+    """
+    high = (1 + cutoff) * expected
+    low = (1 - cutoff) * expected
+    return (observed > high) | (observed < low)
+
+
 def aggregate_by_individual(load, names):
     # Collapse per-sample loads into per-individual loads by name.
     unique = []

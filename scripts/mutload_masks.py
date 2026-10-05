@@ -13,6 +13,7 @@ from argtest_common import (
     build_snp_windows,
     load_ts,
     mutational_load,
+    outside_band,
     resolve_mu_rate,
     sample_names,
     simulate_expected_load,
@@ -132,9 +133,7 @@ def main():
         ts, windows, names, mutation_rate=mu, seed=args.random_seed
     )
 
-    high = (1 + args.cutoff) * expected
-    low = (1 - args.cutoff) * expected
-    outlier_mask = (load > high) | (load < low)
+    outlier_mask = outside_band(load, expected, args.cutoff)
 
     masked_window_mask = np.zeros(load.shape[0], dtype=bool)
     masked_lines = []

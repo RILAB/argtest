@@ -14,6 +14,7 @@ from argtest_common import (
     build_snp_windows,
     load_ts,
     mutational_load,
+    outside_band,
     resolve_mu_rate,
     sample_names,
     simulate_expected_load,
@@ -201,9 +202,7 @@ def main():
                     ts, windows, names, mutation_rate=mu,
                     seed=args.random_seed,
                 )
-                high = (1 + args.cutoff) * expected
-                low = (1 - args.cutoff) * expected
-                per_window_outlier = (load > high) | (load < low)
+                per_window_outlier = outside_band(load, expected, args.cutoff)
 
                 # Residual: sum obs and exp only over (sample, window) pairs
                 # that survive the per-window flag. With one cutoff knob the
@@ -213,9 +212,7 @@ def main():
                 kept = (~per_window_outlier).astype(float)
                 obs_residual = (load * kept).sum(axis=0)
                 exp_residual = (expected * kept).sum(axis=0)
-                high_total = (1 + args.cutoff) * exp_residual
-                low_total = (1 - args.cutoff) * exp_residual
-                flagged_mask = (obs_residual > high_total) | (obs_residual < low_total)
+                flagged_mask = outside_band(obs_residual, exp_residual, args.cutoff)
 
                 body_parts.append(
                     load_chart_html(
