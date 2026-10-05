@@ -429,6 +429,48 @@ def mu_source_section(mu_sources: list[dict]) -> str:
     )
 
 
+def collect_dropped_mask_intervals(chroms, replicates, out_dir) -> list[dict]:
+    """Read ``dropped_intervals=N`` from each step-4 combine-masks log.
+
+    ``combine_remove_masks.py`` skips zero-length and negative-length BED rows
+    and records them in its log; rows with N > 0 are returned so the summary can
+    flag them. Missing logs or logs without the field are ignored.
+    """
+    log_dir = out_dir / "logs" / "step4_masks"
+    rows = []
+    for chrom in chroms:
+        for rep in replicates:
+            path = log_dir / chrom / f"{rep}.log"
+            if not path.exists():
+                continue
+            for line in iter_data_lines(path):
+                if line.startswith("dropped_intervals="):
+                    n = int(line.split("=", 1)[1])
+                    if n > 0:
+                        rows.append({"chrom": chrom, "rep": rep, "n": n, "log": path})
+                    break
+    return rows
+
+
+def dropped_intervals_section(dropped: list[dict], out_dir: Path) -> str:
+    """Render a warning for degenerate mask intervals dropped at step 4."""
+    if not dropped:
+        return ""
+    total = sum(r["n"] for r in dropped)
+    listed = ", ".join(f'{r["chrom"]}/{r["rep"]} ({r["n"]})' for r in dropped[:12])
+    if len(dropped) > 12:
+        listed += f", … (+{len(dropped) - 12} more)"
+    return (
+        '<p class="note" style="border-left:4px solid #c33;padding-left:10px">'
+        f'<b>{total} mask interval{"s" if total != 1 else ""} dropped</b> at step 4 '
+        'because they had zero or negative length (end &le; start). They were not '
+        'masked. This usually means an upstream mask BED is malformed. '
+        f'Affected chromosome/replicate (count): {listed}. Each dropped row is '
+        'listed with its source file and line in '
+        f'<code>{out_dir / "logs" / "step4_masks"}/&lt;chrom&gt;/&lt;rep&gt;.log</code>.</p>'
+    )
+
+
 def collect_retention(chroms, replicates, out_dir, chrom_lengths, scanned):
     step1_dir = out_dir / "step1_low_rec"
     step2_dir = out_dir / "step2_low_access"
@@ -760,6 +802,9 @@ def main():
         scanned,
     )
     outliers  = collect_outliers(chroms, replicates, out_dir)
+    dropped_html = dropped_intervals_section(
+        collect_dropped_mask_intervals(chroms, replicates, out_dir), out_dir
+    )
 
     mu_sources = collect_mu_sources(scanned)
     mu_source_html = mu_source_section(mu_sources)
@@ -899,6 +944,7 @@ regions and pipeline masks.</p>
 {"".join(ret_rows)}
 </tbody>
 </table>
+{dropped_html}
 
 <h2>Sample trimming (step 5)</h2>
 <p class="note">Individuals with the most outlier windows.

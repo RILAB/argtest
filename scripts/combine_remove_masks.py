@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import sys
 from pathlib import Path
 
 from argtest_common import merge_intervals
@@ -30,7 +31,13 @@ def parse_args():
     return parser.parse_args()
 
 
-def read_intervals(path: Path):
+def read_intervals(path: Path, dropped: list | None = None):
+    """Read BED intervals, rounding outward to whole bp.
+
+    Rows with ``end <= start`` (zero-length or reversed) are skipped with a
+    warning on stderr; pass a list as ``dropped`` to also collect them as
+    ``(path, line_number, start, end)`` tuples.
+    """
     intervals = []
     if not path.exists():
         raise FileNotFoundError(f"Input BED not found: {path}")
@@ -53,8 +60,17 @@ def read_intervals(path: Path):
                     f"Malformed BED coordinates in {path} at line {line_number}: "
                     f"{parts[1]!r}, {parts[2]!r}"
                 ) from exc
-            if end > start:
-                intervals.append([math.floor(start), math.ceil(end)])
+            if end <= start:
+                kind = "zero-length" if end == start else "negative-length"
+                print(
+                    f"WARNING: dropping {kind} interval in {path} at line "
+                    f"{line_number}: start={parts[1]} end={parts[2]}",
+                    file=sys.stderr,
+                )
+                if dropped is not None:
+                    dropped.append((path, line_number, parts[1], parts[2]))
+                continue
+            intervals.append([math.floor(start), math.ceil(end)])
     return intervals
 
 
@@ -63,11 +79,12 @@ def main():
     args.out.parent.mkdir(parents=True, exist_ok=True)
     log_path = args.log or (args.out.parent / "logs" / f"{args.chrom}.combine_masks.log")
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    dropped = []
     merged = merge_intervals(
         [
             interval
             for path in args.inputs
-            for interval in read_intervals(path)
+            for interval in read_intervals(path, dropped=dropped)
         ]
     )
     lines = [f"{args.chrom}\t{int(left)}\t{int(right)}" for left, right in merged]
@@ -78,6 +95,9 @@ def main():
         fh.write(f"out={args.out}\n")
         fh.write(f"inputs={len(args.inputs)}\n")
         fh.write(f"merged_intervals={len(lines)}\n")
+        fh.write(f"dropped_intervals={len(dropped)}\n")
+        for path, line_number, start, end in dropped:
+            fh.write(f"dropped\t{path}:{line_number}\tstart={start}\tend={end}\n")
     print(f"Wrote merged BED: {args.out}")
     print(f"Wrote log: {log_path}")
 

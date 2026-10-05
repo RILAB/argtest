@@ -164,3 +164,41 @@ def test_partial_pool_is_never_captioned_as_genome_wide(tmp_path):
 
 def test_absent_genomewide_dir_yields_no_section(tmp_path):
     assert ps.genomewide_section(["chr1"], tmp_path) == ""
+
+
+def test_dropped_mask_intervals_flow_from_step4_log_to_summary(tmp_path, monkeypatch):
+    import combine_remove_masks as crm
+
+    bed = tmp_path / "mask.bed"
+    bed.write_text("chr1\t5\t5\nchr1\t0\t10\nchr1\t30\t20\n")
+    log = tmp_path / "logs" / "step4_masks" / "chr1" / "1.log"
+    monkeypatch.setattr(
+        crm,
+        "parse_args",
+        lambda: SimpleNamespace(
+            chrom="chr1", out=tmp_path / "out.bed", inputs=[bed], log=log
+        ),
+    )
+    crm.main()
+
+    dropped = ps.collect_dropped_mask_intervals(["chr1"], ["1", "2"], tmp_path)
+
+    assert [(r["chrom"], r["rep"], r["n"]) for r in dropped] == [("chr1", "1", 2)]
+    html = ps.dropped_intervals_section(dropped, tmp_path)
+    assert "2 mask intervals dropped" in html
+    assert "chr1/1 (2)" in html
+
+
+def test_no_dropped_mask_intervals_yields_no_section(tmp_path):
+    log_dir = tmp_path / "logs" / "step4_masks" / "chr1"
+    log_dir.mkdir(parents=True)
+    (log_dir / "1.log").write_text(
+        "# combine_remove_masks summary\nmerged_intervals=3\ndropped_intervals=0\n"
+    )
+    # Logs written before dropped_intervals existed lack the field entirely.
+    (log_dir / "2.log").write_text("# combine_remove_masks summary\nmerged_intervals=3\n")
+
+    dropped = ps.collect_dropped_mask_intervals(["chr1", "chr2"], ["1", "2"], tmp_path)
+
+    assert dropped == []
+    assert ps.dropped_intervals_section(dropped, tmp_path) == ""
