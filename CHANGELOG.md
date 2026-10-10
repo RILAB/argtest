@@ -3,6 +3,19 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
+## [Unreleased]
+
+### Fixed
+
+- Mutation maps were not found for trees kept in a `tree_subdir` (the
+  singer-snakemake layout `<chrom>/trees/<chrom>.<rep>.tsz` with the map at
+  `<chrom>/<chrom>.mut_rate.p`). `infer_mu_path` tried only `<stem>.mut_rate.p`
+  and `trees.mut_rate.p`, so every run fell back to the flat scalar
+  `mutation_rate`: step 2 masked no inaccessible sequence and step 3 called
+  outliers against a uniform-rate expectation. It now also tries
+  `<grandparent-directory-name>.mut_rate.p`. Runs on that layout since v1.10
+  should be redone.
+
 ## [v1.13.1] — 2026-10-04 — dropped-mask-interval warnings, test hardening, docs split
 
 ### Added

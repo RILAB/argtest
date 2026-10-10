@@ -21,6 +21,36 @@ def test_infer_mu_path_uses_parent_chromosome_name(tmp_path):
     assert inferred == mu_path
 
 
+def test_infer_mu_path_finds_chrom_map_above_tree_subdir(tmp_path):
+    # singer-snakemake layout: <chrom>/trees/<chrom>.<rep>.tsz with the
+    # chromosome-wide map at <chrom>/<chrom>.mut_rate.p. Neither the ts stem
+    # ("<chrom>.100") nor the parent name ("trees") matches that file.
+    chrom = "chr.1.combined.snp.te.sorted"
+    trees_dir = tmp_path / chrom / "trees"
+    trees_dir.mkdir(parents=True)
+    ts_path = trees_dir / f"{chrom}.100.tsz"
+    ts_path.touch()
+    mu_path = tmp_path / chrom / f"{chrom}.mut_rate.p"
+    with open(mu_path, "wb") as fh:
+        pickle.dump(msprime.RateMap(position=[0, 10], rate=[1.0]), fh)
+
+    assert infer_mu_path(ts_path) == mu_path
+
+
+def test_infer_mu_path_prefers_replicate_map_over_chrom_map(tmp_path):
+    chrom = "chr1"
+    trees_dir = tmp_path / chrom / "trees"
+    trees_dir.mkdir(parents=True)
+    ts_path = trees_dir / f"{chrom}.7.tsz"
+    ts_path.touch()
+    rate = msprime.RateMap(position=[0, 10], rate=[1.0])
+    for path in (trees_dir / f"{chrom}.7.mut_rate.p", tmp_path / chrom / f"{chrom}.mut_rate.p"):
+        with open(path, "wb") as fh:
+            pickle.dump(rate, fh)
+
+    assert infer_mu_path(ts_path) == trees_dir / f"{chrom}.7.mut_rate.p"
+
+
 def test_find_low_access_regions_default_log_goes_under_logs(tmp_path, monkeypatch):
     ts_dir = tmp_path / "trees"
     ts_dir.mkdir()

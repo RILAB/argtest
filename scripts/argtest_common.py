@@ -502,6 +502,11 @@ def infer_mu_path(ts_path: Path) -> Path:
     """Find a mutation map using a small, deterministic set of exact paths."""
     parent = ts_path.parent
     names = [f"{ts_path.stem}.mut_rate.p", f"{parent.name}.mut_rate.p"]
+    # Trees kept in a subdirectory of the chromosome dir (tree_subdir, e.g.
+    # singer-snakemake's <chrom>/trees/<chrom>.<rep>.tsz): the chromosome-wide
+    # map is named after the grandparent, <chrom>/<chrom>.mut_rate.p.
+    if parent.parent.name:
+        names.append(f"{parent.parent.name}.mut_rate.p")
     tried = []
     seen = set()
     for directory in (parent, parent.parent):
