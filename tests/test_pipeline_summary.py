@@ -292,6 +292,20 @@ def test_map_files_are_listed_and_aliases_noted(tmp_path):
     assert "<code>/data/chr1/chr1.mut_rate.p</code>" in html
     assert "<code>/data/map.tsv</code>" in html
     assert "names matched via alias: chr1 → 1" in html
+    assert "<td>step 1 · step 6b</td>" in html
+    assert "<td>step 1 · step 6b · summary lengths</td>" in html
+
+
+def test_reference_provenance_omits_step6b_when_validation_did_not_run(tmp_path):
+    _write_logs(tmp_path, "sibling", "map file /data/chr1/chr1.mut_rate.p")
+    cfg = _run_config()
+    cfg["validation"]["run_validation"] = False
+
+    html, _, _ = _provenance(tmp_path, cfg)
+
+    assert "<td>step 1</td>" in html
+    assert "<td>step 1 · summary lengths</td>" in html
+    assert "step 6b" not in html
 
 
 def test_logs_without_mu_source_are_unrecorded_not_flagged(tmp_path):

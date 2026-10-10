@@ -297,6 +297,9 @@ def test_shipped_config_resource_keys_are_all_known_rules(tmp_path):
 @pytest.mark.skipif(not SNK_AVAILABLE, reason=SNK_SKIP_REASON)
 def test_snakemake_real_run(tmp_path):
     dataset = build_dataset(tmp_path)
+    with open(dataset["config"], "a") as fh:
+        # An omitted vcf_reps resolves to every post-burn-in replicate.
+        fh.write("emit_vcf: true\n")
     result = run_snakemake(REPO_ROOT, dataset["config"], "--cores", "1", "--rerun-incomplete")
 
     combined_dir = dataset["out_dir"] / "combined"
@@ -314,6 +317,7 @@ def test_snakemake_real_run(tmp_path):
     # Every resolved setting reaches the summary via run_config.json.
     run_config = json.loads((dataset["out_dir"] / "run_config.json").read_text())
     assert "mutload_fraction" in run_config["step3"]
+    assert run_config["outputs"]["vcf_reps"] == ["1", "2"]
     summary = (dataset["out_dir"] / "pipeline_summary.html").read_text()
     assert "mutload_fraction:" in summary
     assert "Inputs and fallbacks" in summary

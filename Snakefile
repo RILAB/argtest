@@ -513,7 +513,9 @@ RUN_CONFIG = {
         "out_dir": str(OUT_DIR),
         "merged_out_suffix": MERGED_OUT_SUFFIX,
         "emit_vcf": EMIT_VCF,
-        "vcf_reps": VCF_REPS_REQUESTED,
+        # Record the effective replicate set, not merely the optional request:
+        # an unset vcf_reps means every post-burn-in replicate when enabled.
+        "vcf_reps": VCF_REPS if EMIT_VCF else None,
     },
 }
 

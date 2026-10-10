@@ -506,8 +506,10 @@ def provenance_section(run_cfg, step1_refs, mu_by_step, chrom_len_sources,
             f"<code>{_esc(where)}/{_esc(inputs.get('tree_pattern', '*'))}</code>",
             status, bad=bool(missing))
 
-    # HapMap and FAI, as step 1 actually read them.
+    # HapMap and FAI, as step 1 actually read them. Step 6b also consumes both
+    # references when validation is enabled.
     recorded = [r for r in step1_refs if r["recorded"]]
+    validation_ran = bool((run_cfg or {}).get("validation", {}).get("run_validation"))
     for label, key, cfg_key in (("Recombination map (HapMap)", "hapmap", "hapmap"),
                                 ("FASTA index (.fai)", "fai", "fai")):
         paths = sorted({r[key] for r in recorded if r[key]})
@@ -524,7 +526,10 @@ def provenance_section(run_cfg, step1_refs, mu_by_step, chrom_len_sources,
             status += ('<br><span class="muted">'
                        f'{len(step1_refs) - len(recorded)} step-1 log(s) predate '
                        'name-match logging</span>')
-        row(label, "step 1" + (" · summary lengths" if key == "fai" else ""),
+        used_by = "step 1" + (" · step 6b" if validation_ran else "")
+        if key == "fai":
+            used_by += " · summary lengths"
+        row(label, used_by,
             _files_list(paths), status)
 
     # Chromosome lengths the summary itself looked up (retention denominators).
