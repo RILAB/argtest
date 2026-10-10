@@ -89,6 +89,12 @@ def test_chromosome_filter_scans_hapmap_once_and_preserves_requested_alias(
     assert {line.split("\t")[0] for line in bed.read_text().splitlines()} == {
         "combined.1"
     }
+    # The log records which files were read and which names matched, for the
+    # pipeline summary's inputs table.
+    log = (out_dir / "logs" / "hapmap_low_rec_mask.log").read_text()
+    assert f"hapmap={hapmap}\n" in log
+    assert f"fai={fai}\n" in log
+    assert "chrom_match=combined.1\thapmap=chr1\tfai=chr1\n" in log
 
 
 # --------------------------------------------------------------------------- #

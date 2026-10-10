@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import base64
+import json
 import math
 import re
 import subprocess
 from collections import defaultdict
+from html import escape as html_escape
 from pathlib import Path
 
 from argtest_common import (
@@ -114,40 +116,12 @@ def parse_args():
         ),
     )
     p.add_argument(
-        "--rec-fraction",
-        type=float,
+        "--run-config",
+        type=Path,
         default=None,
-        help="Step 1 --rec-fraction value, echoed into the Run-info block.",
-    )
-    p.add_argument(
-        "--low-access-window",
-        type=int,
-        default=None,
-        help="Step 2 --window-size value, echoed into the Run-info block.",
-    )
-    p.add_argument(
-        "--low-access-cutoff",
-        type=int,
-        default=None,
-        help="Step 2 --cutoff-bp value, echoed into the Run-info block.",
-    )
-    p.add_argument(
-        "--mutload-cutoff",
-        type=float,
-        default=None,
-        help="Step 3 --cutoff value, echoed into the Run-info block.",
-    )
-    p.add_argument(
-        "--mutation-rate",
-        default=None,
-        help="Validation-plot mutation rate, echoed into the Run-info block.",
-    )
-    p.add_argument(
-        "--sim-branch",
-        default="false",
         help=(
-            'Whether step 6 used --sim-branch. Accepts "true"/"false" as a '
-            'string (default: "false"); echoed into the Run-info block.'
+            "run_config.json written by the Snakefile: every resolved setting, "
+            "rendered into the Run-settings block. Without it settings are not shown."
         ),
     )
     return p.parse_args()
@@ -187,6 +161,14 @@ def _fai_num_index(chrom_lengths: dict[str, int]) -> dict[str, int]:
             num = m.group(1)
             by_num[num] = None if num in by_num else length
     return {k: v for k, v in by_num.items() if v is not None}
+
+
+def chrom_len_source(chrom: str, chrom_lengths: dict[str, int], by_num: dict[str, int]) -> str:
+    """How lookup_chrom_len finds ``chrom``: "exact", "suffix" (fallback) or "missing"."""
+    if chrom in chrom_lengths:
+        return "exact"
+    m = re.search(r"(\d+)$", chrom)
+    return "suffix" if m and m.group(1) in by_num else "missing"
 
 
 def lookup_chrom_len(chrom: str, chrom_lengths: dict[str, int], by_num: dict[str, int]) -> int:
@@ -382,50 +364,347 @@ def collect_mu_sources(scanned: dict[tuple[str, str], dict]) -> list[dict]:
     return [scanned[key]["mu_row"] for key in sorted(scanned)]
 
 
-def mu_source_section(mu_sources: list[dict]) -> str:
-    """Render the mutation-rate provenance block, flagging scalar fallbacks."""
-    if not mu_sources:
-        return ""
-    counts: dict[str, int] = {}
-    for row in mu_sources:
-        counts[row["kind"]] = counts.get(row["kind"], 0) + 1
-    total = len(mu_sources)
+# ---------------------------------------------------------------------------
+# Run settings and input provenance
+# ---------------------------------------------------------------------------
 
-    order = ["sibling", "metadata", "scalar", "unrecorded", "unreadable"]
-    labels = {
-        "sibling": "mutation map file (<code>*.mut_rate.p</code>)",
-        "metadata": "ratemap embedded in the input ARG",
-        "scalar": "flat scalar <code>mutation_rate</code> fallback",
-        "unrecorded": "not recorded",
-        "unreadable": "could not be read",
+def load_run_config(path: Path | None) -> dict | None:
+    """Read the resolved settings the Snakefile wrote (``run_config.json``)."""
+    if path is None or not path.exists():
+        return None
+    return json.loads(path.read_text())
+
+
+def read_log_fields(path: Path) -> dict[str, str]:
+    """``key=value`` lines of a step log (first occurrence wins); {} if absent."""
+    fields: dict[str, str] = {}
+    if not path.exists():
+        return fields
+    for line in iter_data_lines(path):
+        key, sep, value = line.partition("=")
+        if sep and key.strip() and " " not in key.strip():
+            fields.setdefault(key.strip(), value)
+    return fields
+
+
+def collect_step1_refs(chroms, out_dir: Path) -> list[dict]:
+    """Per chromosome: the HapMap/FAI files step 1 read and the names it matched."""
+    rows = []
+    for chrom in chroms:
+        fields = read_log_fields(out_dir / "logs" / "step1" / f"{chrom}.log")
+        match = fields.get("chrom_match", "")
+        parts = dict(p.split("=", 1) for p in match.split("\t")[1:] if "=" in p)
+        rows.append({
+            "chrom": chrom,
+            "recorded": bool(match),
+            "hapmap": fields.get("hapmap"),
+            "fai": fields.get("fai"),
+            "hapmap_key": parts.get("hapmap"),
+            "fai_key": parts.get("fai"),
+        })
+    return rows
+
+
+def _mu_row_from_log(chrom: str, rep: str, path: Path) -> dict:
+    fields = read_log_fields(path)
+    kind = fields.get("mutation_rate_source")
+    if not kind:
+        return {"chrom": chrom, "rep": rep, "kind": "unrecorded",
+                "detail": f"no mutation_rate_source in {path}"}
+    return {"chrom": chrom, "rep": rep, "kind": kind,
+            "detail": fields.get("mutation_rate_detail", "")}
+
+
+def collect_step_mu_sources(chroms, replicates, out_dir: Path, scanned) -> dict:
+    """Mutation-rate source per run, for each step that resolves one.
+
+    Steps 2 and 3 resolve a rate from the raw input ARGs and record it in their
+    logs; step 4 embeds the rate it resolved into the trimmed ARG, so the final
+    filtered ARGs carry it (``mu_source`` metadata). Pairs that were never run
+    (missing replicates) are skipped rather than reported as unrecorded.
+    """
+    logs = out_dir / "logs"
+    present = {key for key in scanned}
+    step3 = [
+        _mu_row_from_log(chrom, rep, logs / "step3" / chrom / f"{rep}.log")
+        for chrom in chroms for rep in replicates
+        if not present or (chrom, rep) in present
+    ]
+    return {
+        "Step 2 · low-access mask": [
+            _mu_row_from_log(chrom, "", logs / "step2" / f"{chrom}.log")
+            for chrom in chroms
+        ],
+        "Step 3 · mutation-load expectation": step3,
+        "Step 4 · embedded in trimmed ARGs": collect_mu_sources(scanned),
     }
-    items = "".join(
-        f'<div class="config-item"><span>{labels.get(k, k)}:</span> '
-        f'{counts[k]} / {total}</div>'
-        for k in order if k in counts
-    )
 
-    warn = ""
-    fallback = [r for r in mu_sources if r["kind"] == "scalar"]
-    if fallback:
-        listed = ", ".join(f'{r["chrom"]}/{r["rep"]}' for r in fallback[:12])
-        if len(fallback) > 12:
-            listed += f", … (+{len(fallback) - 12} more)"
-        warn = (
-            '<p class="note" style="border-left:4px solid #c33;padding-left:10px">'
-            f'<b>{len(fallback)} of {total}</b> filtered ARGs fell back to the flat '
-            'scalar <code>mutation_rate</code> because no mutation map was found at '
-            'an exact sibling path. A flat rate removes the local mutation-rate '
-            'correction that the step-3 outlier test is designed to apply, so those '
-            'outlier calls are made against a uniform-rate expectation. '
-            f'Affected: {listed}.</p>'
+
+def _esc(value) -> str:
+    return html_escape(str(value))
+
+
+def _files_list(paths: list[str], limit: int = 12) -> str:
+    """Compact list of file paths, collapsed into <details> when long."""
+    if not paths:
+        return '<span class="muted">—</span>'
+    items = "<br>".join(f"<code>{_esc(p)}</code>" for p in paths[:limit])
+    if len(paths) > limit:
+        items += f'<br><span class="muted">… (+{len(paths) - limit} more)</span>'
+    if len(paths) == 1:
+        return items
+    return f"<details><summary>{len(paths)} files</summary>{items}</details>"
+
+
+def _map_path(row: dict) -> str | None:
+    detail = row.get("detail", "")
+    return detail[len("map file "):] if detail.startswith("map file ") else None
+
+
+# What a flat scalar rate costs at each step, for the warning banner.
+SCALAR_CONSEQUENCE = {
+    "Step 2 · low-access mask":
+        "rate-0 (inaccessible) regions of the map are not masked",
+    "Step 3 · mutation-load expectation":
+        "outliers are called against a uniform-rate expectation",
+    "Step 4 · embedded in trimmed ARGs":
+        "downstream accessibility and validation see a uniform rate",
+}
+
+
+def provenance_section(run_cfg, step1_refs, mu_by_step, chrom_len_sources,
+                       fai_path: Path) -> tuple[str, list[str]]:
+    """Render the input-files table. Returns (html, red-flag messages)."""
+    flags: list[str] = []
+    rows = []
+
+    def row(label, used_by, source, status, bad=False):
+        cls = ' class="flagged"' if bad else ""
+        rows.append(
+            f"<tr{cls}><td>{label}</td><td>{used_by}</td>"
+            f"<td>{source}</td><td>{status}</td></tr>"
         )
+
+    inputs = (run_cfg or {}).get("inputs", {})
+
+    # Input ARGs.
+    if inputs:
+        where = inputs["root_dir"] + "/<chrom>"
+        if inputs.get("tree_subdir"):
+            where += f"/{inputs['tree_subdir']}"
+        missing = inputs.get("missing_pairs") or []
+        status = "ok"
+        if missing:
+            listed = ", ".join(f"{c}/{r}" for c, r in missing[:12])
+            if len(missing) > 12:
+                listed += f", … (+{len(missing) - 12} more)"
+            status = (f'<span class="warn">{len(missing)} chromosome/replicate '
+                      f'pairs missing</span> (allow_missing_replicates): {_esc(listed)}')
+            flags.append(f"{len(missing)} chromosome/replicate input ARGs are missing "
+                         "and were skipped (allow_missing_replicates).")
+        row("Input ARGs", "all steps",
+            f"<code>{_esc(where)}/{_esc(inputs.get('tree_pattern', '*'))}</code>",
+            status, bad=bool(missing))
+
+    # HapMap and FAI, as step 1 actually read them.
+    recorded = [r for r in step1_refs if r["recorded"]]
+    for label, key, cfg_key in (("Recombination map (HapMap)", "hapmap", "hapmap"),
+                                ("FASTA index (.fai)", "fai", "fai")):
+        paths = sorted({r[key] for r in recorded if r[key]})
+        if not paths and inputs.get(cfg_key):
+            paths = [inputs[cfg_key]]
+        aliased = [f"{r['chrom']} → {r[key + '_key']}" for r in recorded
+                   if r[key + "_key"] and r[key + "_key"] != r["chrom"]]
+        status = "ok"
+        if aliased:
+            status = ('<span class="muted">names matched via alias: '
+                      f'{_esc(", ".join(aliased[:6]))}'
+                      f'{" …" if len(aliased) > 6 else ""}</span>')
+        if len(recorded) < len(step1_refs):
+            status += ('<br><span class="muted">'
+                       f'{len(step1_refs) - len(recorded)} step-1 log(s) predate '
+                       'name-match logging</span>')
+        row(label, "step 1" + (" · summary lengths" if key == "fai" else ""),
+            _files_list(paths), status)
+
+    # Chromosome lengths the summary itself looked up (retention denominators).
+    fuzzy = [c for c, s in chrom_len_sources.items() if s == "suffix"]
+    absent = [c for c, s in chrom_len_sources.items() if s == "missing"]
+    if fuzzy or absent:
+        parts = []
+        if fuzzy:
+            parts.append(f"{len(fuzzy)} matched only by trailing number "
+                         f"({_esc(', '.join(fuzzy[:6]))})")
+        if absent:
+            parts.append(f"{len(absent)} not found, length taken as 0 "
+                         f"({_esc(', '.join(absent[:6]))})")
+        row("Chromosome lengths", "summary percentages",
+            f"<code>{_esc(fai_path)}</code>",
+            f'<span class="warn">{"; ".join(parts)}</span>', bad=True)
+        flags.append("Chromosome lengths for the retention table fell back to a "
+                     "trailing-number match or were not found in the .fai.")
+
+    # Mutation-rate source per step.
+    labels = {"sibling": "map file", "metadata": "embedded ratemap",
+              "scalar": "FLAT SCALAR", "unrecorded": "not recorded",
+              "unreadable": "unreadable"}
+    for step, mu_rows in mu_by_step.items():
+        if not mu_rows:
+            continue
+        counts: dict[str, int] = defaultdict(int)
+        for r in mu_rows:
+            counts[r["kind"]] += 1
+        total = len(mu_rows)
+        maps = sorted({p for p in map(_map_path, mu_rows) if p})
+        bits = []
+        for kind in ("sibling", "metadata", "scalar", "unrecorded", "unreadable"):
+            if counts.get(kind):
+                text = f"{labels[kind]} {counts[kind]}/{total}"
+                if kind in ("scalar", "unreadable"):
+                    text = f'<span class="warn">{text}</span>'
+                elif kind == "unrecorded":
+                    text = f'<span class="muted">{text} (log predates this field)</span>'
+                bits.append(text)
+        bad = bool(counts.get("scalar") or counts.get("unreadable"))
+        if counts.get("scalar"):
+            flags.append(
+                f"{step}: flat scalar mutation_rate used for {counts['scalar']}/{total} "
+                f"runs because no mutation map was found; {SCALAR_CONSEQUENCE[step]}."
+            )
+        if counts.get("unreadable"):
+            flags.append(f"{step}: {counts['unreadable']}/{total} final ARGs could not be read.")
+        row("Mutation-rate map", _esc(step), _files_list(maps), "<br>".join(bits), bad=bad)
+
+    # Step 2 reads one ARG per chromosome; say which.
+    first = (run_cfg or {}).get("step2", {}).get("first_replicate_per_chrom") or {}
+    if first:
+        row("Step-2 source ARG", "step 2",
+            _files_list(list(first.values())),
+            '<span class="muted">first replicate found per chromosome '
+            '(burn-in replicates included)</span>')
+
+    # User-supplied trimming BEDs.
+    beds = (run_cfg or {}).get("step5", {}).get("trim_remove_bed") or []
+    if beds:
+        gone = [b for b in beds if not Path(b).exists()]
+        row("Extra trim BEDs", "step 5", _files_list(beds),
+            f'<span class="warn">{len(gone)} no longer on disk</span>' if gone else "ok",
+            bad=bool(gone))
+
+    body = "".join(rows)
+    section = (
+        '<h2 id="inputs">Inputs and fallbacks</h2>'
+        '<p class="note">Files each step actually read, taken from the step logs and '
+        'the final ARGs. Mutation-rate resolution order: ratemap embedded in the ARG, '
+        'then an exact <code>*.mut_rate.p</code> beside or above the tree file, then '
+        'the scalar <code>mutation_rate</code>. Rows in red used a fallback.</p>'
+        '<table class="prov"><thead><tr><th>Input</th><th>Used by</th>'
+        f'<th>Source</th><th>Status</th></tr></thead><tbody>{body}</tbody></table>'
+    )
+    return section, flags
+
+
+def _fmt_setting(key: str, value) -> str:
+    if value is None or value == [] or value == "":
+        return '<span class="muted">unset</span>'
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if key.endswith(("_window_size", "_cutoff_bp")) and isinstance(value, (int, float)):
+        # Exact bp: fmt_bp rounds to whole kb, which shows 2,500 as "2 kb".
+        exact = f"{value:,.0f}" if float(value).is_integer() else f"{value:,}"
+        return _esc(f"{exact} bp")
+    if isinstance(value, list):
+        return _esc(", ".join(str(v) for v in value))
+    return _esc(value)
+
+
+SETTING_GROUPS = [
+    ("inputs", "Inputs", ["burnin", "replicates_found", "replicates_used",
+                          "allow_missing_replicates", "base_name",
+                          "name_substring_to_remove"]),
+    ("step1", "Step 1 · low recombination", ["rec_fraction"]),
+    ("step2", "Step 2 · low accessibility", ["low_access_window_size",
+                                             "low_access_cutoff_bp"]),
+    ("step3", "Step 3 · mutation load", ["mutload_cutoff", "mutload_fraction",
+                                         "mutload_window_size", "mutload_snp_window",
+                                         "mutload_random_seed", "mutation_rate"]),
+    ("step5", "Step 5 · sample trimming", ["trim_individuals", "min_samples"]),
+    ("validation", "Validation (step 6)", ["run_validation",
+                                           "validation_first_chrom_only",
+                                           "validation_sim_branch",
+                                           "validation_window_size"]),
+    ("outputs", "Outputs", ["out_dir", "merged_out_suffix", "emit_vcf", "vcf_reps"]),
+]
+
+
+# Keys shown in the Inputs-and-fallbacks table (or folded into another item)
+# instead of the settings grid.
+PROVENANCE_KEYS = {
+    "inputs": {"root_dir", "tree_subdir", "tree_pattern", "hapmap", "fai", "missing_pairs"},
+    "step2": {"first_replicate_per_chrom"},
+    "step5": {"trim_remove_bed"},
+    "validation": {"run_validation_requested"},
+}
+
+
+def settings_section(run_cfg, chroms, replicates, mu_by_step) -> tuple[str, list[str]]:
+    """Render every resolved setting from run_config.json, grouped by step."""
+    flags: list[str] = []
+    head = (f'<div class="config-item"><span>chromosomes:</span> {len(chroms)}</div>'
+            f'<div class="config-item"><span>replicates:</span> {len(replicates)}</div>')
+    if run_cfg is None:
+        return (
+            '<h2>Run settings</h2><div class="config-grid">' + head + "</div>"
+            '<p class="note"><span class="warn">run_config.json not provided</span> — '
+            "settings are not shown. Pass --run-config (the Snakefile does this).</p>",
+            ["Run settings unavailable: no run_config.json was passed to the summary."],
+        )
+    n_scalar = sum(1 for rows in mu_by_step.values() for r in rows if r["kind"] == "scalar")
+    groups = [f'<div class="config-grid">{head}</div>']
+    for group, title, keys in SETTING_GROUPS:
+        section = run_cfg.get(group, {})
+        items = []
+        # Listed keys first, then any key the Snakefile added that this script
+        # does not know yet, so a new setting can never silently go unreported.
+        skip = PROVENANCE_KEYS.get(group, set())
+        extra = sorted(k for k in section if k not in keys and k not in skip)
+        for key in keys + extra:
+            if key not in section:
+                continue
+            value = _fmt_setting(key, section[key])
+            if group == "inputs" and key == "replicates_used" and section[key]:
+                value = _esc(f"{section[key][0]}–{section[key][1]}")
+            if group == "step3" and key == "mutation_rate":
+                value += ' <span class="muted">(fallback only)</span>'
+                if n_scalar:
+                    value += f' <span class="warn">used {n_scalar}× — see Inputs</span>'
+            if group == "validation" and key == "run_validation":
+                if section.get("run_validation_requested") and not section[key]:
+                    value = ('<span class="warn">no — skipped: no mutation_rate and '
+                             'sim-branch off</span>')
+                    flags.append("Validation was requested but skipped: neither "
+                                 "mutation_rate nor validation_sim_branch is set.")
+            items.append(f'<div class="config-item"><span>{key}:</span> {value}</div>')
+        if items:
+            groups.append(f"<h3>{title}</h3>"
+                          f'<div class="config-grid">{"".join(items)}</div>')
+    known = {g for g, _, _ in SETTING_GROUPS}
+    for group in sorted(set(run_cfg) - known):
+        items = "".join(
+            f'<div class="config-item"><span>{_esc(k)}:</span> {_fmt_setting(k, v)}</div>'
+            for k, v in sorted(run_cfg[group].items())
+        ) if isinstance(run_cfg[group], dict) else _fmt_setting(group, run_cfg[group])
+        groups.append(f"<h3>{_esc(group)}</h3><div class=\"config-grid\">{items}</div>")
+    return "<h2>Run settings</h2>" + "".join(groups), flags
+
+
+def flags_banner(flags: list[str]) -> str:
+    if not flags:
+        return ""
+    items = "".join(f"<li>{_esc(f)}</li>" for f in flags)
     return (
-        "<h2>Mutation-rate source</h2>"
-        '<p class="note">Resolution order is: ratemap embedded in the input ARG, '
-        'then an exact sibling <code>*.mut_rate.p</code>, then the scalar '
-        '<code>mutation_rate</code> config value. Recorded per ARG at step 4.</p>'
-        f'<div class="config-grid">{items}</div>{warn}'
+        '<div class="banner"><b>⚠ This run used fallbacks or has warnings</b>'
+        f'<ul>{items}</ul>See <a href="#inputs">Inputs and fallbacks</a>.</div>'
     )
 
 
@@ -626,6 +905,14 @@ img.plot{width:100%;border:1px solid #ddd;border-radius:4px;margin-bottom:4px}
 .chrom-block{margin-bottom:32px;border-top:1px solid #ddd;padding-top:12px}
 .note{font-size:12px;color:#666;margin:0 0 6px 0}
 .warn{color:#c0392b;font-weight:bold}
+.muted{color:#888}
+.banner{border:2px solid #c0392b;background:#fdecea;color:#7b241c;border-radius:4px;
+  padding:10px 14px;margin-top:16px;font-size:13px}
+.banner ul{margin:6px 0 6px 18px;padding:0}
+table.prov td{text-align:left;vertical-align:top}
+table.prov tr.flagged td{background:#fdecea}
+table.prov tr.flagged td:first-child{color:#c0392b}
+details summary{cursor:pointer;color:#2c3e50}
 .footer{max-width:1200px;margin:24px auto 0;padding:12px 24px;border-top:1px solid #ddd;
   font-size:11px;color:#999}
 .footer code{font-family:monospace;color:#666}
@@ -806,31 +1093,28 @@ def main():
         collect_dropped_mask_intervals(chroms, replicates, out_dir), out_dir
     )
 
-    mu_sources = collect_mu_sources(scanned)
-    mu_source_html = mu_source_section(mu_sources)
+    run_cfg = load_run_config(args.run_config)
+    mu_by_step = collect_step_mu_sources(chroms, replicates, out_dir, scanned)
+    by_num = _fai_num_index(chrom_lengths)
+    provenance_html, prov_flags = provenance_section(
+        run_cfg,
+        collect_step1_refs(chroms, out_dir),
+        mu_by_step,
+        {c: chrom_len_source(c, chrom_lengths, by_num) for c in chroms},
+        args.fai,
+    )
+    settings_html, settings_flags = settings_section(run_cfg, chroms, replicates, mu_by_step)
 
     step6_dir = out_dir / "step6_validation"
     gw_html   = genomewide_section(chroms, step6_dir)
     val_html  = validation_section(chroms, out_dir, step6_dir)
 
-    mu_str = args.mutation_rate if args.mutation_rate not in (None, "null") else "—"
-    sim_str = "yes" if args.sim_branch.lower() == "true" else "no"
     version = git_version()
-
-    # ---- Config grid -------------------------------------------------------
-    def cfg(label, val):
-        return f'<div class="config-item"><span>{label}:</span> {val}</div>'
-
-    config_html = "\n".join([
-        cfg("chromosomes", len(chroms)),
-        cfg("replicates", len(replicates)),
-        cfg("rec_fraction", args.rec_fraction if args.rec_fraction is not None else "—"),
-        cfg("low_access_window", fmt_bp(args.low_access_window) if args.low_access_window else "—"),
-        cfg("low_access_cutoff", fmt_bp(args.low_access_cutoff) if args.low_access_cutoff else "—"),
-        cfg("mutload_cutoff", args.mutload_cutoff if args.mutload_cutoff is not None else "—"),
-        cfg("validation_mu", mu_str),
-        cfg("sim_branch", sim_str),
-    ])
+    banner_html = flags_banner(
+        prov_flags + settings_flags
+        + (["Degenerate mask intervals were dropped at step 4 (see retention table)."]
+           if dropped_html else [])
+    )
 
     # ---- Retention table ---------------------------------------------------
     ret_rows = []
@@ -917,11 +1201,9 @@ def main():
 <body>
 <h1>ARG Pipeline Summary</h1>
 <div class="container">
-
-<h2>Run info</h2>
-<div class="config-grid">
-{config_html}
-</div>
+{banner_html}
+{settings_html}
+{provenance_html}
 
 <h2>Genome retention by chromosome</h2>
 <p class="note">Steps 1–2 masks are replicate-independent.
@@ -960,8 +1242,6 @@ Mean ± SD across replicates; bp removed averaged over all chromosomes and repli
 {"".join(outlier_rows)}
 </tbody>
 </table>
-
-{mu_source_html}
 
 {gw_html}
 {val_html}

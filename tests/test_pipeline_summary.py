@@ -202,3 +202,125 @@ def test_no_dropped_mask_intervals_yields_no_section(tmp_path):
 
     assert dropped == []
     assert ps.dropped_intervals_section(dropped, tmp_path) == ""
+
+
+# --------------------------------------------------------------------------- #
+# Run settings and input provenance
+# --------------------------------------------------------------------------- #
+
+def _run_config(**step3):
+    return {
+        "inputs": {"root_dir": "/data", "tree_subdir": "trees", "tree_pattern": "*.tsz",
+                   "burnin": 75, "replicates_found": 150, "replicates_used": ["75", "149"],
+                   "missing_pairs": [], "hapmap": "/data/map.tsv", "fai": "/data/g.fai"},
+        "step1": {"rec_fraction": 0.005},
+        "step2": {"low_access_window_size": 50000.0, "low_access_cutoff_bp": 2500.0},
+        "step3": {"mutload_cutoff": 0.5, "mutload_fraction": 0.25,
+                  "mutation_rate": 3.3e-8, **step3},
+        "validation": {"run_validation": True, "run_validation_requested": True},
+    }
+
+
+def test_settings_section_shows_every_setting_including_unknown_keys():
+    cfg = _run_config(brand_new_knob=7)
+    cfg["future_step"] = {"some_setting": "x"}
+
+    html, flags = ps.settings_section(cfg, ["chr1"], ["75"], {})
+
+    assert "mutload_fraction:</span> 0.25" in html
+    assert "rec_fraction:</span> 0.005" in html
+    assert "replicates_used:</span> 75–149" in html
+    # Sizes are exact, not rounded to whole kb.
+    assert "low_access_cutoff_bp:</span> 2,500 bp" in html
+    assert "low_access_window_size:</span> 50,000 bp" in html
+    # Keys this script does not list explicitly still render.
+    assert "brand_new_knob:</span> 7" in html
+    assert "some_setting:</span> x" in html
+    # Paths belong to the inputs table, not the settings grid.
+    assert "root_dir:" not in html
+    assert flags == []
+
+
+def test_missing_run_config_is_flagged():
+    html, flags = ps.settings_section(None, ["chr1"], ["1"], {})
+    assert "run_config.json not provided" in html
+    assert flags
+
+
+def _write_logs(out_dir, kind, detail):
+    (out_dir / "logs" / "step2").mkdir(parents=True)
+    (out_dir / "logs" / "step2" / "chr1.log").write_text(
+        f"mutation_rate_source={kind}\nmutation_rate_detail={detail}\n")
+    (out_dir / "logs" / "step3" / "chr1").mkdir(parents=True)
+    (out_dir / "logs" / "step3" / "chr1" / "75.log").write_text(
+        f"cutoff=0.5\nmutation_rate_source={kind}\nmutation_rate_detail={detail}\n")
+    (out_dir / "logs" / "step1").mkdir(parents=True)
+    (out_dir / "logs" / "step1" / "chr1.log").write_text(
+        "hapmap=/data/map.tsv\nfai=/data/g.fai\nchrom_match=chr1\thapmap=1\tfai=chr1\n")
+
+
+def _provenance(out_dir, cfg=None):
+    cfg = cfg or _run_config()
+    mu = ps.collect_step_mu_sources(["chr1"], ["75"], out_dir, {})
+    html, flags = ps.provenance_section(
+        cfg, ps.collect_step1_refs(["chr1"], out_dir), mu, {"chr1": "exact"},
+        Path("/data/g.fai"))
+    settings_html, settings_flags = ps.settings_section(cfg, ["chr1"], ["75"], mu)
+    return html, flags, settings_html
+
+
+def test_flat_scalar_mutation_rate_is_flagged_red(tmp_path):
+    _write_logs(tmp_path, "scalar", "FLAT scalar 3.3e-08 (no local rate correction)")
+
+    html, flags, settings_html = _provenance(tmp_path)
+
+    assert html.count('class="flagged"') == 2  # steps 2 and 3
+    assert "FLAT SCALAR 1/1" in html
+    assert any(f.startswith("Step 3") and "flat scalar" in f for f in flags)
+    assert "used 2× — see Inputs" in settings_html
+    banner = ps.flags_banner(flags)
+    assert "This run used fallbacks" in banner and "Step 2" in banner
+
+
+def test_map_files_are_listed_and_aliases_noted(tmp_path):
+    _write_logs(tmp_path, "sibling", "map file /data/chr1/chr1.mut_rate.p")
+
+    html, flags, _ = _provenance(tmp_path)
+
+    assert 'class="flagged"' not in html
+    assert flags == []
+    assert "<code>/data/chr1/chr1.mut_rate.p</code>" in html
+    assert "<code>/data/map.tsv</code>" in html
+    assert "names matched via alias: chr1 → 1" in html
+
+
+def test_logs_without_mu_source_are_unrecorded_not_flagged(tmp_path):
+    (tmp_path / "logs" / "step2").mkdir(parents=True)
+    (tmp_path / "logs" / "step2" / "chr1.log").write_text("Flagged 1 windows\n")
+
+    html, flags, _ = _provenance(tmp_path)
+
+    assert "not recorded 1/1 (log predates this field)" in html
+    assert flags == []
+
+
+def test_missing_pairs_and_fuzzy_chrom_lengths_are_flagged(tmp_path):
+    cfg = _run_config()
+    cfg["inputs"]["missing_pairs"] = [["chr2", "80"]]
+    mu = ps.collect_step_mu_sources(["chr1"], ["75"], tmp_path, {})
+
+    html, flags = ps.provenance_section(
+        cfg, ps.collect_step1_refs(["chr1"], tmp_path), mu,
+        {"chr1": "suffix"}, Path("/data/g.fai"))
+
+    assert "1 chromosome/replicate pairs missing" in html
+    assert "matched only by trailing number" in html
+    assert len(flags) == 2
+
+
+def test_chrom_len_source_distinguishes_exact_suffix_and_missing():
+    lengths = {"chr1": 10, "scaffold_2": 20}
+    by_num = ps._fai_num_index(lengths)
+    assert ps.chrom_len_source("chr1", lengths, by_num) == "exact"
+    assert ps.chrom_len_source("maize.2", lengths, by_num) == "suffix"
+    assert ps.chrom_len_source("chrX", lengths, by_num) == "missing"

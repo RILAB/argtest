@@ -161,18 +161,26 @@ def main():
     # Load once: chromosome resolution and interval construction use the same
     # parsed map instead of scanning a large HapMap file twice per rule.
     hapmap = load_hapmap(args.hapmap)
+    hapmap_keys = {}
     if args.chrom is not None:
         hapmap_key = _resolve_chrom(args.chrom, hapmap, source=args.hapmap)
         if hapmap_key is None:
             raise KeyError(f"Chromosome {args.chrom!r} not found in {args.hapmap}")
         hapmap = {args.chrom: hapmap[hapmap_key]}
+        hapmap_keys[args.chrom] = hapmap_key
 
     total_written = 0
     per_chrom = {}
+    # Which name each chromosome matched in each reference file, so the
+    # pipeline summary can show it when the match was not exact.
+    matches = []
     for chrom, rows in sorted(hapmap.items()):
         fai_chrom = _resolve_chrom(chrom, fai, source=args.fai)
         if fai_chrom is None:
             raise KeyError(f"Chromosome {chrom!r} not found in {args.fai}")
+        matches.append(
+            f"chrom_match={chrom}\thapmap={hapmap_keys.get(chrom, chrom)}\tfai={fai_chrom}"
+        )
         intervals = build_intervals(rows, fai[fai_chrom])
         out_path = args.out_dir / f"{chrom}.low_rec.mask.bed"
         if not intervals:
@@ -204,6 +212,11 @@ def main():
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, "w") as fh:
             fh.write("# hapmap_low_rec_mask summary\n")
+            fh.write(f"hapmap={args.hapmap}\n")
+            fh.write(f"fai={args.fai}\n")
+            fh.write(f"rec_fraction={args.rec_fraction}\n")
+            for ln in matches:
+                fh.write(ln + "\n")
             for ln in summary_lines:
                 fh.write(ln + "\n")
     except Exception:

@@ -91,7 +91,9 @@ def test_find_low_access_regions_default_log_goes_under_logs(tmp_path, monkeypat
     far.main()
 
     assert out_bed.exists()
-    assert (tmp_path / "logs" / "low_access.log").exists()
+    log = (tmp_path / "logs" / "low_access.log").read_text()
+    assert "mutation_rate_source=sibling\n" in log
+    assert f"mutation_rate_detail=map file {mu_path}\n" in log
 
 
 def test_find_low_access_regions_uses_scalar_mutation_rate_fallback(tmp_path, monkeypatch):
@@ -126,6 +128,9 @@ def test_find_low_access_regions_uses_scalar_mutation_rate_fallback(tmp_path, mo
 
     assert out_bed.exists()
     assert out_bed.read_text() == ""
+    # The summary reads this line to flag the flat-rate fallback in red.
+    log = (tmp_path / "logs" / "low_access.log").read_text()
+    assert "mutation_rate_source=scalar\n" in log
 
 
 def test_find_low_access_regions_nonpositive_rate_flags_whole_sequence(tmp_path, monkeypatch):

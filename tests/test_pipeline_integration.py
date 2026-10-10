@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import pickle
 import subprocess
@@ -309,4 +310,11 @@ def test_snakemake_real_run(tmp_path):
 
     merged_ts = load_ts(combined[0])
     assert 0 < merged_ts.sequence_length <= 8000  # 2 chromosomes × 4000 bp each
+
+    # Every resolved setting reaches the summary via run_config.json.
+    run_config = json.loads((dataset["out_dir"] / "run_config.json").read_text())
+    assert "mutload_fraction" in run_config["step3"]
+    summary = (dataset["out_dir"] / "pipeline_summary.html").read_text()
+    assert "mutload_fraction:" in summary
+    assert "Inputs and fallbacks" in summary
     assert merged_ts.num_sites > 0

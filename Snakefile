@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -449,6 +450,72 @@ else:
     VCF_TARGETS = []
 
 SUMMARY_TARGET = str(OUT_DIR / "pipeline_summary.html")
+RUN_CONFIG_TARGET = str(OUT_DIR / "run_config.json")
+
+# Every resolved setting that shapes the outputs, echoed into the step-7 summary
+# from this one dict. Add new config keys here so they cannot silently go
+# missing from the report (mutload_fraction once did). Grouped by step; values
+# are the resolved ones (paths absolute, defaults filled in).
+def first_ts_path(chrom):
+    """The replicate step 2 reads: the first one discovered, burn-in included."""
+    reps = sorted(CHROM_TO_REP[chrom].keys(), key=natural_key)
+    return CHROM_TO_REP[chrom][reps[0]]
+
+
+_MISSING_PAIRS = [
+    [chrom, rep] for rep in REPLICATES for chrom in CHROMS
+    if (chrom, rep) not in TS_LOOKUP
+]
+RUN_CONFIG = {
+    "inputs": {
+        "root_dir": str(ROOT_DIR),
+        "tree_subdir": TREE_SUBDIR or None,
+        "tree_pattern": TREE_PATTERN,
+        "base_name": BASE_NAME,
+        "burnin": BURNIN,
+        "replicates_found": len(REPLICATE_UNION),
+        "replicates_used": [REPLICATES[0], REPLICATES[-1]] if REPLICATES else None,
+        "allow_missing_replicates": ALLOW_MISSING_REPLICATES,
+        "missing_pairs": _MISSING_PAIRS,
+        "hapmap": str(HAPMAP),
+        "fai": str(FAI),
+        "name_substring_to_remove": NAME_SUBSTRING_TO_REMOVE,
+    },
+    "step1": {"rec_fraction": REC_FRACTION},
+    "step2": {
+        "low_access_window_size": LOW_ACCESS_WINDOW_SIZE,
+        "low_access_cutoff_bp": LOW_ACCESS_CUTOFF_BP,
+        "first_replicate_per_chrom": {
+            chrom: str(first_ts_path(chrom)) for chrom in CHROMS
+        },
+    },
+    "step3": {
+        "mutload_cutoff": MUTLOAD_CUTOFF,
+        "mutload_fraction": MUTLOAD_FRACTION,
+        "mutload_window_size": MUTLOAD_WINDOW_SIZE,
+        "mutload_snp_window": MUTLOAD_SNP_WINDOW,
+        "mutload_random_seed": MUTLOAD_RANDOM_SEED,
+        "mutation_rate": MUTATION_RATE,
+    },
+    "step5": {
+        "trim_individuals": TRIM_INDIVIDUALS or None,
+        "trim_remove_bed": TRIM_REMOVE_BEDS or None,
+        "min_samples": MIN_SAMPLES,
+    },
+    "validation": {
+        "run_validation": RUN_VALIDATION,
+        "run_validation_requested": bool(config.get("run_validation", True)),
+        "validation_first_chrom_only": VALIDATION_FIRST_CHROM_ONLY,
+        "validation_sim_branch": VALIDATION_SIM_BRANCH,
+        "validation_window_size": float(VALIDATION_WINDOW_SIZE),
+    },
+    "outputs": {
+        "out_dir": str(OUT_DIR),
+        "merged_out_suffix": MERGED_OUT_SUFFIX,
+        "emit_vcf": EMIT_VCF,
+        "vcf_reps": VCF_REPS_REQUESTED,
+    },
+}
 
 
 def tree_inputs_for_chrom(wildcards):
@@ -516,8 +583,7 @@ rule step1_low_rec_masks:
 
 
 def first_ts_for_chrom(wildcards):
-    reps = sorted(CHROM_TO_REP[wildcards.chrom].keys(), key=natural_key)
-    return str(CHROM_TO_REP[wildcards.chrom][reps[0]])
+    return str(first_ts_path(wildcards.chrom))
 
 
 rule step2_low_access:
@@ -881,9 +947,25 @@ if RUN_VALIDATION:
             """
 
 
+rule step7_run_config:
+    output:
+        RUN_CONFIG_TARGET
+    params:
+        # Passed as a param (not read from the global at run time) so a change
+        # to any setting changes the params and reruns the summary.
+        run_config=json.dumps(RUN_CONFIG, sort_keys=True),
+    localrule: True
+    run:
+        Path(output[0]).parent.mkdir(parents=True, exist_ok=True)
+        Path(output[0]).write_text(
+            json.dumps(json.loads(params.run_config), indent=1, sort_keys=True) + "\n"
+        )
+
+
 rule step7_summary:
     input:
         fai=str(FAI),
+        run_config=RUN_CONFIG_TARGET,
         filtered=FILTERED_TS_TARGETS,
         targets=MERGED_TARGETS + STEP6_TARGETS + STEP6B_TARGETS,
     output:
@@ -899,12 +981,6 @@ rule step7_summary:
         out_dir=str(OUT_DIR),
         chroms=" ".join(CHROMS),
         replicates=" ".join(REPLICATES),
-        rec_fraction=REC_FRACTION,
-        low_access_window=int(LOW_ACCESS_WINDOW_SIZE),
-        low_access_cutoff=int(LOW_ACCESS_CUTOFF_BP),
-        mutload_cutoff=MUTLOAD_CUTOFF,
-        mutation_rate=MUTATION_RATE if MUTATION_RATE is not None else "null",
-        sim_branch="true" if VALIDATION_SIM_BRANCH else "false",
         filtered_ts_args=" ".join(
             f'"{FILTERED_TS_DIR / chrom / f"{rep}.{PAIR_EXT[(chrom, rep)]}"}"'
             for chrom, rep in PAIRS
@@ -918,11 +994,6 @@ rule step7_summary:
           --replicates {params.replicates} \
           --filtered-ts {params.filtered_ts_args} \
           --out "{output}" \
-          --rec-fraction {params.rec_fraction} \
-          --low-access-window {params.low_access_window} \
-          --low-access-cutoff {params.low_access_cutoff} \
-          --mutload-cutoff {params.mutload_cutoff} \
-          --mutation-rate {params.mutation_rate} \
-          --sim-branch {params.sim_branch} \
+          --run-config "{input.run_config}" \
           >> "{log}" 2>&1
         """

@@ -16,6 +16,31 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
   `<grandparent-directory-name>.mut_rate.p`. Runs on that layout since v1.10
   should be redone.
 
+### Added
+
+- `pipeline_summary.html` shows every resolved setting, grouped by step, from a
+  new `<out_dir>/run_config.json` written by the Snakefile (previously only six
+  settings were echoed; `mutload_fraction`, `burnin`, the mutload window, seed,
+  trimming and validation options were missing). Keys the summary does not
+  list explicitly are still shown, so new settings cannot go unreported.
+- A new "Inputs and fallbacks" table lists the files each step actually read:
+  input ARG location, HapMap and FAI (with any chromosome-name aliases), the
+  mutation-rate source per step (2, 3 and 4) with the map files used, step 2's
+  source ARG per chromosome, and extra trim BEDs. Fallbacks (flat scalar
+  mutation rate, missing replicate pairs, chromosome lengths matched only by
+  trailing number, unreadable ARGs) are shown in red and listed in a banner at
+  the top of the page.
+- Step logs record their inputs: step 1 the HapMap/FAI paths and the name each
+  chromosome matched; steps 2 and 3 `mutation_rate_source` and
+  `mutation_rate_detail`; step 3 also `fraction`. Logs from earlier versions
+  show as "not recorded".
+
+### Changed
+
+- `pipeline_summary.py` takes `--run-config` in place of `--rec-fraction`,
+  `--low-access-window`, `--low-access-cutoff`, `--mutload-cutoff`,
+  `--mutation-rate` and `--sim-branch`.
+
 ## [v1.13.1] — 2026-10-04 — dropped-mask-interval warnings, test hardening, docs split
 
 ### Added

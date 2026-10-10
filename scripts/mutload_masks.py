@@ -14,7 +14,8 @@ from argtest_common import (
     load_ts,
     mutational_load,
     outside_band,
-    resolve_mu_rate,
+    describe_mu_source,
+    resolve_mu_rate_with_source,
     sample_names,
     simulate_expected_load,
 )
@@ -128,7 +129,9 @@ def main():
     )
     load, unique_names = aggregate_by_individual(load, names)
 
-    mu = resolve_mu_rate(ts, args.ts, scalar_fallback=args.mutation_rate)
+    mu, mu_source = resolve_mu_rate_with_source(
+        ts, args.ts, scalar_fallback=args.mutation_rate
+    )
     expected = simulate_expected_load(
         ts, windows, names, mutation_rate=mu, seed=args.random_seed
     )
@@ -176,6 +179,9 @@ def main():
         fh.write(f"individuals={load.shape[1]}\n")
         fh.write(f"random_seed={args.random_seed}\n")
         fh.write(f"cutoff={args.cutoff}\n")
+        fh.write(f"fraction={args.fraction}\n")
+        fh.write(f"mutation_rate_source={mu_source['kind']}\n")
+        fh.write(f"mutation_rate_detail={describe_mu_source(mu_source)}\n")
         fh.write(f"outlier_windows_written={len(outlier_lines)}\n")
         fh.write(f"masked_windows={len(masked_lines)}\n")
 

@@ -177,12 +177,13 @@ By default, Snakemake writes outputs beneath `out_dir` with subdirectories for e
     genomewide/{original,cleaned}/  # step 6b pooled expected-vs-observed plots + genomewide-windows.tsv
   vcf/                 # per-(chromosome, replicate) VCFs, if emit_vcf: true
   pipeline_summary.html
+  run_config.json      # every resolved setting, as shown in the summary
   logs/
 ```
 
 Intermediate filenames include both chromosome and replicate information so they stay unique across the full workflow.
 
-The final merged tree sequences are `combined/<base_name>.combined.<replicate>.<suffix>`, and `pipeline_summary.html` collects retention statistics and all plots in one page. See [docs/outputs.md](docs/outputs.md) for naming details, how to find the tree at a chromosome position in a merged file, and VCF export.
+The final merged tree sequences are `combined/<base_name>.combined.<replicate>.<suffix>`, and `pipeline_summary.html` collects every run setting, the input files each step actually read (with any fallback, such as a flat mutation rate used because no map was found, flagged in red), retention statistics and all plots in one page. See [docs/outputs.md](docs/outputs.md) for naming details, how to find the tree at a chromosome position in a merged file, and VCF export.
 
 ## Repository notes
 

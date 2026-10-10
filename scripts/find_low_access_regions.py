@@ -12,7 +12,8 @@ from argtest_common import (
     build_bp_windows,
     load_ts,
     overlap_lengths,
-    resolve_mu_rate,
+    describe_mu_source,
+    resolve_mu_rate_with_source,
 )
 
 
@@ -95,7 +96,7 @@ def main():
     ts_path = args.ts
     first_ts = load_ts(ts_path)
     sequence_length = float(first_ts.sequence_length)
-    mu = resolve_mu_rate(
+    mu, mu_source = resolve_mu_rate_with_source(
         first_ts,
         ts_path,
         scalar_fallback=args.mutation_rate,
@@ -124,7 +125,10 @@ def main():
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with open(log_path, "w") as fh:
         fh.write("# find_low_access_regions summary\n")
+        fh.write(f"ts={ts_path}\n")
         fh.write(f"out_path={out_path}\n")
+        fh.write(f"mutation_rate_source={mu_source['kind']}\n")
+        fh.write(f"mutation_rate_detail={describe_mu_source(mu_source)}\n")
         fh.write(summary + "\n")
 
 
