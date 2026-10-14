@@ -338,3 +338,18 @@ def test_chrom_len_source_distinguishes_exact_suffix_and_missing():
     assert ps.chrom_len_source("chr1", lengths, by_num) == "exact"
     assert ps.chrom_len_source("maize.2", lengths, by_num) == "suffix"
     assert ps.chrom_len_source("chrX", lengths, by_num) == "missing"
+
+
+def test_vcf_reps_show_a_range_only_for_the_full_replicate_set():
+    all_reps = [str(r) for r in range(50, 150)]
+
+    def vcf_line(vcf_reps):
+        cfg = _run_config()
+        cfg["outputs"] = {"emit_vcf": True, "vcf_reps": vcf_reps}
+        html, _ = ps.settings_section(cfg, ["chr1"], all_reps, {})
+        return html.split("vcf_reps:</span> ", 1)[1].split("</div>", 1)[0]
+
+    assert vcf_line(all_reps) == "all 100 post-burn-in (50–149)"
+    # A subset is never written as a range, which would imply it is contiguous.
+    assert vcf_line(["50", "60", "70", "80", "90", "100", "149"]) == "7: 50, 60, 70, …, 149"
+    assert vcf_line(["50", "149"]) == "50, 149"

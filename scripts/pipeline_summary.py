@@ -652,6 +652,19 @@ PROVENANCE_KEYS = {
 }
 
 
+def _fmt_replicate_set(reps: list, all_reps: list, limit: int = 6) -> str:
+    """Compact replicate list: a range only when it is the full post-burn-in set.
+
+    A subset is never shown as a range, since that would imply it is contiguous.
+    """
+    reps = [str(r) for r in reps]
+    if all_reps and set(reps) == {str(r) for r in all_reps}:
+        return f"all {len(reps)} post-burn-in ({all_reps[0]}–{all_reps[-1]})"
+    if len(reps) <= limit:
+        return ", ".join(reps)
+    return f"{len(reps)}: {', '.join(reps[:3])}, …, {reps[-1]}"
+
+
 def settings_section(run_cfg, chroms, replicates, mu_by_step) -> tuple[str, list[str]]:
     """Render every resolved setting from run_config.json, grouped by step."""
     flags: list[str] = []
@@ -679,6 +692,8 @@ def settings_section(run_cfg, chroms, replicates, mu_by_step) -> tuple[str, list
             value = _fmt_setting(key, section[key])
             if group == "inputs" and key == "replicates_used" and section[key]:
                 value = _esc(f"{section[key][0]}–{section[key][1]}")
+            if group == "outputs" and key == "vcf_reps" and section[key]:
+                value = _esc(_fmt_replicate_set(section[key], replicates))
             if group == "step3" and key == "mutation_rate":
                 value += ' <span class="muted">(fallback only)</span>'
                 if n_scalar:
