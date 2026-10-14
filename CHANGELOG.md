@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
-## [Unreleased]
+## [v1.13.2] — 2026-10-13 — mutation maps under tree_subdir, run provenance in the summary
 
 ### Fixed
 
@@ -40,6 +40,14 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
 - `pipeline_summary.py` takes `--run-config` in place of `--rec-fraction`,
   `--low-access-window`, `--low-access-cutoff`, `--mutload-cutoff`,
   `--mutation-rate` and `--sim-branch`.
+- Window and cutoff sizes in the summary are shown exactly (2,500 bp, not
+  "2 kb").
+- `run_config.json` records the replicates actually exported to VCF (every
+  post-burn-in replicate when `vcf_reps` is unset), and the summary shows the
+  full set as "all N post-burn-in (a–b)" and a subset as a short list, never as
+  a range. The HapMap and FAI rows list step 6b as a user when validation runs.
+- The README says that the step 1–3 masks are built independently from the
+  original inputs and applied together at step 4.
 
 ## [v1.13.1] — 2026-10-04 — dropped-mask-interval warnings, test hardening, docs split
 
