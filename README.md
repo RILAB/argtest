@@ -8,6 +8,8 @@ Ross-Ibarra, J. 2026. ARGtest: tools for QC and validation of ancestral recombin
 
 ![ARGtest overview: inferred ARGs are screened for low recombination, poor accessibility and aberrant mutation load; flagged regions are trimmed from all samples and outlier individuals are pruned only in the windows where they fail; outputs are cleaned ARGs, validation plots and an HTML summary report.](docs/graphical_abstract.svg)
 
+The three screens (steps 1–3: low recombination, low accessibility, mutation load) each build a mask independently from the original inputs; none sees another's result. Nothing is removed until step 4, which trims all three masks from the ARGs at once; step 5 then prunes the mutation-load outlier individuals in the windows where they fail.
+
 ## Documentation
 
 This README covers installing and running the pipeline. The details live in [docs/](docs/):
