@@ -3,6 +3,24 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
+## [v1.13.3] — 2026-10-26 — trim_samples no longer silently skips unknown names
+
+### Fixed
+
+- `trim_samples.py` skipped any name that matched no individual without a
+  message, so a naming mismatch (for example `--individuals 2,3,4` against
+  individuals named `SampleName_2`, or trees with no individuals table) wrote an
+  untrimmed output and a log reading `names_removed=0`. `--individuals` names
+  that match nothing now exit non-zero, list the names found in the tree
+  sequence, and write no output. Unmatched names from `--remove` BEDs print a
+  warning instead, since a BED may list individuals absent from a given file.
+  In the pipeline this means a bad `trim_individuals` value now fails the step 5
+  job rather than running as a no-op.
+- Step 5 could not resolve the `node<u>` names step 3 writes into the outlier
+  BED for sample nodes with no individual, so those samples were never trimmed.
+  `name_to_nodes_map` now maps `node<u>` to the sample node. Node ids are
+  unchanged between steps 3 and 5 (step 4 trims with `simplify=False`).
+
 ## [v1.13.2] — 2026-10-13 — mutation maps under tree_subdir, run provenance in the summary
 
 ### Fixed
