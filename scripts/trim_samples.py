@@ -329,6 +329,8 @@ def trim_samples_single_pass(ts, remove_intervals, name_substring_to_remove=""):
         "names_removed": names_removed,
         "intervals_applied": intervals_applied,
         "sample_nodes_removed": sample_nodes_removed,
+        "unmatched_names": sorted(set(remove_intervals) - names_removed),
+        "available_names": sorted(name_to_nodes),
     }
     return tables.tree_sequence(), summary
 
@@ -361,6 +363,26 @@ def main():
         remove_intervals,
         name_substring_to_remove=args.name_substring_to_remove,
     )
+
+    # A name that matches no individual is silently skipped by the trimming
+    # pass, which makes a typo or naming mismatch look like a successful run.
+    # Explicit --individuals must all match; unmatched BED names only warn,
+    # since a BED may legitimately list individuals absent from this file.
+    unmatched = summary["unmatched_names"]
+    unmatched_individuals = [n for n in individuals if n in set(unmatched)]
+    if unmatched:
+        available = summary["available_names"]
+        shown = ", ".join(available[:10]) + (" ..." if len(available) > 10 else "")
+        msg = (
+            f"{len(unmatched)} name(s) matched no individual in {ts_path}: "
+            f"{', '.join(unmatched)}. Tree sequence has {len(available)} "
+            f"individual(s); names look like: {shown or '(none)'}. Names come "
+            "from individual metadata 'id' (else 'ind<individual_id>') after "
+            "--name-substring-to-remove is applied."
+        )
+        if unmatched_individuals:
+            raise SystemExit(f"ERROR: {msg} Nothing was written.")
+        print(f"WARNING: {msg}", file=sys.stderr)
 
     if args.out:
         out_path = Path(args.out)

@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -162,6 +164,85 @@ def test_trim_samples_single_pass_removes_target_node_mutations():
     assert trimmed.sites_position.tolist() == [7.0]
 
 
+def test_trim_samples_resolves_node_names_for_samples_without_individuals():
+    named = make_stacked_mutation_ts()
+    tables = named.dump_tables()
+    nodes = tables.nodes
+    nodes.set_columns(
+        flags=nodes.flags,
+        time=nodes.time,
+        population=nodes.population,
+        individual=np.full(nodes.num_rows, tskit.NULL, dtype=np.int32),
+        metadata=nodes.metadata,
+        metadata_offset=nodes.metadata_offset,
+    )
+    tables.individuals.clear()
+    ts = tables.tree_sequence()
+    assert mc.sample_names(ts) == ["node0", "node1", "node2"]
+
+    intervals = {"node0": {"starts": [0.0], "ends": [5.0]}}
+    trimmed, summary = tsamp.trim_samples_single_pass(ts, intervals)
+
+    assert summary["names_removed"] == {"node0"}
+    assert summary["unmatched_names"] == []
+    # node0 is isolated inside the removed interval and attached outside it;
+    # node1 and node2 keep their shared parent throughout.
+    inside = trimmed.at(2.0)
+    assert inside.parent(0) == tskit.NULL and inside.num_children(0) == 0
+    assert trimmed.at(7.0).parent(0) != tskit.NULL
+    for pos in (2.0, 7.0):
+        tree = trimmed.at(pos)
+        assert tree.parent(1) == tree.parent(2) != tskit.NULL
+
+    # Same result as trimming the equivalent named individual "A".
+    by_name, _ = tsamp.trim_samples_single_pass(
+        named, {"A": {"starts": [0.0], "ends": [5.0]}}
+    )
+    assert trimmed.tables.edges == by_name.tables.edges
+    assert trimmed.sites_position.tolist() == by_name.sites_position.tolist()
+    assert (
+        next(trimmed.variants()).genotypes.tolist()
+        == next(by_name.variants()).genotypes.tolist()
+    )
+
+
+def test_trim_samples_single_pass_reports_unmatched_names():
+    ts = make_stacked_mutation_ts()
+    intervals = {
+        "A": {"starts": [0.0], "ends": [5.0]},
+        "2": {"starts": [0.0], "ends": [10.0]},
+    }
+
+    _, summary = tsamp.trim_samples_single_pass(ts, intervals)
+
+    assert summary["names_removed"] == {"A"}
+    assert summary["unmatched_names"] == ["2"]
+    assert summary["available_names"] == ["A", "B", "C"]
+
+
+def test_trim_samples_cli_errors_on_unmatched_individuals(tmp_path):
+    ts_path = tmp_path / "in.trees"
+    make_stacked_mutation_ts().dump(str(ts_path))
+    out = tmp_path / "out.trees"
+    script = Path(tsamp.__file__)
+
+    def run(*extra):
+        return subprocess.run(
+            [sys.executable, str(script), str(ts_path), "--out", str(out), *extra],
+            capture_output=True,
+            text=True,
+        )
+
+    bad = run("--individuals", "A,NOPE")
+    assert bad.returncode != 0
+    assert "NOPE" in bad.stderr and "Nothing was written" in bad.stderr
+    assert not out.exists()
+
+    good = run("--individuals", "A")
+    assert good.returncode == 0, good.stderr
+    assert out.exists()
+
+
 def test_trim_samples_single_pass_preserves_structure():
     ts = make_stacked_mutation_ts()
     intervals = {"A": {"starts": [0.0], "ends": [5.0]}}
@@ -172,6 +253,8 @@ def test_trim_samples_single_pass_preserves_structure():
         "names_removed": {"A"},
         "intervals_applied": 1,
         "sample_nodes_removed": 1,
+        "unmatched_names": [],
+        "available_names": ["A", "B", "C"],
     }
     # Sample ids, order and names survive simplify.
     assert trimmed.samples().tolist() == [0, 1, 2]
