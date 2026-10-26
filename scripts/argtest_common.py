@@ -117,6 +117,13 @@ def name_to_nodes_map(ts: tskit.TreeSequence, name_substring_to_remove=""):
         )
         nodes = list(ts.individual(ind_id).nodes)
         mapping[nm] = nodes
+    # Samples with no individual are named f"node{u}" by sample_names (which
+    # step 3 writes into the outlier BED); expose the same names here so those
+    # entries resolve instead of being silently dropped. Node ids are stable
+    # between step 3 and step 5 (step 4 trims with simplify=False).
+    for u in ts.samples():
+        if ts.node(u).individual == tskit.NULL:
+            mapping[f"node{u}"] = [int(u)]
     return mapping
 
 
