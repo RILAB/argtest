@@ -123,7 +123,11 @@ def name_to_nodes_map(ts: tskit.TreeSequence, name_substring_to_remove=""):
     # between step 3 and step 5 (step 4 trims with simplify=False).
     for u in ts.samples():
         if ts.node(u).individual == tskit.NULL:
-            mapping[f"node{u}"] = [int(u)]
+            # Extend, never replace: an individual whose ID is literally "node7"
+            # shares the name step 3 pooled it under.
+            nodes = mapping.setdefault(f"node{u}", [])
+            if int(u) not in nodes:
+                nodes.append(int(u))
     return mapping
 
 
