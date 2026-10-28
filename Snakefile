@@ -474,7 +474,7 @@ RUN_CONFIG = {
         "base_name": BASE_NAME,
         "burnin": BURNIN,
         "replicates_found": len(REPLICATE_UNION),
-        "replicates_used": [REPLICATES[0], REPLICATES[-1]] if REPLICATES else None,
+        "replicates_used": list(REPLICATES) if REPLICATES else None,
         "allow_missing_replicates": ALLOW_MISSING_REPLICATES,
         "missing_pairs": _MISSING_PAIRS,
         "hapmap": str(HAPMAP),

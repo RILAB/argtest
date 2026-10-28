@@ -211,7 +211,8 @@ def test_no_dropped_mask_intervals_yields_no_section(tmp_path):
 def _run_config(**step3):
     return {
         "inputs": {"root_dir": "/data", "tree_subdir": "trees", "tree_pattern": "*.tsz",
-                   "burnin": 75, "replicates_found": 150, "replicates_used": ["75", "149"],
+                   "burnin": 75, "replicates_found": 150,
+                   "replicates_used": [str(r) for r in range(75, 150)],
                    "missing_pairs": [], "hapmap": "/data/map.tsv", "fai": "/data/g.fai"},
         "step1": {"rec_fraction": 0.005},
         "step2": {"low_access_window_size": 50000.0, "low_access_cutoff_bp": 2500.0},
@@ -353,3 +354,9 @@ def test_vcf_reps_show_a_range_only_for_the_full_replicate_set():
     # A subset is never written as a range, which would imply it is contiguous.
     assert vcf_line(["50", "60", "70", "80", "90", "100", "149"]) == "7: 50, 60, 70, …, 149"
     assert vcf_line(["50", "149"]) == "50, 149"
+
+
+def test_replicate_span_only_ranges_consecutive_integer_ids():
+    assert ps._fmt_rep_span(["75", "76", "77"]) == "75–77"
+    assert ps._fmt_rep_span(["75", "77"]) == "75, 77"
+    assert ps._fmt_rep_span(["rep1", "rep2"]) == "rep1, rep2"

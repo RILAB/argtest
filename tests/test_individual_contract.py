@@ -64,6 +64,13 @@ def test_empty_name_substring_leaves_name_unchanged():
     assert sample_names(ts, name_substring_to_remove="") == ["sample_X", "other"]
 
 
+def test_node_name_collision_keeps_named_individual_and_unassigned_sample():
+    ts = make_ts(ploidies=(1,), names=["node1"], unassigned=1)
+
+    assert sample_names(ts) == ["node1", "node1"]
+    assert name_to_nodes_map(ts)["node1"] == [0, 1]
+
+
 def test_audit_ignores_unrepresented_individuals_for_ploidy():
     ts = make_ts(ploidies=(1, 1, 0))
     assert audit_individual_contract(ts) == []

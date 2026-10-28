@@ -652,6 +652,18 @@ PROVENANCE_KEYS = {
 }
 
 
+def _fmt_rep_span(reps: list) -> str:
+    """first–last when the IDs are demonstrably consecutive integers, else the list."""
+    reps = [str(r) for r in reps]
+    try:
+        nums = [int(r) for r in reps]
+    except ValueError:
+        return ", ".join(reps)
+    if len(nums) > 1 and nums == list(range(nums[0], nums[0] + len(nums))):
+        return f"{reps[0]}–{reps[-1]}"
+    return ", ".join(reps)
+
+
 def _fmt_replicate_set(reps: list, all_reps: list, limit: int = 6) -> str:
     """Compact replicate list: a range only when it is the full post-burn-in set.
 
@@ -659,7 +671,7 @@ def _fmt_replicate_set(reps: list, all_reps: list, limit: int = 6) -> str:
     """
     reps = [str(r) for r in reps]
     if all_reps and set(reps) == {str(r) for r in all_reps}:
-        return f"all {len(reps)} post-burn-in ({all_reps[0]}–{all_reps[-1]})"
+        return f"all {len(reps)} post-burn-in ({_fmt_rep_span(all_reps)})"
     if len(reps) <= limit:
         return ", ".join(reps)
     return f"{len(reps)}: {', '.join(reps[:3])}, …, {reps[-1]}"
@@ -691,7 +703,7 @@ def settings_section(run_cfg, chroms, replicates, mu_by_step) -> tuple[str, list
                 continue
             value = _fmt_setting(key, section[key])
             if group == "inputs" and key == "replicates_used" and section[key]:
-                value = _esc(f"{section[key][0]}–{section[key][1]}")
+                value = _esc(_fmt_rep_span(section[key]))
             if group == "outputs" and key == "vcf_reps" and section[key]:
                 value = _esc(_fmt_replicate_set(section[key], replicates))
             if group == "step3" and key == "mutation_rate":
