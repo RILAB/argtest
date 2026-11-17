@@ -30,6 +30,7 @@ from argtest_common import (
 )
 
 matplotlib.rcParams["figure.dpi"] = 300
+SKYLINE_ALPHA = 0.55
 
 
 def parse_args(argv=None):
@@ -610,6 +611,28 @@ def write_sfs_data(path: Path, datasets: list[tuple[str, dict]]) -> None:
     path.write_text("\n".join(lines) + "\n")
 
 
+def plot_skyline_mean(
+    ax,
+    coord,
+    values,
+    *,
+    color: str,
+    label: str,
+    linestyle: str = "-",
+):
+    """Plot a translucent skyline mean without point markers."""
+    return ax.plot(
+        coord,
+        values,
+        color=color,
+        linestyle=linestyle,
+        linewidth=1,
+        marker=None,
+        alpha=SKYLINE_ALPHA,
+        label=label,
+    )
+
+
 def main():
     args = parse_args()
     if args.mcmc_thin <= 0:
@@ -740,18 +763,26 @@ def main():
     if args.sim_branch:
         ax.fill_between(pri["coord"], pri["q_sim_div"][0], pri["q_sim_div"][1],
                         color=PRI_SIM, alpha=0.1)
-        ax.scatter(pri["coord"], pri["mean_sim_div"], c=PRI_SIM, s=8,
-                   label=f"{pri_label} sim")
-    ax.scatter(pri["coord"], pri["mean_site_div"], c=PRI_SITE, s=8,
-               label=f"{pri_label} site")
+        plot_skyline_mean(
+            ax, pri["coord"], pri["mean_sim_div"], color=PRI_SIM,
+            label=f"{pri_label} sim",
+        )
+    plot_skyline_mean(
+        ax, pri["coord"], pri["mean_site_div"], color=PRI_SITE,
+        label=f"{pri_label} site",
+    )
     if cmp is not None:
         if args.sim_branch:
             ax.fill_between(cmp["coord"], cmp["q_sim_div"][0], cmp["q_sim_div"][1],
                             color=CMP_SIM, alpha=0.1)
-            ax.scatter(cmp["coord"], cmp["mean_sim_div"], c=CMP_SIM, s=8, marker="^",
-                       label=f"{cmp_label} sim")
-        ax.scatter(cmp["coord"], cmp["mean_site_div"], c=CMP_SITE, s=8, marker="^",
-                   label=f"{cmp_label} site")
+            plot_skyline_mean(
+                ax, cmp["coord"], cmp["mean_sim_div"], color=CMP_SIM,
+                linestyle=CMP_LS, label=f"{cmp_label} sim",
+            )
+        plot_skyline_mean(
+            ax, cmp["coord"], cmp["mean_site_div"], color=CMP_SITE,
+            linestyle=CMP_LS, label=f"{cmp_label} site",
+        )
     ax.set_xlabel("Position on chromosome")
     ax.set_ylabel("Diversity")
     ax.legend(fontsize=7)
@@ -807,18 +838,26 @@ def main():
     if args.sim_branch:
         ax.fill_between(pri["coord"], pri["q_sim_s"][0], pri["q_sim_s"][1],
                         color=PRI_SIM, alpha=0.1)
-        ax.scatter(pri["coord"], pri["mean_sim_s"], c=PRI_SIM, s=8,
-                   label=f"{pri_label} sim")
-    ax.scatter(pri["coord"], pri["mean_site_s"], c=PRI_SITE, s=8,
-               label=f"{pri_label} site")
+        plot_skyline_mean(
+            ax, pri["coord"], pri["mean_sim_s"], color=PRI_SIM,
+            label=f"{pri_label} sim",
+        )
+    plot_skyline_mean(
+        ax, pri["coord"], pri["mean_site_s"], color=PRI_SITE,
+        label=f"{pri_label} site",
+    )
     if cmp is not None:
         if args.sim_branch:
             ax.fill_between(cmp["coord"], cmp["q_sim_s"][0], cmp["q_sim_s"][1],
                             color=CMP_SIM, alpha=0.1)
-            ax.scatter(cmp["coord"], cmp["mean_sim_s"], c=CMP_SIM, s=8, marker="^",
-                       label=f"{cmp_label} sim")
-        ax.scatter(cmp["coord"], cmp["mean_site_s"], c=CMP_SITE, s=8, marker="^",
-                   label=f"{cmp_label} site")
+            plot_skyline_mean(
+                ax, cmp["coord"], cmp["mean_sim_s"], color=CMP_SIM,
+                linestyle=CMP_LS, label=f"{cmp_label} sim",
+            )
+        plot_skyline_mean(
+            ax, cmp["coord"], cmp["mean_site_s"], color=CMP_SITE,
+            linestyle=CMP_LS, label=f"{cmp_label} site",
+        )
     ax.set_xlabel("Position on chromosome")
     ax.set_ylabel("Segregating sites / base")
     ax.legend(fontsize=7)
@@ -874,18 +913,26 @@ def main():
     if args.sim_branch:
         ax.fill_between(pri["coord"], pri["q_sim_td"][0], pri["q_sim_td"][1],
                         color=PRI_SIM, alpha=0.1)
-        ax.scatter(pri["coord"], pri["mean_sim_td"], c=PRI_SIM, s=8,
-                   label=f"{pri_label} sim")
-    ax.scatter(pri["coord"], pri["mean_site_td"], c=PRI_SITE, s=8,
-               label=f"{pri_label} site")
+        plot_skyline_mean(
+            ax, pri["coord"], pri["mean_sim_td"], color=PRI_SIM,
+            label=f"{pri_label} sim",
+        )
+    plot_skyline_mean(
+        ax, pri["coord"], pri["mean_site_td"], color=PRI_SITE,
+        label=f"{pri_label} site",
+    )
     if cmp is not None:
         if args.sim_branch:
             ax.fill_between(cmp["coord"], cmp["q_sim_td"][0], cmp["q_sim_td"][1],
                             color=CMP_SIM, alpha=0.1)
-            ax.scatter(cmp["coord"], cmp["mean_sim_td"], c=CMP_SIM, s=8, marker="^",
-                       label=f"{cmp_label} sim")
-        ax.scatter(cmp["coord"], cmp["mean_site_td"], c=CMP_SITE, s=8, marker="^",
-                   label=f"{cmp_label} site")
+            plot_skyline_mean(
+                ax, cmp["coord"], cmp["mean_sim_td"], color=CMP_SIM,
+                linestyle=CMP_LS, label=f"{cmp_label} sim",
+            )
+        plot_skyline_mean(
+            ax, cmp["coord"], cmp["mean_site_td"], color=CMP_SITE,
+            linestyle=CMP_LS, label=f"{cmp_label} site",
+        )
     ax.set_xlabel("Position on chromosome")
     ax.set_ylabel("Tajima's D")
     ax.legend(fontsize=7)

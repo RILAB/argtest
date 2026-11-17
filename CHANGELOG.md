@@ -14,6 +14,9 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
 
 ### Fixed
 
+- The diversity, segregating-sites and Tajima's D skyline plots now draw
+  marker-free, semi-transparent mean lines, making overlapping observed and
+  simulated trajectories easier to compare (#20).
 - Coalescence density, pair-coalescence rate and Ne plots
   (`coalescence_ne_plots_from_ts.py`) drew each time window's value over the
   preceding window: `ax.step` was given window left edges with the default

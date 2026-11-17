@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import pytest
 
 from scripts import validation_plots_from_ts as validation
@@ -56,3 +57,22 @@ def test_optional_ratemap_falls_back_when_msprime_is_absent(monkeypatch):
     monkeypatch.setattr(validation, "msprime", None)
     monkeypatch.setattr(validation, "resolve_mu_rate", unreachable)
     assert validation.optional_mu_ratemap(object(), Path("rep1.tsz")) is None
+
+
+def test_skyline_mean_is_translucent_line_without_markers():
+    fig, ax = plt.subplots()
+
+    (line,) = validation.plot_skyline_mean(
+        ax,
+        [1, 2, 3],
+        [4, 5, 6],
+        color="firebrick",
+        linestyle="--",
+        label="expected",
+    )
+
+    assert line.get_marker() == "None"
+    assert line.get_alpha() == validation.SKYLINE_ALPHA
+    assert line.get_linestyle() == "--"
+    assert line.get_label() == "expected"
+    plt.close(fig)
