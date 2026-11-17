@@ -360,3 +360,7 @@ def test_replicate_span_only_ranges_consecutive_integer_ids():
     assert ps._fmt_rep_span(["75", "76", "77"]) == "75–77"
     assert ps._fmt_rep_span(["75", "77"]) == "75, 77"
     assert ps._fmt_rep_span(["rep1", "rep2"]) == "rep1, rep2"
+    gapped = [str(r) for r in range(75, 150, 2)]
+    assert ps._fmt_rep_span(gapped) == "38: 75, 77, 79, …, 149"
+    named = [f"rep{r}" for r in range(10)]
+    assert ps._fmt_rep_span(named) == "10: rep0, rep1, rep2, …, rep9"

@@ -3,6 +3,29 @@
 All notable changes to this project are documented here. Versions correspond to
 the annotated git tags (`git tag -l`). Dates are the tag dates.
 
+## [Unreleased]
+
+### Fixed
+
+- Coalescence density, pair-coalescence rate and Ne plots
+  (`coalescence_ne_plots_from_ts.py`) drew each time window's value over the
+  preceding window: `ax.step` was given window left edges with the default
+  `where="pre"`, shifting every curve one window into the past (same bug as
+  nspope/singer-snakemake#28). Plots now use `ax.stairs` over the true window
+  edges, so each value, including the last, spans exactly its own window. The
+  estimates TSV and the simulation demes graph were already correct; only the
+  PNGs change. Regenerate plots from earlier runs.
+- `run_config.json` recorded `replicates_used` as only `[first, last]`, and the
+  summary printed it as a `first–last` range even when the post-burn-in
+  replicate IDs had gaps. The full list is now recorded; the summary shows a
+  range only for consecutive integer IDs and otherwise an elided list
+  (`N: a, b, c, …, z`). Summaries re-rendered from older `run_config.json`
+  files show `first, last` instead of a range.
+- When an individual is literally named `node<u>`, `name_to_nodes_map`
+  replaced its nodes with the unassigned sample node `u`, so step 5 trimmed
+  only one of the two samples step 3 had pooled under that name. It now maps
+  the name to both. Step 3 still pools such colliding samples; see #22.
+
 ## [v1.13.3] — 2026-10-26 — trim_samples no longer silently skips unknown names
 
 ### Fixed

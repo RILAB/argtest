@@ -652,16 +652,23 @@ PROVENANCE_KEYS = {
 }
 
 
-def _fmt_rep_span(reps: list) -> str:
+def _fmt_rep_list(reps: list[str], limit: int = 6) -> str:
+    """Comma list, elided to ``N: a, b, c, …, z`` past ``limit`` items."""
+    if len(reps) <= limit:
+        return ", ".join(reps)
+    return f"{len(reps)}: {', '.join(reps[:3])}, …, {reps[-1]}"
+
+
+def _fmt_rep_span(reps: list, limit: int = 6) -> str:
     """first–last when the IDs are demonstrably consecutive integers, else the list."""
     reps = [str(r) for r in reps]
     try:
         nums = [int(r) for r in reps]
     except ValueError:
-        return ", ".join(reps)
+        return _fmt_rep_list(reps, limit)
     if len(nums) > 1 and nums == list(range(nums[0], nums[0] + len(nums))):
         return f"{reps[0]}–{reps[-1]}"
-    return ", ".join(reps)
+    return _fmt_rep_list(reps, limit)
 
 
 def _fmt_replicate_set(reps: list, all_reps: list, limit: int = 6) -> str:
@@ -672,9 +679,7 @@ def _fmt_replicate_set(reps: list, all_reps: list, limit: int = 6) -> str:
     reps = [str(r) for r in reps]
     if all_reps and set(reps) == {str(r) for r in all_reps}:
         return f"all {len(reps)} post-burn-in ({_fmt_rep_span(all_reps)})"
-    if len(reps) <= limit:
-        return ", ".join(reps)
-    return f"{len(reps)}: {', '.join(reps[:3])}, …, {reps[-1]}"
+    return _fmt_rep_list(reps, limit)
 
 
 def settings_section(run_cfg, chroms, replicates, mu_by_step) -> tuple[str, list[str]]:
