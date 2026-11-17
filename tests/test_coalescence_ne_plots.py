@@ -13,8 +13,8 @@ class _RecordingAxes:
     def __init__(self):
         self.calls = []
 
-    def step(self, x, y, **kwargs):
-        self.calls.append((np.asarray(x), np.asarray(y), kwargs))
+    def stairs(self, values, edges, **kwargs):
+        self.calls.append((np.asarray(edges), np.asarray(values), kwargs))
 
 
 def test_find_tree_files_uses_natural_replicate_order(tmp_path):
@@ -79,7 +79,7 @@ def test_compute_pair_coal_uses_native_partial_missing_normalisation():
 
 def test_replicate_plot_excludes_burnin_values():
     ax = _RecordingAxes()
-    x = np.array([1, 2])
+    x = np.array([1, 2, 4])
     values = np.array([[10, 20], [30, 40], [50, 60]])
 
     coal.plot_postburn_replicates(
@@ -93,6 +93,58 @@ def test_replicate_plot_excludes_burnin_values():
     assert len(ax.calls) == 2
     np.testing.assert_array_equal(ax.calls[0][1], values[1])
     np.testing.assert_array_equal(ax.calls[1][1], values[2])
+
+
+def test_plot_window_edges_drop_zero_and_inf_and_add_right_edge():
+    time_windows = np.array([0.0, 1.0, 2.0, 4.0, np.inf])
+    keep = coal.plottable_interval_mask(time_windows)
+
+    edges = coal.plot_window_edges(time_windows, keep)
+
+    # Kept windows are [1,2) and [2,4): two values need three edges.
+    np.testing.assert_array_equal(edges, [1.0, 2.0, 4.0])
+    assert edges.size == keep.sum() + 1
+
+
+def test_plotted_value_spans_its_own_window():
+    """Regression for the one-window shift (nspope/singer-snakemake#28)."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    time_windows = np.array([0.0, 1.0, 10.0, 100.0, np.inf])
+    keep = coal.plottable_interval_mask(time_windows)
+    edges = coal.plot_window_edges(time_windows, keep)
+    values = np.array([3.0, 7.0])  # [1,10) -> 3, [10,100) -> 7
+
+    fig, ax = plt.subplots()
+    patch = ax.stairs(values, edges)
+    verts = patch.get_path().vertices
+    plt.close(fig)
+
+    def y_at(t):
+        # Horizontal segments: consecutive vertices sharing a y value.
+        for (x0, y0), (x1, y1) in zip(verts[:-1], verts[1:]):
+            if y0 == y1 and x0 <= t < x1:
+                return y0
+        return None
+
+    assert y_at(5.0) == 3.0
+    assert y_at(50.0) == 7.0
+    assert y_at(0.5) is None
+
+
+def test_plot_window_edges_rejects_gaps():
+    time_windows = np.array([1.0, 2.0, 4.0, 8.0])
+    keep = np.array([True, False, True])
+
+    try:
+        coal.plot_window_edges(time_windows, keep)
+    except ValueError as exc:
+        assert "contiguous" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
 
 
 def test_write_estimates_saves_only_postburn_replicates_and_mean(tmp_path):

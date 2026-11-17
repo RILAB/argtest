@@ -389,10 +389,31 @@ def safe_nanmean(a: np.ndarray, axis=None):
         return np.nanmean(a, axis=axis)
 
 
-def plot_postburn_replicates(ax, x, values, postburn_indices, **kwargs):
-    """Draw only replicate trajectories that contribute to the mean."""
+def plot_postburn_replicates(ax, edges, values, postburn_indices, **kwargs):
+    """Draw only replicate trajectories that contribute to the mean.
+
+    ``edges`` has one more entry than each value row: value ``i`` is drawn
+    over the window ``[edges[i], edges[i + 1])``.
+    """
     for val in values[postburn_indices]:
-        ax.step(x, val, **kwargs)
+        ax.stairs(val, edges, **kwargs)
+
+
+def plot_window_edges(time_windows: np.ndarray, keep_mask: np.ndarray) -> np.ndarray:
+    """Return the left edges of the kept windows plus the last right edge.
+
+    Kept windows must be contiguous so each value can be drawn between its
+    true bounds with ``ax.stairs``. (Drawing ``ax.step`` at left edges with
+    the default ``where="pre"`` shifts every value one window into the past;
+    cf. nspope/singer-snakemake#28.)
+    """
+    lefts = time_windows[:-1][keep_mask]
+    rights = time_windows[1:][keep_mask]
+    if lefts.size == 0:
+        raise ValueError("No plottable time windows.")
+    if not np.array_equal(lefts[1:], rights[:-1]):
+        raise ValueError("Plottable time windows are not contiguous.")
+    return np.append(lefts, rights[-1])
 
 
 def write_coalescence_estimates(
@@ -611,7 +632,7 @@ def main():
         )
     finite_mask = finite_interval_mask(time_windows)
     keep_mask = plottable_interval_mask(time_windows)
-    breaks = time_windows[:-1][keep_mask]
+    edges = plot_window_edges(time_windows, keep_mask)
 
     pdf_vals = []
     rate_vals = []
@@ -650,9 +671,9 @@ def main():
 
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
     plot_postburn_replicates(
-        ax, breaks, pdf_density, keep_post, **reps_kwargs
+        ax, edges, pdf_density, keep_post, **reps_kwargs
     )
-    ax.step(breaks, mean_pdf, **mean_kwargs)
+    ax.stairs(mean_pdf, edges, **mean_kwargs)
     ax.set_xlabel("Generations in past")
     ax.set_ylabel("Coalescence density (proportion / log-generation)")
     ax.set_xscale("log")
@@ -661,8 +682,8 @@ def main():
     plt.close(fig)
 
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    plot_postburn_replicates(ax, breaks, rate_vals, keep_post, **reps_kwargs)
-    ax.step(breaks, mean_rates, **mean_kwargs)
+    plot_postburn_replicates(ax, edges, rate_vals, keep_post, **reps_kwargs)
+    ax.stairs(mean_rates, edges, **mean_kwargs)
     ax.set_xlabel("Generations in past")
     ax.set_ylabel("Pair coalescence rate")
     ax.set_xscale("log")
@@ -677,8 +698,8 @@ def main():
     ne_vals[valid_rates] = 1.0 / (2.0 * rate_vals[valid_rates])
     mean_ne = safe_nanmean(ne_vals[keep_post], axis=0)
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    plot_postburn_replicates(ax, breaks, ne_vals, keep_post, **reps_kwargs)
-    ax.step(breaks, mean_ne, **mean_kwargs)
+    plot_postburn_replicates(ax, edges, ne_vals, keep_post, **reps_kwargs)
+    ax.stairs(mean_ne, edges, **mean_kwargs)
     if args.year is not None:
         ax.axvline(args.year, color="red", linestyle="--", linewidth=1.2)
     ax.set_xlabel("Generations in past")
