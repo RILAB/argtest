@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import demes
 import numpy as np
 import tskit
 
@@ -178,3 +179,26 @@ def test_write_estimates_saves_only_postburn_replicates_and_mean(tmp_path):
     assert {row[1] for row in rows[1:3]} == {"1"}
     assert {row[2] for row in rows[1:3]} == {"rep1.tsz"}
     assert rows[1][4:6] == ["1", "2"]
+
+
+def test_write_demes_graph_serializes_piecewise_constant_ne(tmp_path):
+    time_windows = np.array([0.0, 10.0, 100.0, np.inf])
+    graph = coal.build_demes_graph_from_ne(
+        time_windows,
+        np.array([1_000.0, 2_000.0]),
+    )
+    out = tmp_path / "nested" / "demography.yaml"
+
+    result = coal.write_demes_graph(graph, out)
+
+    assert result == out
+    loaded = demes.load(out)
+    assert loaded.time_units == "generations"
+    assert [deme.name for deme in loaded.demes] == ["pop"]
+    epochs = loaded.demes[0].epochs
+    assert [(epoch.start_time, epoch.end_time) for epoch in epochs] == [
+        (np.inf, 10.0),
+        (10.0, 0.0),
+    ]
+    assert [epoch.start_size for epoch in epochs] == [2_000.0, 1_000.0]
+    assert [epoch.end_size for epoch in epochs] == [2_000.0, 1_000.0]

@@ -35,10 +35,11 @@ With `--num-quantiles` / `--num-bins`, `0` and `inf` are padded onto the grid so
 | `--tail-cutoff X` | `1e-12` | Minimum probability mass retained when trimming the pair-coalescence tail. |
 | `--log-rates` | off | Log y-axis on the pair-coalescence-rate and Ne plots (the time axis is always log-scaled). |
 | `--year X` | none | Draw a red dashed vertical marker at generation `X` on the Ne plot. |
+| `--demes-out FILE` | `<out-dir>/<prefix>demography.yaml` | Path for the inferred posterior-mean, piecewise-constant demographic model in Demes YAML format. |
 
-## Optional Demes simulations
+## Optional simulations
 
-A Demes model is built from the posterior-mean Ne trajectory and simulated with msprime; the resulting TSVs feed the observed-vs-simulated overlays in `validation_plots_from_ts.py`.
+The Demes model written on every run can also be simulated with msprime; the resulting TSVs feed the observed-vs-simulated overlays in `validation_plots_from_ts.py`.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
@@ -55,6 +56,7 @@ Written to `--out-dir`, each name prefixed by `--prefix`:
 
 - `pair-coalescence-pdf.png`, `pair-coalescence-rates.png`, `effective-pop-size.png` — post-burnin replicate trajectories (thin lines) with the posterior mean overlaid.
 - `coalescence-ne-estimates.tsv` — the plotted numbers, with columns `series` (`replicate` or `posterior_mean`), `replicate_index`, `tree_file`, `bin_index`, `time_left`, `time_right`, `pair_coalescence_mass`, `pair_coalescence_log_density`, `pair_coalescence_rate`, `effective_population_size`.
+- `demography.yaml` — the inferred posterior-mean Ne trajectory as a single-deme, piecewise-constant Demes model; override its path with `--demes-out`.
 - `summary.txt` — the run's resolved settings (inputs, burn-in index, time-window edges, simulation parameters, sample count, sequence-length range) and the paths of everything written.
 - `sim-window-stats.tsv`, `sim-sfs.tsv` — only when `--sim > 0`.
 

@@ -175,6 +175,15 @@ def parse_args():
         help="Optional x-position for a red dashed vertical marker on the Ne plot.",
     )
     p.add_argument(
+        "--demes-out",
+        type=Path,
+        default=None,
+        help=(
+            "Output path for the inferred piecewise-constant demographic model "
+            "in Demes YAML format. Default: <out-dir>/<prefix>demography.yaml"
+        ),
+    )
+    p.add_argument(
         "--sim",
         type=int,
         default=0,
@@ -532,6 +541,15 @@ def build_demes_graph_from_ne(time_windows: np.ndarray, ne_finite: np.ndarray):
     return builder.resolve()
 
 
+def write_demes_graph(graph, out_path: Path) -> Path:
+    """Write a resolved demographic model in Demes YAML format."""
+    import demes
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    demes.dump(graph, str(out_path))
+    return out_path
+
+
 def simulate_window_stats_from_ne(
     graph,
     n_samples: int,
@@ -727,20 +745,24 @@ def main():
         mean_ne,
     )
 
+    mean_rates_finite = safe_nanmean(np.stack(rate_vals_finite_post, axis=0), axis=0)
+    ne_finite = np.full_like(mean_rates_finite, np.nan, dtype=float)
+    valid = np.isfinite(mean_rates_finite) & (mean_rates_finite > 0)
+    ne_finite[valid] = 1.0 / (2.0 * mean_rates_finite[valid])
+    ne_finite = fill_ne_trajectory(ne_finite)
+    demes_graph = build_demes_graph_from_ne(time_windows, ne_finite)
+    demes_path = write_demes_graph(
+        demes_graph,
+        args.demes_out or (args.out_dir / f"{args.prefix}demography.yaml"),
+    )
+
     sim_out_path = None
     sim_sfs_out_path = None
-    sim_graph = None
     if args.sim > 0:
-        mean_rates_finite = safe_nanmean(np.stack(rate_vals_finite_post, axis=0), axis=0)
-        ne_finite = np.full_like(mean_rates_finite, np.nan, dtype=float)
-        valid = np.isfinite(mean_rates_finite) & (mean_rates_finite > 0)
-        ne_finite[valid] = 1.0 / (2.0 * mean_rates_finite[valid])
-        ne_finite = fill_ne_trajectory(ne_finite)
-        sim_graph = build_demes_graph_from_ne(time_windows, ne_finite)
         sim_out_path = args.sim_outfile or (args.out_dir / f"{args.prefix}sim-window-stats.tsv")
         sim_sfs_out_path = args.sim_sfs_outfile or (args.out_dir / f"{args.prefix}sim-sfs.tsv")
         simulate_window_stats_from_ne(
-            sim_graph,
+            demes_graph,
             n_samples=n_samples,
             n_sims=args.sim,
             mu=float(args.mu),
@@ -776,6 +798,7 @@ def main():
                 f"pair_coalescence_rates_plot={rate_path}",
                 f"effective_pop_size_plot={ne_path}",
                 f"coalescence_estimates_tsv={estimates_path}",
+                f"demes_model={demes_path}",
                 f"simulation_window_stats_tsv={sim_out_path}",
                 f"simulation_sfs_tsv={sim_sfs_out_path}",
             ]
@@ -787,6 +810,7 @@ def main():
     print(f"Wrote: {rate_path}")
     print(f"Wrote: {ne_path}")
     print(f"Wrote: {estimates_path}")
+    print(f"Wrote: {demes_path}")
     if sim_out_path is not None:
         print(f"Wrote: {sim_out_path}")
     if sim_sfs_out_path is not None:

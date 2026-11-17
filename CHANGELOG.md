@@ -5,6 +5,13 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
 
 ## [Unreleased]
 
+### Added
+
+- `coalescence_ne_plots_from_ts.py` now writes the inferred posterior-mean,
+  piecewise-constant demographic model in Demes YAML format on every run. The
+  default is `<out-dir>/<prefix>demography.yaml`; `--demes-out` overrides the
+  path. Optional simulations reuse the same serialized model.
+
 ### Fixed
 
 - Coalescence density, pair-coalescence rate and Ne plots
