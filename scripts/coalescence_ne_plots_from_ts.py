@@ -151,7 +151,7 @@ def parse_args():
         default=0.5,
         help=(
             "Fraction of initial MCMC trees to discard as burn-in when "
-            "computing posterior means (default: 0.5)."
+            "computing posterior medians (default: 0.5)."
         ),
     )
     p.add_argument(
@@ -392,14 +392,23 @@ def compute_pair_coal(ts, time_windows: np.ndarray, tail_cutoff: float):
     return pdf, rates
 
 
-def safe_nanmean(a: np.ndarray, axis=None):
+def safe_nanmedian(a: np.ndarray, axis=None):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
-        return np.nanmean(a, axis=axis)
+        return np.nanmedian(a, axis=axis)
+
+
+def ne_from_rates(rates: np.ndarray) -> np.ndarray:
+    """Ne = 1 / (2 * rate) elementwise; NaN where the rate is non-finite or <= 0."""
+    rates = np.asarray(rates, dtype=float)
+    ne = np.full_like(rates, np.nan, dtype=float)
+    valid = np.isfinite(rates) & (rates > 0)
+    ne[valid] = 1.0 / (2.0 * rates[valid])
+    return ne
 
 
 def plot_postburn_replicates(ax, edges, values, postburn_indices, **kwargs):
-    """Draw only replicate trajectories that contribute to the mean.
+    """Draw only replicate trajectories that contribute to the median.
 
     ``edges`` has one more entry than each value row: value ``i`` is drawn
     over the window ``[edges[i], edges[i + 1])``.
@@ -435,12 +444,12 @@ def write_coalescence_estimates(
     pdf_density: np.ndarray,
     rates: np.ndarray,
     ne: np.ndarray,
-    mean_pdf_mass: np.ndarray,
-    mean_pdf_density: np.ndarray,
-    mean_rates: np.ndarray,
-    mean_ne: np.ndarray,
+    median_pdf_mass: np.ndarray,
+    median_pdf_density: np.ndarray,
+    median_rates: np.ndarray,
+    median_ne: np.ndarray,
 ) -> Path:
-    """Save plotted post-burnin trajectories and their posterior means."""
+    """Save plotted post-burnin trajectories and their posterior medians."""
     left = time_windows[:-1][keep_mask]
     right = time_windows[1:][keep_mask]
     header = [
@@ -492,13 +501,13 @@ def write_coalescence_estimates(
             ne[i],
         )
     add_series(
-        "posterior_mean",
+        "posterior_median",
         "",
         "",
-        mean_pdf_mass,
-        mean_pdf_density,
-        mean_rates,
-        mean_ne,
+        median_pdf_mass,
+        median_pdf_density,
+        median_rates,
+        median_ne,
     )
     out_path.write_text("\n".join(lines) + "\n")
     return out_path
@@ -680,18 +689,18 @@ def main():
     bin_widths = np.log(time_windows[1:][keep_mask] / time_windows[:-1][keep_mask])
     pdf_density = pdf_vals / bin_widths
 
-    mean_pdf_mass = safe_nanmean(pdf_vals[keep_post], axis=0)
-    mean_pdf = safe_nanmean(pdf_density[keep_post], axis=0)
-    mean_rates = safe_nanmean(rate_vals[keep_post], axis=0)
+    median_pdf_mass = safe_nanmedian(pdf_vals[keep_post], axis=0)
+    median_pdf = safe_nanmedian(pdf_density[keep_post], axis=0)
+    median_rates = safe_nanmedian(rate_vals[keep_post], axis=0)
 
     reps_kwargs = {"color": "gray", "alpha": 0.15}
-    mean_kwargs = {"color": "black", "linewidth": 1.5}
+    median_kwargs = {"color": "black", "linewidth": 1.5}
 
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
     plot_postburn_replicates(
         ax, edges, pdf_density, keep_post, **reps_kwargs
     )
-    ax.stairs(mean_pdf, edges, **mean_kwargs)
+    ax.stairs(median_pdf, edges, **median_kwargs)
     ax.set_xlabel("Generations in past")
     ax.set_ylabel("Coalescence density (proportion / log-generation)")
     ax.set_xscale("log")
@@ -701,7 +710,7 @@ def main():
 
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
     plot_postburn_replicates(ax, edges, rate_vals, keep_post, **reps_kwargs)
-    ax.stairs(mean_rates, edges, **mean_kwargs)
+    ax.stairs(median_rates, edges, **median_kwargs)
     ax.set_xlabel("Generations in past")
     ax.set_ylabel("Pair coalescence rate")
     ax.set_xscale("log")
@@ -711,13 +720,11 @@ def main():
     fig.savefig(rate_path)
     plt.close(fig)
 
-    ne_vals = np.full_like(rate_vals, np.nan, dtype=float)
-    valid_rates = np.isfinite(rate_vals) & (rate_vals > 0)
-    ne_vals[valid_rates] = 1.0 / (2.0 * rate_vals[valid_rates])
-    mean_ne = safe_nanmean(ne_vals[keep_post], axis=0)
+    ne_vals = ne_from_rates(rate_vals)
+    median_ne = safe_nanmedian(ne_vals[keep_post], axis=0)
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
     plot_postburn_replicates(ax, edges, ne_vals, keep_post, **reps_kwargs)
-    ax.stairs(mean_ne, edges, **mean_kwargs)
+    ax.stairs(median_ne, edges, **median_kwargs)
     if args.year is not None:
         ax.axvline(args.year, color="red", linestyle="--", linewidth=1.2)
     ax.set_xlabel("Generations in past")
@@ -739,16 +746,18 @@ def main():
         pdf_density,
         rate_vals,
         ne_vals,
-        mean_pdf_mass,
-        mean_pdf,
-        mean_rates,
-        mean_ne,
+        median_pdf_mass,
+        median_pdf,
+        median_rates,
+        median_ne,
     )
 
-    mean_rates_finite = safe_nanmean(np.stack(rate_vals_finite_post, axis=0), axis=0)
-    ne_finite = np.full_like(mean_rates_finite, np.nan, dtype=float)
-    valid = np.isfinite(mean_rates_finite) & (mean_rates_finite > 0)
-    ne_finite[valid] = 1.0 / (2.0 * mean_rates_finite[valid])
+    # Posterior median of Ne across post-burnin replicates, per time window,
+    # matching the plotted median line and the TSV's posterior_median rows.
+    # Up to even-count interpolation, equal to 1 / (2 * median rate).
+    ne_finite = safe_nanmedian(
+        ne_from_rates(np.stack(rate_vals_finite_post, axis=0)), axis=0
+    )
     ne_finite = fill_ne_trajectory(ne_finite)
     demes_graph = build_demes_graph_from_ne(time_windows, ne_finite)
     demes_path = write_demes_graph(

@@ -7,10 +7,23 @@ the annotated git tags (`git tag -l`). Dates are the tag dates.
 
 ### Added
 
-- `coalescence_ne_plots_from_ts.py` now writes the inferred posterior-mean,
-  piecewise-constant demographic model in Demes YAML format on every run. The
-  default is `<out-dir>/<prefix>demography.yaml`; `--demes-out` overrides the
-  path. Optional simulations reuse the same serialized model.
+- `coalescence_ne_plots_from_ts.py` now writes the inferred piecewise-constant
+  demographic model in Demes YAML format on every run. The default is
+  `<out-dir>/<prefix>demography.yaml`; `--demes-out` overrides the path.
+  Optional simulations reuse the same serialized model. Each window's Ne is the
+  posterior median of the per-replicate Ne values, matching the plots and the
+  estimates TSV.
+
+### Changed
+
+- `coalescence_ne_plots_from_ts.py` summarizes post-burn-in replicates by the
+  per-window **posterior median** instead of the mean, in the plots (black
+  line), the estimates TSV and the Demes model. The TSV `series` value
+  `posterior_mean` is now `posterior_median`; update anything that filters on
+  it. Each column was averaged independently, so mean Ne ≠ 1/(2·mean rate)
+  (Jensen's inequality). The median is invariant to that transform (for an odd
+  replicate count) and robust to replicates with near-zero rates. Note that
+  per-window median coalescence masses need not sum to 1.
 
 ### Fixed
 

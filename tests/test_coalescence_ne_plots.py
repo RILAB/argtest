@@ -148,7 +148,7 @@ def test_plot_window_edges_rejects_gaps():
         raise AssertionError("expected ValueError")
 
 
-def test_write_estimates_saves_only_postburn_replicates_and_mean(tmp_path):
+def test_write_estimates_saves_only_postburn_replicates_and_median(tmp_path):
     out = tmp_path / "estimates.tsv"
     values = np.array([[1.0, 2.0], [3.0, 4.0]])
 
@@ -173,12 +173,33 @@ def test_write_estimates_saves_only_postburn_replicates_and_mean(tmp_path):
     assert [row[0] for row in rows[1:]] == [
         "replicate",
         "replicate",
-        "posterior_mean",
-        "posterior_mean",
+        "posterior_median",
+        "posterior_median",
     ]
     assert {row[1] for row in rows[1:3]} == {"1"}
     assert {row[2] for row in rows[1:3]} == {"rep1.tsz"}
     assert rows[1][4:6] == ["1", "2"]
+
+
+def test_ne_from_rates_masks_invalid_rates():
+    ne = coal.ne_from_rates(np.array([0.001, 0.0, -1.0, np.nan, np.inf]))
+    assert ne[0] == 500.0
+    assert np.all(np.isnan(ne[1:]))
+
+
+def test_median_ne_equals_inverse_of_median_rate_for_odd_count():
+    rates = np.array(
+        [
+            [0.001, 0.010],
+            [0.003, 0.020],
+            [0.002, np.nan],
+        ]
+    )
+    median_ne = coal.safe_nanmedian(coal.ne_from_rates(rates), axis=0)
+    # Odd count: median Ne is exactly 1 / (2 * median rate).
+    assert np.isclose(median_ne[0], 1.0 / (2.0 * 0.002))
+    # NaN replicate skipped; even count averages the two middle Ne values.
+    assert np.isclose(median_ne[1], np.mean([50.0, 25.0]))
 
 
 def test_write_demes_graph_serializes_piecewise_constant_ne(tmp_path):
